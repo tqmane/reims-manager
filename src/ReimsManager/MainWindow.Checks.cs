@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace ReimsManager;
 
@@ -13,17 +14,53 @@ public partial class MainWindow
     {
         Application.Current.ThemeMode = ThemeMode.Dark;
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-        if (TryFindResource("CardBackgroundFillColorDefault") is null) throw new Exception("Fluent card theme resource missing");
         currentState = "stopped"; State.Text = "完全停止"; StatusDetail.Text = "";
         Tabs.SelectedIndex = 1; Devices.SelectedIndex = 0; UpdatePowerControls(); UpdateLayout();
+        if (WorkspaceSurface.Background is not SolidColorBrush card ||
+            TryFindResource("ApplicationBackgroundBrush") is not SolidColorBrush canvas ||
+            Foreground is not SolidColorBrush foreground)
+            throw new Exception("Expected native Fluent color resources");
+        var surface = Blend(card.Color, canvas.Color);
+        double contrast = Contrast(foreground.Color, surface);
+        if (contrast < 4.5) throw new Exception($"Dark workspace contrast is too low: {contrast:0.00}");
         SaveImage(Path.Combine(folder, "dark-hardware.png"));
         Tabs.SelectedIndex = 0;
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         UpdateLayout(); SaveImage(Path.Combine(folder, "dark-console.png"));
+        double previousWidth = Width, previousHeight = Height;
+        Width = MinWidth; Height = MinHeight;
+        EngineSettingsExpander.IsExpanded = true;
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        UpdateLayout(); SidebarScroll.ScrollToEnd();
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        UpdateLayout();
+        var bottomButton = SelectExistingEngineButton.TransformToAncestor(SidebarScroll)
+            .TransformBounds(new Rect(SelectExistingEngineButton.RenderSize));
+        if (bottomButton.Top < -1 || bottomButton.Bottom > SidebarScroll.ActualHeight + 1)
+            throw new Exception("Compact sidebar hides the engine controls");
+        SaveImage(Path.Combine(folder, "compact-engine-settings.png"));
+        EngineSettingsExpander.IsExpanded = false; SidebarScroll.ScrollToTop();
+        Width = previousWidth; Height = previousHeight;
         Application.Current.ThemeMode = ThemeMode.System;
     }
 
 #pragma warning restore WPF0001
+
+    private static Color Blend(Color front, Color back)
+    {
+        double alpha = front.A / 255.0;
+        return Color.FromRgb((byte)Math.Round(front.R * alpha + back.R * (1 - alpha)),
+            (byte)Math.Round(front.G * alpha + back.G * (1 - alpha)),
+            (byte)Math.Round(front.B * alpha + back.B * (1 - alpha)));
+    }
+
+    private static double Contrast(Color first, Color second)
+    {
+        static double Channel(byte value) { double c = value / 255.0; return c <= 0.04045 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4); }
+        static double Luminance(Color value) => 0.2126 * Channel(value.R) + 0.7152 * Channel(value.G) + 0.0722 * Channel(value.B);
+        double a = Luminance(first), b = Luminance(second);
+        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
+    }
 
     // Runs on the real STA WPF dispatcher. No QEMU, host settings or user data are touched.
     private void CheckWorkspaceBehavior()

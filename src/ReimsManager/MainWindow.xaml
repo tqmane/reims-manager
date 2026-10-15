@@ -12,15 +12,18 @@
    <MenuItem Header="表示"><MenuItem Header="状態を更新" InputGestureText="F5" Click="RefreshClick"/><MenuItem Header="VM 画面を別ウィンドウにする" Click="PopOutConsole"/><MenuItem Header="VM 画面をアプリに戻す" Click="DockConsole"/></MenuItem>
   </Menu>
   <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="240"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-   <Border Padding="16,16,16,12" BorderBrush="{DynamicResource SubtleBorder}" BorderThickness="0,0,1,0">
+   <Border Padding="16,16,16,12" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,1,0">
+    <ScrollViewer x:Name="SidebarScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*" MinHeight="70"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <StackPanel>
       <TextBlock Text="Reims" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="VIRTUAL MACHINE MANAGER" FontSize="10" Style="{StaticResource MutedText}" Margin="0,3,0,22"/>
       <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="ライブラリ" FontWeight="SemiBold" VerticalAlignment="Center"/><Button Content="＋ 新規" Click="NewVm" Grid.Column="1" Padding="10,5" Margin="0" ToolTip="新しい仮想マシン (Ctrl+N)"/></Grid>
-      <TextBox x:Name="LibrarySearch" TextChanged="FilterLibrary" ToolTip="VM の名前で絞り込み" AutomationProperties.Name="仮想マシンを検索" Margin="0,4,0,8"/>
+      <Grid Margin="0,4,0,8"><TextBox x:Name="LibrarySearch" TextChanged="FilterLibrary" ToolTip="VM の名前で絞り込み" AutomationProperties.Name="仮想マシンを検索"/>
+       <TextBlock Text="VM を検索" IsHitTestVisible="False" Margin="12,0" VerticalAlignment="Center"><TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource MutedText}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=LibrarySearch}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+      </Grid>
      </StackPanel>
      <Grid Grid.Row="1" Margin="0,0,0,12">
-      <ListBox x:Name="Library" ItemContainerStyle="{StaticResource NavigationItem}" BorderThickness="0" Background="Transparent" SelectionChanged="VmChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="仮想マシン一覧">
+      <ListBox x:Name="Library" MaxHeight="260" ItemContainerStyle="{StaticResource NavigationItem}" BorderThickness="0" Background="Transparent" SelectionChanged="VmChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="仮想マシン一覧">
        <ListBox.ItemTemplate><DataTemplate><Grid Margin="0,3" ToolTip="{Binding File}"><Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons" FontSize="19" VerticalAlignment="Center"/><StackPanel Grid.Column="1"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Text="macOS · Reims" FontSize="11" Style="{StaticResource MutedText}" Margin="0,3,0,0"/></StackPanel></Grid></DataTemplate></ListBox.ItemTemplate>
       </ListBox>
       <TextBlock x:Name="LibraryEmpty" Text="「新規」または「開く」から追加" Style="{StaticResource MutedText}" FontSize="12" Margin="10,14" IsHitTestVisible="False"/>
@@ -35,17 +38,18 @@
       </Button>
      </StackPanel>
      <StackPanel Grid.Row="3">
-      <Button Content="保存済みの VM を開く…" Click="OpenVm" HorizontalContentAlignment="Left" Margin="0,0,0,8" ToolTip="Ctrl+O"/>
-      <Expander Header="エンジン設定"><StackPanel Margin="0,10,0,0"><TextBlock x:Name="EngineSummary" Text="未設定" Style="{StaticResource MutedText}"/><TextBox x:Name="Root" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="62" VerticalScrollBarVisibility="Auto" Margin="0,6,0,8" AutomationProperties.Name="エンジンの保存先"/><Button Content="エンジンをセットアップ…" Click="SetupEngine" Margin="0,0,0,6"/><Button Content="既存のエンジンを選択…" Click="BrowseRoot" Margin="0"/></StackPanel></Expander>
+      <Button Content="VM を開く…" Click="OpenVm" HorizontalContentAlignment="Left" Margin="0,0,0,8" ToolTip="Ctrl+O"/>
+      <Expander x:Name="EngineSettingsExpander" Header="エンジン設定"><StackPanel Margin="0,10,0,0"><TextBlock x:Name="EngineSummary" Text="未設定" Style="{StaticResource MutedText}"/><TextBox x:Name="Root" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="62" VerticalScrollBarVisibility="Auto" Margin="0,6,0,8" AutomationProperties.Name="エンジンの保存先"/><Button Content="エンジンをセットアップ…" Click="SetupEngine" Margin="0,0,0,6"/><Button x:Name="SelectExistingEngineButton" Content="既存のエンジンを選択…" Click="BrowseRoot" Margin="0"/></StackPanel></Expander>
      </StackPanel>
     </Grid>
+    </ScrollViewer>
    </Border>
    <Grid Grid.Column="1" Margin="24,20,24,12">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel Margin="0,0,0,16">
      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <StackPanel><TextBlock x:Name="VmTitle" Text="仮想マシン" FontSize="26" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/><TextBlock x:Name="VmSummary" Text="Windows で macOS を管理するワークスペース" Style="{StaticResource MutedText}" Margin="0,6,0,0"/></StackPanel>
-      <Border Grid.Column="1" Background="{DynamicResource CardSurface}" BorderBrush="{DynamicResource SubtleBorder}" BorderThickness="1" CornerRadius="12" Padding="12,6" VerticalAlignment="Top" Margin="16,4,0,0"><TextBlock x:Name="State" Text="未選択" FontSize="12" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/></Border>
+      <Border Grid.Column="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="12,6" VerticalAlignment="Top" Margin="16,4,0,0"><TextBlock x:Name="State" Text="未選択" FontSize="12" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/></Border>
      </Grid>
      <TextBlock x:Name="StatusDetail" Style="{StaticResource MutedText}" Margin="0,6,0,0" MaxHeight="54" TextTrimming="CharacterEllipsis"/>
      <Grid Margin="0,16,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -70,7 +74,7 @@
     </ScrollViewer>
     <Grid Grid.Row="2" x:Name="WorkspaceContent"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
      <TextBlock x:Name="WorkspaceTitle" Text="コンソール" Style="{StaticResource Eyebrow}" Margin="0,0,0,12"/>
-     <Border Grid.Row="1" Background="{DynamicResource CardSurface}" BorderBrush="{DynamicResource SubtleBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+     <Border x:Name="WorkspaceSurface" Grid.Row="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
       <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0" SelectionChanged="TabChanged">
        <TabControl.Template><ControlTemplate TargetType="TabControl"><ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" KeyboardNavigation.TabNavigation="Local"/></ControlTemplate></TabControl.Template>
 <TabItem xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ReimsManager" Header="コンソール"><Grid Margin="0"><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -81,10 +85,10 @@
       </Border>
       <Grid Grid.Row="1" Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
        <TextBlock Text="入力の解放: Ctrl + Alt + Win" Style="{StaticResource MutedText}" VerticalAlignment="Center"/>
-       <Button Grid.Column="1" Content="別ウィンドウで開く" Click="PopOutConsole" Margin="0"/>
+       <Button Grid.Column="1" Content="別ウィンドウで開く" Click="PopOutConsole" Tag="Console" Margin="0"/>
       </Grid>
      </Grid></TabItem>
-     
+
 <TabItem xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ReimsManager" Header="設定"><Grid Margin="0"><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="164"/><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <ListBox ItemContainerStyle="{StaticResource NavigationItem}" x:Name="Devices" SelectionChanged="DeviceChanged" BorderThickness="0" Background="Transparent">
        <ListBoxItem>メモリ</ListBoxItem><ListBoxItem>プロセッサ</ListBoxItem><ListBoxItem>ハードディスク</ListBoxItem><ListBoxItem>CD/DVD・ISO</ListBoxItem><ListBoxItem>ネットワーク</ListBoxItem><ListBoxItem>USB デバイス</ListBoxItem><ListBoxItem>マイク・スピーカー</ListBoxItem><ListBoxItem>ディスプレイ</ListBoxItem>
@@ -102,15 +106,15 @@
       </Grid></ScrollViewer>
       <DockPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,18,0,0"><Button Content="設定を保存" DockPanel.Dock="Right" Click="SaveHardware" Style="{StaticResource PrimaryButton}" x:Name="SaveHardwareButton" Tag="SetHardware"/><Button Content="変更を取り消す" DockPanel.Dock="Right" Click="ReloadHardware" x:Name="ReloadHardwareButton"/><TextBlock Text="変更は VM の完全終了後に保存できます。" Style="{StaticResource MutedText}" VerticalAlignment="Center" x:Name="SettingsHint"/></DockPanel>
      </Grid></TabItem>
-     
+
 <TabItem xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ReimsManager" Header="共有"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,24,24,28" MaxWidth="680" HorizontalAlignment="Left">
       <TextBlock Text="クリップボード" Style="{StaticResource PageHeading}"/><TextBlock Text="Windows と macOS の間でテキストをコピー＆ペーストできます。" Style="{StaticResource MutedText}"/>
       <CheckBox x:Name="ClipboardSharing" Content="テキストを自動で共有する" Checked="ClipboardChanged" Unchecked="ClipboardChanged" Margin="0,24,0,12"/>
       <TextBlock Text="このアプリの起動中、選択した VM と共有します。画像・ファイルは対象外です。" Style="{StaticResource MutedText}"/>
-      <WrapPanel Margin="0,24,0,0"><Button Content="Windows → macOS" Click="CopyToGuest"/><Button Content="macOS → Windows" Click="CopyFromGuest"/></WrapPanel><TextBlock x:Name="ClipboardStatus" Text="自動共有はオフです。" Style="{StaticResource MutedText}" Margin="0,12,0,0"/>
+      <WrapPanel Margin="0,24,0,0"><Button Content="Windows → macOS" Click="CopyToGuest" Tag="Clipboard"/><Button Content="macOS → Windows" Click="CopyFromGuest" Tag="Clipboard"/></WrapPanel><TextBlock x:Name="ClipboardStatus" Text="自動共有はオフです。" Style="{StaticResource MutedText}" Margin="0,12,0,0"/>
       <TextBlock Text="接続について" Style="{StaticResource SectionHeading}"/><TextBlock Text="共有には SSH のペアリングが必要です。コピー内容をファイルやログには保存しません。" Style="{StaticResource MutedText}"/>
      <Button Content="SSH ペアリングを設定" Tag="6" Click="NavigatePage" HorizontalAlignment="Left" Margin="0,20,0,0"/></StackPanel></ScrollViewer></TabItem>
-     
+
 <TabItem xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ReimsManager" Header="OpenCore"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,24,24,28" MaxWidth="680" HorizontalAlignment="Stretch">
       <TextBlock Text="Mac の識別情報" Style="{StaticResource PageHeading}"/><TextBlock Text="Apple Account にログイン済みの場合、識別情報を変更すると再認証が必要になることがあります。" Style="{StaticResource MutedText}"/>
       <Grid Margin="0,20,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -121,31 +125,31 @@
       <TextBlock Text="Apple Account" Style="{StaticResource SectionHeading}"/><TextBlock Text="Tahoe 26.4 のサインイン互換設定を適用・解除できます。操作前に VM を完全終了してください。" Style="{StaticResource MutedText}"/><WrapPanel Margin="0,16,0,0"><Button Content="互換設定を適用" Tag="EnableAppleAccount" Click="ActionClick"/><Button Content="互換設定を解除" Tag="DisableAppleAccount" Click="ActionClick"/></WrapPanel>
       <TextBlock Text="休止状態は使用しないでください。macOS 更新後は対応確認が必要です。" Style="{StaticResource MutedText}"/><Button Content="macOS の更新検出を修復" Tag="PrepareUpdates" Click="ActionClick" HorizontalAlignment="Left" Margin="0,18,0,0"/>
      </StackPanel></ScrollViewer></TabItem>
-     
+
 <TabItem xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ReimsManager" Header="スナップショット"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,24,24,28" MaxWidth="680" HorizontalAlignment="Stretch">
       <TextBlock Text="状態を保存・復元" Style="{StaticResource PageHeading}"/><TextBlock Text="VM を完全終了してから保存します。復元しても現在のディスクは保持されます。" Style="{StaticResource MutedText}"/><TextBlock Text="保存する名前" Style="{StaticResource FieldLabel}"/><DockPanel><Button Content="保存" DockPanel.Dock="Right" Click="SaveSnapshot" Style="{StaticResource PrimaryButton}" Tag="SnapshotCreate"/><TextBox x:Name="SnapshotName"/></DockPanel><TextBlock Text="保存済みの状態" Style="{StaticResource FieldLabel}"/><DockPanel><Button Content="復元…" DockPanel.Dock="Right" Click="RestoreSnapshot" Tag="SnapshotRestore"/><ComboBox x:Name="Snapshots"/></DockPanel>
      </StackPanel></ScrollViewer></TabItem>
-     
+
 <TabItem xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ReimsManager" Header="セットアップ"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,24,24,28" MaxWidth="680" HorizontalAlignment="Stretch">
       <TextBlock Text="macOS をインストール" Style="{StaticResource PageHeading}"/><TextBlock Text="1  インストーラーを選択" Style="{StaticResource SectionHeading}"/><DockPanel><Button Content="ISO を選択…" DockPanel.Dock="Right" Click="BrowseIso"/><TextBox x:Name="Iso" MinWidth="120" VerticalContentAlignment="Center"/></DockPanel><TextBlock Text="2  ディスクを準備" Style="{StaticResource SectionHeading}"/><TextBlock Text="新規ディスクの容量 (GiB)" Margin="0,0,0,8"/><TextBox x:Name="NewDiskSize" Text="128" Width="160" HorizontalAlignment="Left"/><TextBlock Text="3  作成後の動作" Style="{StaticResource SectionHeading}"/><CheckBox x:Name="StartAfterSetup" IsChecked="True" Content="作成後、インストーラーを起動する" Margin="0,0,0,12"/><CheckBox x:Name="ConnectIso" Content="インストーラーを接続して起動" Margin="0,0,0,12"/><TextBlock Text="Disk Utility で仮想ディスクを APFS に初期化し、macOS をインストールします。初回設定後、REIMSTOOLS の setup.command を実行してください。" Style="{StaticResource MutedText}"/>
       <Button Content="仮想マシンを作成" Click="Setup" HorizontalAlignment="Left" Margin="0,24,0,8" Style="{StaticResource PrimaryButton}" Tag="Setup"/>
       <Expander Header="エンジンの準備" Margin="0,24,0,0"><WrapPanel Margin="0,12,0,0"><Button Content="WHPX を有効化…" Click="EnableWhpx"/></WrapPanel></Expander>
      </StackPanel></ScrollViewer></TabItem>
-     
+
 <TabItem xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ReimsManager" Header="接続"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,24,24,28" MaxWidth="680" HorizontalAlignment="Stretch">
       <TextBlock Text="macOS とペアリング" Style="{StaticResource PageHeading}"/><TextBlock Text="Finder の REIMSTOOLS から setup.command を開き、表示されたユーザー名と指紋を入力します。" Style="{StaticResource MutedText}"/><TextBlock Text="macOS ユーザー名" Style="{StaticResource FieldLabel}"/><TextBox x:Name="GuestUser"/><TextBlock Text="SHA256 指紋" Style="{StaticResource FieldLabel}"/><TextBox x:Name="Fingerprint"/><Button Content="指紋を照合して接続" Click="Pair" HorizontalAlignment="Left" Margin="0,20,0,16" Style="{StaticResource PrimaryButton}" Tag="Pair"/><TextBlock Text="macOS のパスワードは保存しません。SSH 鍵はこの VM のフォルダーに保持します。" Style="{StaticResource MutedText}"/>
      </StackPanel></ScrollViewer></TabItem>
-     
+
 <TabItem xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ReimsManager" Header="ブリッジ"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,24,24,28" MaxWidth="680" HorizontalAlignment="Stretch">
       <TextBlock Text="ブリッジ接続を準備" Style="{StaticResource PageHeading}"/><TextBlock Text="TAP-Windows6 と物理アダプターを接続します。通常のインターネット利用には NAT を使用できます。" Style="{StaticResource MutedText}"/><WrapPanel Margin="0,20,0,0"><Button Content="TAP をダウンロード" Click="TapDownload"/><Button Content="署名済み TAP を導入…" Click="InstallTap"/></WrapPanel><TextBlock Text="TAP アダプター" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="BridgeTap"/><TextBlock Text="物理アダプター" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="Physical"/><Button Content="ブリッジを作成…" Click="CreateBridge" HorizontalAlignment="Left" Margin="0,20,0,12"/><TextBlock Text="Windows の管理者権限が必要です。作成時はネットワーク接続が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>
      </StackPanel></ScrollViewer></TabItem>
-    
+
       </TabControl>
      </Border>
     </Grid>
     <Expander x:Name="OperationLog" Header="操作ログ" Grid.Row="3" Margin="0,12,0,0"><DockPanel Margin="0,8,0,0"><StackPanel DockPanel.Dock="Right" Margin="12,0,0,0"><Button Content="診断ログを保存" Tag="CollectLogs" Click="ActionClick" Margin="0,0,0,8"/><Button Content="表示をクリア" Click="ClearLog" Margin="0"/></StackPanel><TextBox x:Name="Log" Height="120" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" FontFamily="Cascadia Mono, Consolas" FontSize="12" AutomationProperties.Name="操作ログ"/></DockPanel></Expander>
    </Grid>
   </Grid>
-  <Border Grid.Row="2" BorderBrush="{DynamicResource SubtleBorder}" BorderThickness="0,1,0,0" Padding="18,8"><DockPanel><Button x:Name="RevealButton" Content="保存先を開く" Click="RevealVm" DockPanel.Dock="Right" Padding="10,2" Margin="12,0,0,0"/><TextBlock x:Name="VmLocation" Text="VM ファイルを開くか、新規作成してください。" Style="{StaticResource MutedText}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" VerticalAlignment="Center"/></DockPanel></Border>
+  <Border Grid.Row="2" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="18,8"><DockPanel><Button x:Name="RevealButton" Content="保存先を開く" Click="RevealVm" DockPanel.Dock="Right" Padding="10,2" Margin="12,0,0,0"/><TextBlock x:Name="VmLocation" Text="VM ファイルを開くか、新規作成してください。" Style="{StaticResource MutedText}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" VerticalAlignment="Center"/></DockPanel></Border>
  </Grid>
 </Window>

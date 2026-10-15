@@ -16,7 +16,7 @@ internal static class VmActionPolicy
             "Status" or "CollectLogs" => true,
             "Setup" or "ImportDisk" => state == "unprepared",
             "Start" => state is "stopped" or "shutdown",
-            "PowerOff" or "Restart" or "Pause" or "Pair" or "ApplyResolution" or "ListUsb" or "AttachUsb" or "DetachUsb" => state == "running",
+            "Clipboard" or "PowerOff" or "Restart" or "Pause" or "Pair" or "ApplyResolution" or "ListUsb" or "AttachUsb" or "DetachUsb" => state == "running",
             "Resume" => state is "paused" or "prelaunch" or "suspended",
             "Exit" => state is "running" or "shutdown",
             "ForceExit" => state is "running" or "paused" or "prelaunch" or "suspended" or "shutdown" or "io-error" or "internal-error" or "guest-panicked" or "watchdog",
