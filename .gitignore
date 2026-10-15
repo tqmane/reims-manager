@@ -1,0 +1,15 @@
+bin/
+obj/
+build/
+artifacts/
+.work/
+.vs/
+*.user
+*.qcow2
+*.vmdk
+*.iso
+*.img
+*.fd
+*.pml
+*.reimsvm
+__pycache__/

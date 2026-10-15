@@ -1,0 +1,34 @@
+<Application x:Class="ReimsManager.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" ThemeMode="System">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="pack://application:,,,/PresentationFramework.Fluent;component/Themes/Fluent.xaml"/>
+      </ResourceDictionary.MergedDictionaries>
+      <SolidColorBrush x:Key="SelectionBackground" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" Opacity="0.14"/>
+      <SolidColorBrush x:Key="ItemHoverBackground" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" Opacity="0.12"/>
+      <Style x:Key="NavigationItem" TargetType="ListBoxItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="14,10"/><Setter Property="Margin" Value="0,2"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
+          <Grid><Border x:Name="Surface" Background="Transparent" CornerRadius="6" BorderThickness="1" BorderBrush="Transparent"/>
+            <Border x:Name="Accent" Width="3" HorizontalAlignment="Left" Margin="0,10" CornerRadius="2" Background="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" Visibility="Collapsed"/>
+            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource ItemHoverBackground}"/></Trigger>
+            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource SelectionBackground}"/><Setter TargetName="Accent" Property="Visibility" Value="Visible"/></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+      </Style>
+      <Style TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="Padding" Value="16,8"/><Setter Property="Margin" Value="0,0,8,8"/></Style>
+      <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
+      <Style x:Key="MutedText" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Opacity" Value="0.72"/></Style>
+      <Style x:Key="PageHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="23"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,10"/></Style>
+      <Style x:Key="SectionHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="17"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,28,0,12"/></Style>
+      <Style x:Key="FieldLabel" TargetType="TextBlock"><Setter Property="Margin" Value="0,22,0,8"/></Style>
+      <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="Padding" Value="18,9"/><Setter Property="Margin" Value="0,0,8,8"/><Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/><Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/></Style>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

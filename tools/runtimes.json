@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "runtimes": [
+    {
+      "name": "pwsh",
+      "file": "PowerShell-7.6.7-win-x64.zip",
+      "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.7/PowerShell-7.6.7-win-x64.zip",
+      "sha256": "d2f952ebdbf24386cb8923553aa58e41a846db35a6155ea04c58142a4b16dbb7"
+    },
+    {
+      "name": "python",
+      "file": "python-3.14.8-embed-amd64.zip",
+      "url": "https://www.python.org/ftp/python/3.14.8/python-3.14.8-embed-amd64.zip",
+      "sha256": "a93abe456ab01bd96d7a085b3cdb6566b3063f4241360d114142fbdb07f0a310"
+    }
+  ]
+}

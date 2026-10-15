@@ -1,0 +1,28 @@
+name: Windows build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  manager:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '10.0.x'
+      - name: Fetch pinned runtime archives
+        shell: pwsh
+        run: ./tools/fetch-runtimes.ps1
+      - name: Build manager and run native self-checks
+        shell: pwsh
+        run: ./tools/build.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ReimsManager-win-x64
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
