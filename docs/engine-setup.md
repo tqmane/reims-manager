@@ -8,8 +8,13 @@ PowerShell installation is required by the delivered application.
 Setup looks up the engine release paired with this manager in
 `tqmane/reims-manager`. If the first engine release has not been published,
 download the ZIP inside the **Windows engine package** Actions artifact and
-choose **Use downloaded engine ZIP**. No checksum entry is required. Keep
-the accompanying `.sha256` beside the ZIP if supplied; setup reads it itself.
+choose **Use downloaded engine ZIP**. The corresponding `.zip.sha256` file
+from that same release or CI artifact must be beside the ZIP. No checksum
+entry is required in the app; setup reads the required sidecar automatically.
+CLI callers may instead supply `-Sha256 <expected-release-digest>`.
+Missing, malformed, mismatched or wrong-filename digests fail before ZIP
+extraction or native tool execution. The ZIP stays read-locked from the
+digest check through extraction, preventing replacement during that step.
 Private repository artifacts must be downloaded using an authenticated
 browser. The app never asks for or stores a GitHub token.
 
@@ -54,7 +59,9 @@ duplicates, links, excessive extraction size, unknown source revisions and
 missing/modified files are rejected before any native executable runs.
 Native probes run with only Windows system directories on PATH. Setup
 checks for WHPX **support in the executable**, not host hypervisor readiness;
-it never boots a VM. Failed setup removes only its own staging directory.
+it never boots a VM. A native probe exceeding its 30-second deadline has
+only its owned process tree terminated, with a bounded wait before disposal.
+Failed setup removes only its own staging directory.
 Existing destination folders are never replaced. Retrying uses a new one.
 Windows may briefly keep an executable image locked after a probe exits;
 the final directory rename retries for at most five seconds before failing.
@@ -91,6 +98,13 @@ QEMU commits into a fresh private build tree, uses Rust 1.98.1 GNU, and runs
 the pinned Reims Windows build recipe. Its QEMU clone is independent; it
 never initializes a shared worktree's submodule. The option ROM and Reims
 DLL are built together, and all native dependencies are collected.
+
+At Reims `d8b9c2af`, `xtask/src/dist.rs::cmd_dist` passes the committed
+`crates/reims-vgpu-c/include/reims_vgpu.h` to `dist/windows.rs`, which copies
+it. This distribution build does not invoke external cbindgen. The separate
+`cargo xtask header` and `cargo xtask check` paths do require cbindgen 0.29.4;
+install it if those checks are added to the engine job. The ordinary Windows
+bootstrap installs it for development, but is not needed by this CI recipe.
 
 The workflow pins actions and project/firmware/OpenCore/7-Zip inputs. MSYS2
 is a rolling toolchain: installed package versions are recorded in the

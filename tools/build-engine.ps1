@@ -44,6 +44,7 @@ $env:REIMS_MSYS2_ROOT=[IO.Path]::GetFullPath($MsysRoot)
 & $rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal
 if ($LASTEXITCODE -ne 0) { throw 'Rust toolchain installation failed.' }
 Invoke-ReimsMsys 'pacman -Q > "$TEMP/../diagnostics/msys2-packages-current.txt"'
+# The pinned xtask dist copies the committed C header; only header/check needs external cbindgen.
 & "$source/scripts/windows/build.ps1" -Profile release
 if ($LASTEXITCODE -ne 0) { throw 'Native engine build failed.' }
 foreach ($tree in @(@($source,$pin.sources.reims.commit),@((Join-Path $source 'vendor/qemu'),$pin.sources.qemu.commit))) {

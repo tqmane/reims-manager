@@ -83,7 +83,21 @@ function Get-ReimsPinnedDownload([string]$Url, [string]$Sha256, [string]$Destina
     if ((Get-FileHash -LiteralPath $Destination).Hash -ne $Sha256) { throw 'Cached download SHA256 mismatch.' }
 }
 
-function Test-ReimsNativeEngine([string]$Directory) {
+function Get-ReimsArchiveDigest([string]$Archive, [string]$Sha256) {
+    if (!$Sha256) {
+        $sidecar = "$Archive.sha256"
+        if (!(Test-Path -LiteralPath $sidecar -PathType Leaf)) { throw 'An explicit SHA256 or the release/CI .sha256 sidecar is required before extracting a local engine ZIP.' }
+        if ((Get-Item -LiteralPath $sidecar).Length -gt 4096) { throw 'Invalid SHA256 sidecar: file is too large.' }
+        $text = [IO.File]::ReadAllText($sidecar)
+        $match = [regex]::Match($text.Trim(), '\A([a-fA-F0-9]{64})(?:[ \t]+\*?([^\r\n]+))?\z')
+        if (!$match.Success -or ($match.Groups[2].Success -and $match.Groups[2].Value -ne [IO.Path]::GetFileName($Archive))) { throw 'Invalid SHA256 sidecar: expected one digest for this ZIP.' }
+        $Sha256 = $match.Groups[1].Value
+    }
+    if ($Sha256 -cnotmatch '\A[a-fA-F0-9]{64}\z') { throw 'Invalid explicit SHA256: expected 64 hexadecimal characters.' }
+    return $Sha256
+}
+
+function Test-ReimsNativeEngine([string]$Directory, [ValidateRange(1,30000)][int]$TimeoutMilliseconds=30000) {
     $m = Read-ReimsEngine $Directory
     if (!$m) { throw 'Engine manifest not found.' }
     foreach ($probe in @(@('qemu','--version','QEMU'), @('qemu_img','--version','qemu-img'), @('qemu_io','--version','qemu-io'), @('seven_zip','i','7-Zip'), @('qemu','-accel','whpx'), @('qemu','-device','apple-gfx-pci'))) {
@@ -97,7 +111,12 @@ function Test-ReimsNativeEngine([string]$Directory) {
         $process=[Diagnostics.Process]::Start($info)
         try {
             $stdout=$process.StandardOutput.ReadToEndAsync(); $stderr=$process.StandardError.ReadToEndAsync()
-            if (!$process.WaitForExit(30000)) { throw "Native tool timed out: $($probe[0])" }
+            if (!$process.WaitForExit($TimeoutMilliseconds)) {
+                try { $process.Kill($true) }
+                catch [InvalidOperationException] { if (!$process.HasExited) { throw } }
+                if (!$process.WaitForExit(5000)) { throw "Timed-out native tool did not exit after termination: $($probe[0])" }
+                throw "Native tool timed out and its owned process tree was terminated: $($probe[0])"
+            }
             $output=$stdout.GetAwaiter().GetResult()+$stderr.GetAwaiter().GetResult()
             if ($process.ExitCode -ne 0 -or $output -notmatch [regex]::Escape($probe[2])) {
                 throw "Native engine check failed: $($probe[0]) ($($process.ExitCode)). Required DLLs or Reims/WHPX support may be missing. $output"

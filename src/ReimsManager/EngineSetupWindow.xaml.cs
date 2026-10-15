@@ -46,6 +46,7 @@ public partial class EngineSetupWindow : Window
             foreach (string arg in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",script,"-Destination",destination}) info.ArgumentList.Add(arg);
             if (Local.IsChecked==true) {
                 if (!File.Exists(Archive.Text)) throw new FileNotFoundException("エンジン ZIP を選択してください。");
+                if (!File.Exists(Archive.Text+".sha256")) throw new FileNotFoundException("配布元の ZIP と同じ場所に「"+Path.GetFileName(Archive.Text)+".sha256」を保存してください。");
                 info.ArgumentList.Add("-Archive"); info.ArgumentList.Add(Archive.Text);
             }
             Status.Text="準備しています…";

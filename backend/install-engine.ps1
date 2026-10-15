@@ -3,6 +3,10 @@
 param([Parameter(Mandatory)][string]$Destination, [string]$Archive, [string]$Sha256)
 . "$PSScriptRoot/engine-package.ps1"
 $pin=Get-ReimsEngineLock
+if ($Archive) {
+    $Archive=[IO.Path]::GetFullPath($Archive)
+    $Sha256=Get-ReimsArchiveDigest $Archive $Sha256
+}
 $Destination=[IO.Path]::GetFullPath($Destination).TrimEnd('\','/')
 if (!$Destination -or $Destination -eq [IO.Path]::GetPathRoot($Destination).TrimEnd('\','/') -or (Test-Path -LiteralPath $Destination)) { throw 'Choose a new engine folder; existing files are never replaced.' }
 $parent=Split-Path $Destination
@@ -12,6 +16,7 @@ for ($ancestor=$parent; $ancestor; $ancestor=Split-Path $ancestor) {
 [void][IO.Directory]::CreateDirectory($parent)
 $work=Join-Path $parent ('.reims-install-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($work)
+$archiveLock=$null
 try {
     if (!$Archive) {
         Write-Output '配布済みエンジンを確認しています…'
@@ -28,11 +33,13 @@ try {
         Write-Output 'エンジンとネイティブ DLL をダウンロードしています…'
         Get-ReimsPinnedDownload $expected $Sha256 $Archive
     }
-    if (!$Sha256 -and (Test-Path -LiteralPath "$Archive.sha256")) { $Sha256=(Get-Content -Raw -LiteralPath "$Archive.sha256").Trim().Split(' ')[0] }
-    if ($Sha256 -and ($Sha256 -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash -LiteralPath $Archive).Hash -ne $Sha256)) { throw 'Engine archive is damaged; download it again.' }
+    # Keep the verified ZIP immutable until extraction finishes.
+    $archiveLock=[IO.File]::Open($Archive,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    if ((Get-FileHash -LiteralPath $Archive).Hash -ne $Sha256) { throw 'Engine archive SHA256 mismatch; download the ZIP and matching sidecar again.' }
     Write-Output 'ファイルとソースの固定版を検証しています…'
     $stage=Join-Path $work 'engine'
     Expand-ReimsPackage $Archive $stage
+    $archiveLock.Dispose(); $archiveLock=$null
     [void](Read-ReimsEngine $stage -VerifyFiles)
     Write-Output 'QEMU・WHPX・Reims・ディスクツールの起動を確認しています…'
     Test-ReimsNativeEngine $stage
@@ -47,6 +54,7 @@ try {
     }
     Write-Output "導入完了: $Destination"
 } finally {
+    if ($archiveLock) { $archiveLock.Dispose() }
     # Only this invocation's random sibling staging directory is removed.
     if ((Split-Path $work) -eq $parent -and (Split-Path $work -Leaf) -match '^\.reims-install-[a-f0-9]{32}$' -and (Test-Path -LiteralPath $work)) { Remove-Item -LiteralPath $work -Recurse -Force }
 }

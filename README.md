@@ -15,7 +15,8 @@ Reims graphics.
 Choose **Set up engine** and select a new directory. The matching package
 supplies QEMU, its native DLLs, official OpenCore, OVMF, the GPU ROM and ISO
 tools. Setup handles downloads and integrity checks without manual checksum
-entry. An already downloaded CI engine ZIP can also be selected.
+entry. An already downloaded CI engine ZIP can also be selected, with its
+matching `.zip.sha256` sidecar from the same release or CI artifact beside it.
 
 Alternatively choose an existing engine's `qemu-system-x86_64.exe`. A Reims checkout is detected
 from its parent folders; a packaged engine uses `reims-engine.json` at its

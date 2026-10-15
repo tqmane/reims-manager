@@ -3,9 +3,12 @@
 $test=Join-Path ([IO.Path]::GetFullPath("$PSScriptRoot/../..")) ('.work/engine-tests-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $test | Out-Null
 $script:checks=0
-function Reject([scriptblock]$Action,[string]$Description) {
+function Reject([scriptblock]$Action,[string]$Description,[string]$Pattern='') {
     $rejected=$false
-    try { & $Action | Out-Null } catch { $rejected=$true }
+    try { & $Action | Out-Null } catch {
+        if ($Pattern -and $_.Exception.Message -notmatch $Pattern) { throw }
+        $rejected=$true
+    }
     if (!$rejected) { throw "Accepted invalid input: $Description" }
     $script:checks++
 }
@@ -23,6 +26,49 @@ try {
     $stream=[IO.Compression.ZipFile]::Open($duplicate,[IO.Compression.ZipArchiveMode]::Create)
     try { [void]$stream.CreateEntry('FILE.txt'); [void]$stream.CreateEntry('file.txt') } finally { $stream.Dispose() }
     Reject { Expand-ReimsPackage $duplicate (Join-Path $test 'duplicate-output') } 'case-insensitive duplicate'
+    $stub=Join-Path $test 'guard-fixture'; New-Item -ItemType Directory -Path $stub | Out-Null
+    Copy-Item -LiteralPath "$PSScriptRoot/../install-engine.ps1" -Destination $stub
+    $helpers=[IO.Path]::GetFullPath("$PSScriptRoot/../engine-package.ps1").Replace("'","''")
+    $spies=@'
+function Expand-ReimsPackage {
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'extraction-marker'), 'called')
+    throw 'Extraction reached'
+}
+function Test-ReimsNativeEngine {
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'execution-marker'), 'called')
+    throw 'Native execution reached'
+}
+'@
+    ". '$helpers'`n$spies" | Set-Content -LiteralPath "$stub/engine-package.ps1" -Encoding utf8NoBOM
+    $digest=(Get-FileHash -LiteralPath $zip).Hash
+    $install="$stub/install-engine.ps1"; $target=Join-Path $test 'guard-destination'
+    Reject { & $install -Archive $zip -Destination $target } 'missing archive digest' 'SHA256.*required'
+    Reject { & $install -Archive $zip -Sha256 'bad' -Destination $target } 'invalid explicit digest' 'Invalid explicit SHA256'
+    Reject { & $install -Archive $zip -Sha256 ('0'*64) -Destination $target } 'mismatched explicit digest' 'SHA256 mismatch'
+    foreach ($sidecar in @('', 'malformed', "$digest  another.zip", "$digest  bad.zip`n$digest  bad.zip", ('x'*4097))) {
+        [IO.File]::WriteAllText("$zip.sha256",$sidecar)
+        Reject { & $install -Archive $zip -Destination $target } 'malformed sidecar' 'Invalid SHA256 sidecar'
+    }
+    ('0'*64)+'  bad.zip' | Set-Content -LiteralPath "$zip.sha256"
+    Reject { & $install -Archive $zip -Destination $target } 'mismatched sidecar' 'SHA256 mismatch'
+    if ((Test-Path "$stub/extraction-marker") -or (Test-Path "$stub/execution-marker") -or (Test-Path $target)) { throw 'Digest rejection occurred after extraction or execution.' }
+    Remove-Item -LiteralPath "$zip.sha256"
+    Reject { & $install -Archive $zip -Sha256 $digest -Destination $target } 'valid explicit digest reaches extraction' '^Extraction reached$'
+    if (!(Test-Path "$stub/extraction-marker")) { throw 'Valid explicit digest did not reach extraction.' }; Remove-Item "$stub/extraction-marker"
+    "$digest  bad.zip" | Set-Content -LiteralPath "$zip.sha256"
+    Reject { & $install -Archive $zip -Destination $target } 'valid sidecar reaches extraction' '^Extraction reached$'
+    if (!(Test-Path "$stub/extraction-marker") -or (Test-Path "$stub/execution-marker")) { throw 'Incorrect extraction/execution order.' }
+    # Reload real extraction/native functions after the guarded installer fixtures.
+    . "$PSScriptRoot/../engine-package.ps1"
+    $lockedZip=Join-Path $test 'locked.zip'
+    $stream=[IO.Compression.ZipFile]::Open($lockedZip,[IO.Compression.ZipArchiveMode]::Create)
+    try { [void]$stream.CreateEntry('fixture.txt') } finally { $stream.Dispose() }
+    $readLock=[IO.File]::Open($lockedZip,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        Reject { $writer=[IO.File]::OpenWrite($lockedZip); $writer.Dispose() } 'ZIP cannot be changed while verified'
+        Expand-ReimsPackage $lockedZip (Join-Path $test 'locked-output')
+        if (!(Test-Path "$test/locked-output/fixture.txt")) { throw 'Read lock prevented extraction.' }; $script:checks++
+    } finally { $readLock.Dispose() }
     $pin=Get-ReimsEngineLock
     # Fixture archive data is deliberately authored here, never taken from a guest.
     $fixture=Join-Path $test '日本語 engine with spaces'; New-Item -ItemType Directory -Path $fixture | Out-Null

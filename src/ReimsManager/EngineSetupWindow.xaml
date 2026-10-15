@@ -13,6 +13,7 @@
    <RadioButton x:Name="Online" Content="対応するリリースをダウンロード" IsChecked="True" Margin="0,0,0,10"/>
    <RadioButton x:Name="Local" Content="ダウンロード済みのエンジン ZIP を使用" Margin="0,0,0,8"/>
    <DockPanel Margin="24,0,0,0"><Button Content="ZIP を選択…" Click="BrowseArchive" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="Archive" IsReadOnly="True" AutomationProperties.Name="エンジン ZIP"/></DockPanel>
+   <TextBlock Text="配布元の ZIP と .zip.sha256 を同じ場所に保存してください。照合は自動で行います。" TextWrapping="Wrap" Margin="24,8,0,0" Opacity="0.7"/>
   </StackPanel>
   <Border Grid.Row="2" BorderThickness="1" CornerRadius="8" Padding="14" BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}">
    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
