@@ -73,9 +73,12 @@ public partial class MainWindow
             RequireInside(SelectExistingEngineButton, SidebarScroll, "Engine controls");
             SaveImage(Path.Combine(folder, "compact-engine-settings.png"));
             EngineSettingsExpander.IsExpanded = false; SidebarScroll.ScrollToTop();
+            // Native Fluent expanders animate; dispatcher-idle is not animation completion.
+            await Task.Delay(500); await ArrangeCheck();
             VmTitle.Text = string.Concat(Enumerable.Repeat("日本語の長い仮想マシン名・", 10));
             for (int i = 0; i < 50; i++) machines.Add(new VmEntry($"検証用 macOS {i:00}", Path.Combine(folder, $"fixture-{i}.reimsvm"), Path.Combine(folder, $"fixture-{i}.data")));
-            UpdateLibraryView(); await ArrangeCheck(); RequireManagementGeometry();
+            UpdateLibraryView(); await ArrangeCheck();
+            SaveImage(Path.Combine(folder, "long-name-library.png")); RequireManagementGeometry();
             RequireInside(State, VmHeader, "State with long VM name");
             RequireInside(VmTitle, VmHeader, "Long VM name");
             SaveImage(Path.Combine(folder, "long-name-library.png"));
@@ -125,7 +128,7 @@ public partial class MainWindow
         RequireInside(WorkspaceSurface, WorkstationLayout, "Workspace");
         RequireInside(AdvancedButton, WorkspaceNavSection, "Settings destination");
         if (AdvancedButton.ContextMenu is not null) throw new Exception("Settings categories still use a dropdown");
-        if (Library.ActualHeight < 80 || Library.ActualHeight > SidebarScroll.ActualHeight + 1) throw new Exception("Library viewport is not bounded");
+        if (Library.ActualHeight < 80 || Library.ActualHeight > SidebarScroll.ActualHeight + 1) throw new Exception($"Library viewport is not bounded: list={Library.ActualHeight:0.##}, sidebar={SidebarScroll.ActualHeight:0.##}, expanded={EngineSettingsExpander.IsExpanded}");
     }
 
     private void RequireSettingsGeometry()
