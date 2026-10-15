@@ -7,6 +7,8 @@ namespace ReimsManager;
 
 public partial class MainWindow
 {
+    // ThemeMode is already used by App.xaml. Opt in only for this isolated render fixture.
+#pragma warning disable WPF0001
     internal async Task CheckThemeRendering(string folder)
     {
         Application.Current.ThemeMode = ThemeMode.Dark;
@@ -20,6 +22,8 @@ public partial class MainWindow
         UpdateLayout(); SaveImage(Path.Combine(folder, "dark-console.png"));
         Application.Current.ThemeMode = ThemeMode.System;
     }
+
+#pragma warning restore WPF0001
 
     // Runs on the real STA WPF dispatcher. No QEMU, host settings or user data are touched.
     private void CheckWorkspaceBehavior()
@@ -44,7 +48,7 @@ public partial class MainWindow
         var second = new VmEntry("macOS - 日本語の長い名前で画面を確認するための検証用仮想マシン", Path.Combine(Path.GetDirectoryName(first.File)!, "second.reimsvm"), Path.Combine(Path.GetDirectoryName(first.File)!, "second.data"));
         machines.Add(second); UpdateLibraryView();
         Library.SelectedItem = second;
-        if (selectedEntry != first || Library.SelectedItem != first || !hardwareDirty)
+        if (selectedEntry != first || (Library.SelectedItem as VmEntry) != first || !hardwareDirty)
             throw new Exception("Changing machines discarded unsaved settings");
         hardwareDirty = false;
         long version = contextVersion;

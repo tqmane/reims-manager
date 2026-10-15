@@ -196,7 +196,7 @@ public partial class MainWindow
 
     private void ClearLog(object sender, RoutedEventArgs e) => Log.Clear();
 
-    private static IEnumerable<T> LogicalChildren<T>(DependencyObject root) where T : DependencyObject
+    private new static IEnumerable<T> LogicalChildren<T>(DependencyObject root) where T : DependencyObject
     {
         foreach (object child in LogicalTreeHelper.GetChildren(root)) {
             if (child is T match) yield return match;
