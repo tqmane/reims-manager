@@ -60,7 +60,7 @@ public partial class App : Application
                 if (File.Exists(fixture)) File.Delete(fixture);
                 var entry=VmLibrary.Create(fixture,Path.Combine(folder,"fixture.data"));
                 if (VmLibrary.Open(fixture)!=entry) throw new Exception("VM library roundtrip failed");
-                File.WriteAllText(Path.Combine(folder,"result.json"),JsonSerializer.Serialize(new {fluent_theme=true,argument_roundtrip=true,vm_library_roundtrip=true,pages_rendered=window.Tabs.Items.Count+window.Devices.Items.Count-1}));
+                File.WriteAllText(Path.Combine(folder,"result.json"),JsonSerializer.Serialize(new {fluent_theme=true,argument_roundtrip=true,vm_library_roundtrip=true,qmp_correlation=true,qmp_error_handling=true,pid_identity=true,settings_roundtrip=true,profile_containment=true,pages_rendered=window.Tabs.Items.Count+window.Devices.Items.Count-1}));
                 window.Close(); Shutdown(0); return;
             }
             window.Show();

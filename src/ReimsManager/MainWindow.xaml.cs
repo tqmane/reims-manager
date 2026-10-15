@@ -97,8 +97,9 @@ public partial class MainWindow : Window
         try {
             string requestedRoot=Path.GetFullPath(Root.Text);
             string requestedVm=VmDirectory;
+            bool loadDetails=full || !loadedHardware || latest.ValueKind!=JsonValueKind.Object;
             JsonElement response;
-            if (!full && latest.ValueKind == JsonValueKind.Object) {
+            if (!loadDetails) {
                 var live = await LiveVmStatus.Read(requestedVm);
                 var values = JsonNode.Parse(latest.GetRawText())!.AsObject();
                 values["state"] = live.State;
@@ -116,11 +117,11 @@ public partial class MainWindow : Window
             UpdateConsole();
             string raw=latest.GetProperty("state").GetString()!; currentState=raw; UpdatePowerControls();
             State.Text=(raw switch { "running"=>"実行中", "shutdown"=>"電源オフ", "paused"=>"一時停止", "stopped"=>"停止中", "unprepared"=>"セットアップ待ち", "prelaunch"=>"起動待ち", _=>raw });
-            if (!full) return;
+            if (!loadDetails) return;
             Fill(Snapshots,latest.GetProperty("snapshots").EnumerateArray().Select(x=>x.GetString()!));
             string[] taps=latest.GetProperty("taps").EnumerateArray().Select(x=>x.GetString()!).ToArray(); Fill(Tap,taps); Fill(BridgeTap,taps);
             Fill(Physical,latest.GetProperty("adapters").EnumerateArray().Where(x=>x.TryGetProperty("HardwareInterface",out var value) && value.ValueKind==JsonValueKind.True).Select(x=>x.GetProperty("Name").GetString()!));
-            if (!loadedHardware && latest.GetProperty("prepared").GetBoolean()) { LoadHardware(); loadedHardware=true; }
+            if (!loadedHardware) { if(latest.GetProperty("prepared").GetBoolean()) LoadHardware(); loadedHardware=true; }
         } catch (Exception error) { State.Text=error is OperationCanceledException ? "VM の管理接続から応答がありません。再試行できます。" : error.Message; }
         finally { refreshing=false; }
     }
@@ -233,7 +234,7 @@ public partial class MainWindow : Window
         if (Confirm($"TAP: {tap}\n物理: {physical}\nこの 2 つをブリッジ接続します。IP アドレスが変わり、通信が一時的に切れる場合があります。")) await Operate("CreateBridge",["-Adapter",tap,"-PhysicalAdapter",physical],true);
     }
     private async void Pair(object sender,RoutedEventArgs e) => await Operate("Pair",["-User",GuestUser.Text,"-Fingerprint",Fingerprint.Text]);
-    private async void GenerateIdentity(object sender,RoutedEventArgs e) { if (Confirm("シリアル・MLB・ROM を更新します。SystemUUID は保持します。")) await Operate("GenerateIdentity"); }
+    private async void GenerateIdentity(object sender,RoutedEventArgs e) { if (Confirm("シリアル・MLB・ROM を更新します。SystemUUID は保持します。") && await Operate("GenerateIdentity")) await ReadIdentity(); }
     private async void EnableWhpx(object sender,RoutedEventArgs e) => await Operate("EnableWhpx",[],true);
     private bool Confirm(string text) => MessageBox.Show(this,text,"Reims Manager",MessageBoxButton.OKCancel)==MessageBoxResult.OK;
 

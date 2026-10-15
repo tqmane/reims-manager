@@ -7,7 +7,7 @@ $sourceCommit=(& git -C $repoRoot rev-parse --verify HEAD) -join ''
 if($LASTEXITCODE -ne 0){throw 'Commit the source before creating a release package.'}
 $sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend tools .github README.md NOTICE.md LICENSES) -join ''
 if($LASTEXITCODE -ne 0 -or $sourceChanges){throw 'Review and commit source changes before packaging.'}
-$work=Join-Path $repoRoot '.work' 
+$work=Join-Path $repoRoot '.work'
 $output=Join-Path $work ('package-'+[guid]::NewGuid().ToString('N'))
 $artifacts=Join-Path $repoRoot 'artifacts'
 $checks=Join-Path $work ('checks-'+[guid]::NewGuid().ToString('N'))
@@ -16,6 +16,7 @@ $env:TEMP=Join-Path $work 'tmp';$env:TMP=$env:TEMP
 $env:DOTNET_CLI_HOME=Join-Path $work 'dotnet-home'
 $env:NUGET_PACKAGES=Join-Path $work 'nuget'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT='1'
+$env:DOTNET_GENERATE_ASPNET_CERTIFICATE='false'
 $env:MSBUILDDISABLENODEREUSE='1'
 & $Dotnet publish (Join-Path $repoRoot 'src/ReimsManager/ReimsManager.csproj') -c Release -r win-x64 --self-contained true -o $output -m:1 `
     "-p:BaseIntermediateOutputPath=$(Join-Path $work 'obj')/" "-p:BaseOutputPath=$(Join-Path $work 'bin')/" `
@@ -38,7 +39,7 @@ $finalCommit=(& git -C $repoRoot rev-parse HEAD) -join ''
 $sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend tools .github README.md NOTICE.md LICENSES) -join ''
 if($LASTEXITCODE -ne 0 -or $finalCommit -ne $sourceCommit -or $sourceChanges){throw 'Source changed during the package build.'}
 @{schema=1;revision=$sourceCommit;self_checks='passed';built_utc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content (Join-Path $output 'build-manifest.json') -Encoding utf8NoBOM
-$zip=Join-Path $artifacts 'ReimsManager-win-x64.zip' 
+$zip=Join-Path $artifacts 'ReimsManager-win-x64.zip'
 $partial=Join-Path $artifacts ([guid]::NewGuid().ToString('N')+'.zip')
 [IO.Compression.ZipFile]::CreateFromDirectory($output,$partial,[IO.Compression.CompressionLevel]::Optimal,$false)
 Move-Item -LiteralPath $partial -Destination $zip -Force
