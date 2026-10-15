@@ -34,6 +34,18 @@ public partial class MainWindow
         UpdateLayout(); SidebarScroll.ScrollToEnd();
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         UpdateLayout();
+        ConsolePlaceholder.ScrollToTop();
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        var icon = ConsoleSymbol.TransformToAncestor(ConsolePlaceholder).TransformBounds(new Rect(ConsoleSymbol.RenderSize));
+        if (icon.Top < -1 || icon.Bottom > ConsolePlaceholder.ActualHeight + 1)
+            throw new Exception("Compact console clips its leading content");
+        ConsolePlaceholder.ScrollToBottom();
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        var consoleButton = ConsoleConnectButton.TransformToAncestor(ConsolePlaceholder).TransformBounds(new Rect(ConsoleConnectButton.RenderSize));
+        if (consoleButton.Top < -1 || consoleButton.Bottom > ConsolePlaceholder.ActualHeight + 1)
+            throw new Exception("Compact console hides its connection action");
+        ConsolePlaceholder.ScrollToTop();
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         var bottomButton = SelectExistingEngineButton.TransformToAncestor(SidebarScroll)
             .TransformBounds(new Rect(SelectExistingEngineButton.RenderSize));
         if (bottomButton.Top < -1 || bottomButton.Bottom > SidebarScroll.ActualHeight + 1)
