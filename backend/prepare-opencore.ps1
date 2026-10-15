@@ -15,25 +15,19 @@ if ($GenerateIdentity -and !$Rebuild) { throw 'Use -GenerateIdentity with -Rebui
 if ($IdentityFile -and (!$Rebuild -or $GenerateIdentity)) { throw 'Use -IdentityFile with -Rebuild, without -GenerateIdentity.' }
 if ($AppleAccountCompatibility -ne 'Keep' -and !$Rebuild) { throw 'Use -AppleAccountCompatibility with -Rebuild.' }
 $downloads = Join-Path $ProjectRoot '.work/downloads'
-$releasePath = Join-Path $downloads "OpenCore-$Version-release.json"
-if (!(Test-Path -LiteralPath $releasePath)) {
-    $release = Invoke-RestMethod "https://api.github.com/repos/acidanthera/OpenCorePkg/releases/tags/$Version" -Headers @{ 'User-Agent' = 'reims-windows-setup' }
-    Write-ReimsJson $releasePath $release
-} else { $release = Get-Content -Raw -LiteralPath $releasePath | ConvertFrom-Json }
-$asset = $release.assets | Where-Object name -EQ "OpenCore-$Version-RELEASE.zip"
-if (!$asset -or $asset.digest -notmatch '^sha256:([a-f0-9]{64})$') { throw 'Official release has no SHA256 asset digest.' }
-$expectedHash = $Matches[1]
-$url = "https://github.com/acidanthera/OpenCorePkg/releases/download/$Version/OpenCore-$Version-RELEASE.zip"
-if ($asset.browser_download_url -ne $url) { throw 'Unexpected OpenCore asset URL.' }
-$archive = Join-Path $downloads $asset.name
-if (!(Test-Path -LiteralPath $archive)) {
-    Invoke-WebRequest $url -OutFile "$archive.partial"
-    if ((Get-FileHash -LiteralPath "$archive.partial" -Algorithm SHA256).Hash -ne $expectedHash) { throw 'OpenCore download digest mismatch.' }
-    Move-Item -LiteralPath "$archive.partial" -Destination $archive
+$pin = (Get-ReimsEngineLock).opencore
+if ($Version -ne $pin.version) { throw 'Use the OpenCore version qualified with this manager.' }
+$expectedHash = $pin.sha256; $url = $pin.url
+$archive = if ($script:ReimsEngine) { Get-ReimsEnginePath 'opencore_archive' '' } else { Join-Path $downloads $pin.file }
+Get-ReimsPinnedDownload $url $expectedHash $archive
+$package = Join-Path $downloads "OpenCore-$Version-$($expectedHash.Substring(0,12))"
+$validatedArchive = "$package.sha256"
+if (!(Test-Path -LiteralPath $validatedArchive)) {
+    if (Test-Path -LiteralPath $package) { throw 'Unverified OpenCore extraction already exists; use a new engine folder.' }
+    Expand-ReimsPackage $archive $package
+    $expectedHash | Set-Content -LiteralPath $validatedArchive -Encoding ascii
 }
-if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expectedHash) { throw 'Cached OpenCore digest mismatch.' }
-$package = Join-Path $downloads "OpenCore-$Version"
-if (!(Test-Path -LiteralPath (Join-Path $package 'Docs/Sample.plist'))) { Expand-Archive -LiteralPath $archive -DestinationPath $package -Force }
+if ((Get-Content -Raw -LiteralPath $validatedArchive).Trim() -ne $expectedHash) { throw 'OpenCore extraction belongs to a different release.' }
 $QemuImg = Get-ReimsTool 'qemu-img.exe' $QemuImg
 $python = Get-ReimsTool 'python.exe'
 $destination = Join-Path $VmRoot "firmware/opencore-$Version"
@@ -44,40 +38,7 @@ foreach ($relative in @('BOOT/BOOTx64.efi', 'OC/OpenCore.efi', 'OC/Drivers/OpenR
 }
 $plist = Join-Path $efiRoot 'EFI/OC/config.plist'
 if (!(Test-Path -LiteralPath $plist)) {
-    $script = @'
-import copy, pathlib, plistlib, sys, uuid
-source, target = map(pathlib.Path, sys.argv[1:])
-c = plistlib.loads(source.read_bytes())
-for section, keys in {'ACPI': ('Add','Delete','Patch'), 'Booter': ('MmioWhitelist','Patch'),
-                      'Kernel': ('Add','Block','Force','Patch'), 'Misc': ('Entries','Tools')}.items():
-    for key in keys:
-        c[section][key] = []
-c['DeviceProperties']['Add'] = {}
-c['DeviceProperties']['Delete'] = {}
-c['Booter']['Quirks'].update(EnableWriteUnprotector=False, RebuildAppleMemoryMap=True, SyncRuntimePermissions=True)
-c['Kernel']['Emulate']['DummyPowerManagement'] = True
-c['Kernel']['Quirks'].update(AppleXcpmExtraMsrs=True, DisableLinkeditJettison=False, ForceSecureBootScheme=False)
-c['Misc']['Boot'].update(HideAuxiliary=False, Timeout=0)
-c['Misc']['Debug'].update(AppleDebug=True, ApplePanic=True, DisplayLevel=0x80000042, Target=75)
-c['Misc']['Serial']['Init'] = True
-c['Misc']['Security'].update(ScanPolicy=0, SecureBootModel='x86legacy', DmgLoading='Signed', Vault='Optional')
-apple = '7C436110-AB2A-4BBB-A880-FE41995C9F82'
-c['NVRAM']['Add'][apple] = {'boot-args': '-v keepsyms=1 serial=3 debug=0x108', 'csr-active-config': bytes(4),
-                          'prev-lang:kbd': b'en:252', 'run-efi-updater': 'No'}
-c['NVRAM']['Delete'][apple] = ['boot-args']
-generic = c['PlatformInfo']['Generic']
-generic.update(SystemProductName='iMac20,1', SystemUUID=str(uuid.uuid4()).upper(),
-               ROM=b'\x02\x52\x45\x49\x4d\x53')
-driver = next(x for x in c['UEFI']['Drivers'] if x['Path'] == 'OpenRuntime.efi')
-hfs = copy.deepcopy(driver)
-hfs['Path'], hfs['Comment'] = 'OpenHfsPlus.efi', 'OpenCore HFS+ driver'
-partition = copy.deepcopy(driver)
-partition['Path'], partition['Comment'] = 'OpenPartitionDxe.efi', 'Apple partition map support'
-c['UEFI']['Drivers'] = [driver, partition, hfs]
-c['UEFI']['Output']['Resolution'] = '1920x1080'
-target.write_bytes(plistlib.dumps(c, sort_keys=False))
-'@
-    $script | & $python -X utf8 - (Join-Path $package 'Docs/Sample.plist') $plist
+    & $python -X utf8 "$PSScriptRoot/opencore/base.py" (Join-Path $package 'Docs/Sample.plist') $plist
     if ($LASTEXITCODE -ne 0) { throw 'OpenCore configuration generation failed.' }
 }
 if ($GenerateIdentity) {
@@ -154,26 +115,7 @@ if ($AppleAccountCompatibility -ne 'Keep') {
     $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-account-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
     Copy-Item -LiteralPath $plist -Destination $backup
     $candidate = "$backup.candidate"
-    $accountCompatibility = @'
-import pathlib, plistlib, sys
-source, destination, mode = sys.argv[1:]
-c = plistlib.loads(pathlib.Path(source).read_bytes())
-prefix = 'Reims Tahoe 25.4.0 '
-c['Kernel']['Patch'] = [p for p in c['Kernel']['Patch'] if not p.get('Comment', '').startswith(prefix)]
-if mode == 'Enable':
-    # Keep CPU virtualization for boot; exchange only the two userspace sysctl names.
-    pairs = [('compatibility counter', 'hibernatehidready\0hibernatecount\0', 'hibernatehidready\0hv_vmm_present\0'),
-             ('virtual-machine query', 'boot session UUID\0hv_vmm_present\0', 'boot session UUID\0hibernatecount\0')]
-    for label, find, replace in pairs:
-        assert len(find) == len(replace)
-        c['Kernel']['Patch'].append(dict(Arch='x86_64', Base='', Comment=prefix + label,
-            Count=1, Enabled=True, Find=find.encode(), Identifier='kernel', Limit=0, Mask=b'',
-            MinKernel='25.4.0', MaxKernel='25.4.0', Replace=replace.encode(), ReplaceMask=b'', Skip=0))
-elif mode != 'Disable':
-    raise ValueError('Unknown Apple Account compatibility mode')
-pathlib.Path(destination).write_bytes(plistlib.dumps(c, sort_keys=False))
-'@
-    $accountCompatibility | & $python -X utf8 - $plist $candidate $AppleAccountCompatibility
+    & $python -X utf8 "$PSScriptRoot/opencore/apple-account.py" $plist $candidate $AppleAccountCompatibility
     if ($LASTEXITCODE -ne 0) { throw 'Apple Account compatibility update failed; the original config is unchanged.' }
     Invoke-ReimsTool $validate @($candidate) | Out-Null
     Move-Item -LiteralPath $candidate -Destination $plist -Force
@@ -204,7 +146,7 @@ if ($Rebuild -or !(Test-Path -LiteralPath $image)) {
     Move-Item -LiteralPath "$image.partial" -Destination $image -Force
 }
 if (!$FirmwareDirectory) {
-    $candidates = @((Join-Path $MsysRoot 'ucrt64/share/qemu'), (Join-Path $MsysRoot 'mingw64/share/qemu'), (Join-Path $ProjectRoot 'build/qemu/pc-bios'))
+    $candidates = if ($script:ReimsEngine) { @(Get-ReimsEnginePath 'firmware' '') } else { @((Join-Path $MsysRoot 'ucrt64/share/qemu'), (Join-Path $MsysRoot 'mingw64/share/qemu'), (Join-Path $ProjectRoot 'build/qemu/pc-bios')) }
     $FirmwareDirectory = $candidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'edk2-x86_64-code.fd') } | Select-Object -First 1
 }
 if (!$FirmwareDirectory) { throw 'Pass -FirmwareDirectory from a native QEMU package with x86_64 OVMF code and variables.' }

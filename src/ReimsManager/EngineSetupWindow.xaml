@@ -1,0 +1,29 @@
+<Window x:Class="ReimsManager.EngineSetupWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Reims エンジンをセットアップ"
+ Width="680" Height="610" MinWidth="600" MinHeight="560" WindowStartupLocation="CenterOwner"
+ FontFamily="Segoe UI Variable, Yu Gothic UI" FontSize="14">
+ <Grid Background="{DynamicResource ApplicationBackgroundBrush}"><Grid Margin="28"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel><TextBlock Text="VM を動かす準備" FontSize="26" FontWeight="SemiBold" Margin="0,0,0,12"/>
+   <TextBlock Text="Reims 対応 QEMU、必要な DLL、OpenCore、OVMF、GPU ROM、ISO ツールをまとめて導入します。" TextWrapping="Wrap"/>
+  </StackPanel>
+  <StackPanel Grid.Row="1" Margin="0,24,0,16" x:Name="Inputs">
+   <TextBlock Text="エンジンの保存先" FontWeight="SemiBold" Margin="0,0,0,8"/>
+   <DockPanel><Button Content="参照…" Click="BrowseDestination" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="Destination" AutomationProperties.Name="エンジンの保存先"/></DockPanel>
+   <TextBlock Text="新しいフォルダーを指定してください。VM の保存先は個別に選べます。" TextWrapping="Wrap" Margin="0,8,0,16" Opacity="0.7"/>
+   <RadioButton x:Name="Online" Content="対応するリリースをダウンロード" IsChecked="True" Margin="0,0,0,10"/>
+   <RadioButton x:Name="Local" Content="ダウンロード済みのエンジン ZIP を使用" Margin="0,0,0,8"/>
+   <DockPanel Margin="24,0,0,0"><Button Content="ZIP を選択…" Click="BrowseArchive" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="Archive" IsReadOnly="True" AutomationProperties.Name="エンジン ZIP"/></DockPanel>
+  </StackPanel>
+  <Border Grid.Row="2" BorderThickness="1" CornerRadius="8" Padding="14" BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}">
+   <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <TextBlock x:Name="Status" Text="保存先を選んでセットアップを開始します。" TextWrapping="Wrap"/>
+    <ProgressBar x:Name="Progress" Grid.Row="1" Height="3" IsIndeterminate="True" Visibility="Collapsed" Margin="0,12,0,12"/>
+    <TextBox x:Name="Details" Grid.Row="2" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" BorderThickness="0" Margin="0,8,0,0" AutomationProperties.Name="セットアップの詳細"/>
+   </Grid>
+  </Border>
+  <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+   <Button x:Name="CloseButton" Content="閉じる" Click="CloseWindow" Margin="0,0,8,0" Padding="18,8"/>
+   <Button x:Name="InstallButton" Content="セットアップ" Click="Install" Padding="18,8"/>
+  </StackPanel>
+ </Grid></Grid>
+</Window>

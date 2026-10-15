@@ -97,11 +97,7 @@ try {
     Assert-Condition (!(Get-ReimsQemuArguments $config $testRoot -WithoutInstaller | Where-Object { $_ -like 'id=installer,*' })) 'Installer can be ejected at the next boot'
     Assert-Condition ((ConvertTo-ReimsQemuPath 'x:\comma,path\file') -eq 'x:/comma,,path/file') 'QEMU paths escape commas'
 
-    $ocAst = [scriptblock]::Create((Get-Content -Raw -LiteralPath (Join-Path $sourceScripts 'prepare-opencore.ps1'))).Ast
-    $accountPatch = $ocAst.Find({ param($node)
-        $node -is [Management.Automation.Language.StringConstantExpressionAst] -and
-        $node.Value.StartsWith('import pathlib, plistlib, sys')
-    }, $true).Value
+    $accountPatch = Get-Content -Raw -LiteralPath (Join-Path $sourceScripts 'opencore/apple-account.py')
     $patchTest = @'
 import pathlib, plistlib, sys
 script=sys.stdin.read()

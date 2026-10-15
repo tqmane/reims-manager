@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "id": "engine-d8b9c2af-7100064d-1",
+  "release_repository": "tqmane/reims-manager",
+  "asset": "ReimsEngine-win-x64.zip",
+  "sources": {
+    "reims": { "repository": "https://github.com/tqmane/reims-vgpu", "commit": "d8b9c2afb778d456069bf54cb4cd40e4cc77a0e7" },
+    "qemu": { "repository": "https://github.com/tqmane/qemu-reims-vgpu", "commit": "7100064d13b42bb1be16671fcf18435822b13c3c" },
+    "metal2vulkan": { "repository": "https://github.com/tqmane/metal2vulkan", "commit": "d41a1c2fb6aad7ef52bc9e0c8be8957b3e71c935" }
+  },
+  "opencore": {
+    "version": "1.0.8",
+    "file": "OpenCore-1.0.8-RELEASE.zip",
+    "url": "https://github.com/acidanthera/OpenCorePkg/releases/download/1.0.8/OpenCore-1.0.8-RELEASE.zip",
+    "sha256": "2011e8b7216ecb2645d97ea710df965947edd406846e92050b9bc4190be6d27b"
+  },
+  "firmware": {
+    "repository": "https://github.com/qemu/qemu",
+    "commit": "aeec49e8170de7846f476124602cf7acd400c3df",
+    "files": {
+      "edk2-x86_64-code.fd.bz2": "f4d7c29fccb5e1d4d851eaddc41a5c4feec7de96ca7ad9bbf96f4d09838ef973",
+      "edk2-i386-vars.fd.bz2": "83470f393b9a200838b2292a65ca5708a109005d65a6422f3fa23cb21c8179b9",
+      "edk2-licenses.txt": "1ddeaed2e7d2e9ecb960bdfc1b8ee45387aff70d056d985d145949af3951657c"
+    }
+  },
+  "seven_zip": {
+    "version": "26.04",
+    "file": "7z2604-x64.exe",
+    "url": "https://github.com/ip7z/7zip/releases/download/26.04/7z2604-x64.exe",
+    "sha256": "d54bf805f9f3704d1e8db2fa3498ae7ef2df0312b40b558e7c71c734430a665d"
+  }
+}

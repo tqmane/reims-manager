@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 $repoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $sourceCommit=(& git -C $repoRoot rev-parse --verify HEAD) -join ''
 if($LASTEXITCODE -ne 0){throw 'Commit the source before creating a release package.'}
-$sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend tools .github README.md NOTICE.md LICENSES) -join ''
+$sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend tools .github docs README.md NOTICE.md LICENSES) -join ''
 if($LASTEXITCODE -ne 0 -or $sourceChanges){throw 'Review and commit source changes before packaging.'}
 $work=Join-Path $repoRoot '.work'
 $output=Join-Path $work ('package-'+[guid]::NewGuid().ToString('N'))
@@ -33,10 +33,11 @@ foreach($file in Get-ChildItem (Join-Path $repoRoot 'backend') -Recurse -Filter 
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md'),(Join-Path $repoRoot 'NOTICE.md') -Destination $output
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSES') -Destination $output -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs') -Destination $output -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $checks 'result.json') -Destination (Join-Path $repoRoot 'artifacts/self-test.json') -Force
 @{publish=$output;checks=$checks} | ConvertTo-Json | Set-Content (Join-Path $work 'last-build.json') -Encoding utf8NoBOM
 $finalCommit=(& git -C $repoRoot rev-parse HEAD) -join ''
-$sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend tools .github README.md NOTICE.md LICENSES) -join ''
+$sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend tools .github docs README.md NOTICE.md LICENSES) -join ''
 if($LASTEXITCODE -ne 0 -or $finalCommit -ne $sourceCommit -or $sourceChanges){throw 'Source changed during the package build.'}
 @{schema=1;revision=$sourceCommit;self_checks='passed';built_utc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content (Join-Path $output 'build-manifest.json') -Encoding utf8NoBOM
 $zip=Join-Path $artifacts 'ReimsManager-win-x64.zip'

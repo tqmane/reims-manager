@@ -170,7 +170,7 @@ switch ($Action) {
             mac='52:54:00:'+(($random | ForEach-Object {$_.ToString('x2')}) -join ':');qmp_port=$ports[0];ssh_port=$ports[1]
             iso='';media_kind='cdrom';connect_installer=$false;base_disk=$base;active_disk=$active
             opencore=$oc.image;firmware_code=$oc.firmware_code;firmware_vars=$vars;audio='dsound';microphone=$false
-            rom=Join-Path $ProjectRoot '.work/target/dist-vulkan/share/reims-vgpu/ReimsVgpu.rom'
+            rom=Get-ReimsEnginePath 'rom' '.work/target/dist-vulkan/share/reims-vgpu/ReimsVgpu.rom'
         }
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         & "$PSScriptRoot/prepare-opencore.ps1" -GenerateIdentity -Rebuild | Out-Null

@@ -1,0 +1,118 @@
+# Portable Windows engine
+
+In Reims Manager choose **Set up engine**, choose a new directory on any
+writable drive, then start setup. A VM can live in a different directory.
+No developer checkout, MSYS2 installation, Rust, system Python or separate
+PowerShell installation is required by the delivered application.
+
+Setup looks up the engine release paired with this manager in
+`tqmane/reims-manager`. If the first engine release has not been published,
+download the ZIP inside the **Windows engine package** Actions artifact and
+choose **Use downloaded engine ZIP**. No checksum entry is required. Keep
+the accompanying `.sha256` beside the ZIP if supplied; setup reads it itself.
+Private repository artifacts must be downloaded using an authenticated
+browser. The app never asks for or stores a GitHub token.
+
+An unavailable release is reported as unavailable. The manager does not
+download generic QEMU as a substitute: it lacks the Reims device.
+
+## Components and source pins
+
+`backend/engine-lock.json` is the reviewed source of version pins. It selects
+Reims `d8b9c2af`, QEMU `7100064d` and metal2vulkan `d41a1c2f`, rather than
+following moving `windows-native-tahoe` branches. The latter runtime is the
+pin in Reims's Cargo manifest; later runtime development commits are not
+silently substituted. These pins preserve the currently qualified host
+implementation, including the guest bridge source at that Reims revision.
+
+The engine package contains:
+
+- `bin`: Reims QEMU, qemu-img/qemu-io, Reims's Vulkan library and their
+  recursively discovered native DLL dependencies; the Vulkan loader and
+  full 7-Zip command-line executable are included explicitly.
+- `share/qemu`: required x86 firmware/option ROM data and a matched OVMF
+  code/variables pair from official QEMU 11.0.3. These firmware files are
+  independent of the patched QEMU executable's revision.
+- `share/reims/ReimsVgpu.rom`: built from Reims's own firmware source.
+- `downloads`: the official OpenCore 1.0.8 RELEASE archive, including its
+  tools and licenses, fetched from acidanthera's release.
+- `licenses`: Reims/QEMU/native dependency licenses and MSYS2 package
+  versions. Native dependency sources are available from
+  <https://github.com/msys2/MINGW-packages> and <https://repo.msys2.org/sources/>;
+  QEMU sources from <https://github.com/tqmane/qemu-reims-vgpu>, Reims sources
+  from <https://github.com/tqmane/reims-vgpu>, and runtime sources from
+  <https://github.com/tqmane/metal2vulkan>. 7-Zip sources and license are at
+  <https://github.com/ip7z/7zip/releases/tag/26.04>.
+
+All manifest paths are relative to the engine directory. QEMU's `-L`,
+disk tools, OVMF templates, ISO inspection and GPU ROM resolve through that
+manifest. VM-local writable firmware and disks stay in the VM directory.
+Changing the engine never overwrites the VM's NVRAM or SMBIOS identity.
+
+Downloads and the file manifest are checked automatically. ZIP traversal,
+duplicates, links, excessive extraction size, unknown source revisions and
+missing/modified files are rejected before any native executable runs.
+Native probes run with only Windows system directories on PATH. Setup
+checks for WHPX **support in the executable**, not host hypervisor readiness;
+it never boots a VM. Failed setup removes only its own staging directory.
+Existing destination folders are never replaced. Retrying uses a new one.
+Windows may briefly keep an executable image locked after a probe exits;
+the final directory rename retries for at most five seconds before failing.
+
+## OpenCore binaries versus configuration patches
+
+OpenCore 1.0.8 is the official release checked for this implementation. Its
+EFI binaries are copied unchanged; this is not a custom OpenCore binary.
+The authored configuration changes are kept as executable source:
+
+- `backend/opencore/base.py`: derives a fresh VM configuration from the
+  official `Docs/Sample.plist`, with iMac20,1, firmware quirks and drivers.
+- `backend/opencore/apple-account.py`: the existing reversible Apple
+  Account kernel-string compatibility patch, limited to Darwin **25.4.0**.
+  It does not change SIP or blindly extend the OS version bounds.
+- `backend/prepare-opencore.ps1`: identity editing/generation, backup,
+  `ocvalidate`, and FAT16 EFI image creation. No personal identity is shipped.
+- `backend/prepare-update-compatibility.ps1`: existing pinned official Lilu
+  and RestrictEvents acquisition and idempotent update-detection settings.
+
+`ReimsMetalCompat` is a separate authored Lilu kernel plugin, not an OpenCore
+binary patch. Its complete source/build checks remain at the pinned Reims
+revision under `guest/metal-compat`. Existing VM configurations keep that
+plugin and its version bounds when rebuilt. The Windows engine job does
+**not** build or silently install this macOS-compiled guest plugin. A fresh
+VM therefore needs separately qualified guest bridge installation for the
+stock-browser WebGL fix. OS updates require testing the plugin against the
+new kernel before expanding its compatibility bounds.
+
+## Build and publication
+
+Run **Windows engine package** manually. It checks out the exact Reims and
+QEMU commits into a fresh private build tree, uses Rust 1.98.1 GNU, and runs
+the pinned Reims Windows build recipe. Its QEMU clone is independent; it
+never initializes a shared worktree's submodule. The option ROM and Reims
+DLL are built together, and all native dependencies are collected.
+
+The workflow pins actions and project/firmware/OpenCore/7-Zip inputs. MSYS2
+is a rolling toolchain: installed package versions are recorded in the
+artifact. This is a repeatable build recipe, **not a claim of bit-identical
+output across future MSYS2 updates**. CI must pass the package checks and
+clean-PATH native probes before an artifact is uploaded.
+
+For an equivalent local build, provide an MSYS2 UCRT64 installation with the
+packages listed in `engine.yml`, Rustup, Git and a build-time 7-Zip:
+
+```powershell
+./tools/build-engine.ps1 -MsysRoot '<your-msys2-directory>'
+```
+
+The output is under `artifacts/engine`. Select the workflow's **publish**
+option on `main` to create the pinned release after a successful build. It
+never overwrites an existing tag or asset. Normal manager PR CI only runs
+small offline fixtures and .NET self-checks; it does not build QEMU or boot
+macOS. Updating a pin requires a new package ID and compatibility validation.
+
+Windows 11 x64, enabled WHPX, and a compatible GPU driver exposing Vulkan
+remain host requirements. The Vulkan ICD belongs to the GPU vendor and is
+not copied from a developer machine. USB drivers and microphone permission
+remain explicit host setup steps. No Apple binaries, macOS installer, guest
+disk, serialized GPU data, credentials or personal SMBIOS values are shipped.

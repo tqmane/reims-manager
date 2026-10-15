@@ -150,11 +150,23 @@ public partial class MainWindow : Window
     internal void ConfigureEngine(string root, string? qemu = null)
     {
         root=Path.GetFullPath(root);
-        qemu=string.IsNullOrWhiteSpace(qemu) ? Path.Combine(root,"build/qemu/qemu-system-x86_64.exe") : Path.GetFullPath(qemu);
+        qemu=string.IsNullOrWhiteSpace(qemu) ? Path.Combine(root,File.Exists(Path.Combine(root,"reims-engine.json")) ? "bin/qemu-system-x86_64.exe" : "build/qemu/qemu-system-x86_64.exe") : Path.GetFullPath(qemu);
         if (!File.Exists(qemu)) throw new FileNotFoundException("Reims 対応 QEMU が見つかりません。エンジンのフォルダーを確認してください。");
         ConsoleView.Detach(); Root.Text=root; settings.EngineRoot=root; settings.QemuExecutable=qemu;
         if (!selfTest) settings.Save();
         loadedHardware=false; UpdatePowerControls();
+    }
+
+    private async void SetupEngine(object sender, RoutedEventArgs e)
+    {
+        if (busy) return;
+        busy=true; UpdatePowerControls();
+        try {
+            var dialog=new EngineSetupWindow { Owner=this };
+            if (dialog.ShowDialog()==true && dialog.InstalledDirectory is { } folder) ConfigureEngine(folder);
+        } catch (Exception error) { ErrorNotice.Text=error.Message; Feedback.Visibility=Visibility.Visible; }
+        finally { busy=false; UpdatePowerControls(); }
+        await RefreshState();
     }
 
     private void BrowseRoot(object sender,RoutedEventArgs e)
@@ -242,6 +254,13 @@ public partial class MainWindow : Window
     {
         if (!selfTest) throw new InvalidOperationException("Only the self-test renders fixtures.");
         UpdateLayout(); SaveImage(Path.Combine(folder,"library-empty.png"));
+        var engine=new EngineSetupWindow { Owner=this, Opacity=0, ShowInTaskbar=false };
+        engine.Destination.Text=Path.Combine(folder,"new engine");
+        engine.Show(); await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle); engine.UpdateLayout();
+        SaveImage(Path.Combine(folder,"engine-setup.png"),(FrameworkElement)engine.Content);
+        engine.Close();
+        foreach (string component in new[]{"install-engine.ps1","engine-lock.json","opencore/base.py","opencore/apple-account.py"})
+            if (!File.Exists(Path.Combine(AppContext.BaseDirectory,"scripts",component))) throw new Exception("Missing packaged setup component: "+component);
         ConfigureEngine(folder,Environment.ProcessPath!);
         machines.Add(new VmEntry("macOS Tahoe",Path.Combine(folder,"Tahoe.reimsvm"),Path.Combine(folder,"Tahoe.data")));
         Library.ItemsSource=machines; Library.SelectedIndex=0; State.Text="停止中";
@@ -262,9 +281,9 @@ public partial class MainWindow : Window
             } else SaveImage(Path.Combine(folder,$"manager-{tab}.png"));
         }
     }
-    private void SaveImage(string path)
+    private void SaveImage(string path, FrameworkElement? surface = null)
     {
-        var content=(FrameworkElement)Content;
+        var content=surface ?? (FrameworkElement)Content;
         var bitmap=new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth),(int)Math.Ceiling(content.ActualHeight),96,96,PixelFormats.Pbgra32);
         bitmap.Render(content); var png=new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
         using var output=File.Create(path); png.Save(output);

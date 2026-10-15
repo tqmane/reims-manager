@@ -11,6 +11,13 @@ param(
 )
 . "$PSScriptRoot/environment.ps1"
 . "$PSScriptRoot/usb.ps1"
+. "$PSScriptRoot/engine-package.ps1"
+$script:ReimsEngine = Read-ReimsEngine $ProjectRoot
+
+function Get-ReimsEnginePath([string]$Key, [string]$SourceFallback) {
+    if ($script:ReimsEngine) { return Join-ReimsPackagePath $ProjectRoot $script:ReimsEngine.paths[$Key] }
+    return Join-Path $ProjectRoot $SourceFallback
+}
 
 function Assert-ReimsArtifactPath([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path)
@@ -31,6 +38,8 @@ function Write-ReimsJson([string]$Path, $Value) {
 
 function Get-ReimsTool([string]$Name, [string]$ExplicitPath) {
     if ($ExplicitPath) { return (Get-Item -LiteralPath $ExplicitPath -ErrorAction Stop).FullName }
+    $keys = @{'qemu-system-x86_64.exe'='qemu'; 'qemu-img.exe'='qemu_img'; 'qemu-io.exe'='qemu_io'; '7z.exe'='seven_zip'}
+    if ($script:ReimsEngine -and $keys.ContainsKey($Name)) { return Join-ReimsPackagePath $ProjectRoot $script:ReimsEngine.paths[$keys[$Name]] }
     if ($env:REIMS_MANAGER_TOOLS_ROOT -and $Name -eq 'python.exe') {
         $python = Join-Path $env:REIMS_MANAGER_TOOLS_ROOT 'python/python.exe'
         if (Test-Path -LiteralPath $python -PathType Leaf) { return $python }
@@ -49,6 +58,7 @@ function Get-ReimsTool([string]$Name, [string]$ExplicitPath) {
 
 function Invoke-ReimsTool([string]$Program, [string[]]$Arguments) {
     & $Program @Arguments
+    if ($LASTEXITCODE -eq -1073741515) { throw "Native DLL dependency is missing for $Program. Reinstall the complete engine package." }
     if ($LASTEXITCODE -ne 0) { throw "$Program failed ($LASTEXITCODE): $($Arguments -join ' ')" }
 }
 
@@ -57,6 +67,7 @@ function Get-ReimsVmConfig {
     if (!(Test-Path -LiteralPath $path)) { throw 'Run prepare-vm.ps1 first.' }
     $config = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
     if ($config.schema -ne 1) { throw 'Unknown VM configuration schema.' }
+    if ($script:ReimsEngine) { $config.rom = Get-ReimsEnginePath 'rom' '' }
     foreach ($key in @('base_disk', 'active_disk', 'opencore', 'firmware_code', 'firmware_vars', 'rom')) {
         [void](Assert-ReimsArtifactPath $config.$key)
     }
@@ -178,7 +189,7 @@ function Get-ReimsQemuArguments($Config, [string]$RunDirectory, [switch]$Paused,
     }
     # macOS needs QEMU's measured TSC leaf; Hyper-V passthrough reported 6.4 GHz for a 3.187 GHz clock.
     $qemuArguments = @(
-        '-L', (ConvertTo-ReimsQemuPath (Join-Path $ProjectRoot 'vendor/qemu/pc-bios')),
+        '-L', (ConvertTo-ReimsQemuPath (Get-ReimsEnginePath 'firmware' 'vendor/qemu/pc-bios')),
         '-name', 'reims-windows', '-machine', 'q35', '-accel', $(if ($DiagnosticTcg) { 'tcg' } else { 'whpx,hyperv=off' }),
         '-cpu', $(if ($DiagnosticTcg) { 'max,vendor=GenuineIntel' } else { $Config.cpu }), '-smp', "$($Config.cpus),sockets=1,cores=$($Config.cpus),threads=1", '-m', "$($Config.memory_mib)M",
         '-global', 'ICH9-LPC.acpi-pci-hotplug-with-bridge-support=off',
@@ -226,8 +237,9 @@ function Get-ReimsQemuArguments($Config, [string]$RunDirectory, [switch]$Paused,
 
 if ($FunctionsOnly) { return }
 $config = Get-ReimsVmConfig
-if (!$Qemu) { $Qemu = Join-Path $ProjectRoot 'build/qemu/qemu-system-x86_64.exe' }
+if (!$Qemu) { $Qemu = Get-ReimsEnginePath 'qemu' 'build/qemu/qemu-system-x86_64.exe' }
 $Qemu = [IO.Path]::GetFullPath($Qemu)
+if ($script:ReimsEngine -and $Qemu -ne (Get-ReimsEnginePath 'qemu' '')) { throw 'Selected QEMU does not belong to the installed engine package.' }
 $run = Join-Path $VmRoot ("logs/" + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 $qemuArgs = Get-ReimsQemuArguments $config $run -Paused:$Paused -Headless:$Headless -WithoutInstaller:$WithoutInstaller -DiagnosticTcg:$DiagnosticTcg
 $runtime = Get-ReimsRuntime

@@ -9,13 +9,20 @@ machine library in one application.
 Download the Windows artifact from **Actions → Windows build**, extract the
 ZIP, and run `ReimsManager.exe`. Packages include .NET, PowerShell and Python;
 no separate installation of those runtimes is needed. Windows 11 x64 and a
-working Reims-enabled QEMU engine are required. Generic QEMU does not include
+Reims-enabled QEMU engine are required. Generic QEMU does not include
 Reims graphics.
 
-Choose the engine's `qemu-system-x86_64.exe` once. A Reims checkout is detected
+Choose **Set up engine** and select a new directory. The matching package
+supplies QEMU, its native DLLs, official OpenCore, OVMF, the GPU ROM and ISO
+tools. Setup handles downloads and integrity checks without manual checksum
+entry. An already downloaded CI engine ZIP can also be selected.
+
+Alternatively choose an existing engine's `qemu-system-x86_64.exe`. A Reims checkout is detected
 from its parent folders; a packaged engine uses `reims-engine.json` at its
-root. Engine binaries, firmware and the Reims ROM are separate components
-and are not built by this manager's CI.
+root. **Windows engine package** is a separate, manually triggered CI job;
+normal manager builds stay small. See [engine setup](docs/engine-setup.md)
+for pinned sources, the first artifact/publication step, and the distinction
+between official OpenCore binaries and authored configuration patches.
 
 - **New VM:** select its name/location, installation ISO and disk capacity.
   The installer can start immediately after creation.

@@ -17,6 +17,15 @@ jobs:
       - name: Fetch pinned runtime archives
         shell: pwsh
         run: ./tools/fetch-runtimes.ps1
+      - name: Check engine installation and dependency closure fixtures
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File ./backend/tests/engine-package.ps1
+          if ($LASTEXITCODE) { throw 'Engine fixtures failed.' }
+          python ./tools/test_package_engine.py
+          if ($LASTEXITCODE) { throw 'DLL closure fixtures failed.' }
+          python ./backend/tests/opencore-patches.py
+          if ($LASTEXITCODE) { throw 'OpenCore patch fixtures failed.' }
       - name: Build manager and run native self-checks
         shell: pwsh
         run: ./tools/build.ps1

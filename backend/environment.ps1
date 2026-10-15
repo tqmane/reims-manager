@@ -32,14 +32,17 @@ $env:CXX = Join-Path $MsysRoot 'ucrt64\bin\clang++.exe'
 $env:CMAKE_GENERATOR = 'Ninja'
 $env:RC = Join-Path $MsysRoot 'ucrt64\bin\llvm-windres.exe'
 $env:CMAKE_TOOLCHAIN_FILE = Join-Path $PSScriptRoot 'ucrt64.cmake'
-$env:PATH = (@(
+$env:PATH = if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'reims-engine.json')) {
+    # A portable engine must never pick up a developer's MSYS2 DLLs.
+    (Join-Path $ProjectRoot 'bin') + [IO.Path]::PathSeparator + "$env:SystemRoot/System32;$env:SystemRoot;$env:SystemRoot/System32/OpenSSH"
+} else { (@(
     (Join-Path $MsysRoot 'ucrt64\bin'),
     (Join-Path $env:CARGO_HOME 'bin'),
     (Join-Path $env:RUSTUP_HOME "toolchains\$env:RUSTUP_TOOLCHAIN\bin"),
     (Join-Path $env:ProgramFiles 'Git\cmd'),
     (Join-Path $MsysRoot 'usr\bin'),
     $env:PATH
-) -join [IO.Path]::PathSeparator)
+) -join [IO.Path]::PathSeparator) }
 
 function Invoke-ReimsMsys {
     param([Parameter(Mandatory)][string]$Command)
