@@ -30,7 +30,7 @@ public partial class MainWindow
             field.Unchecked += (_, _) => MarkHardwareDirty();
         }
         foreach (TextBox field in new[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityUuid, IdentityRom })
-            field.TextChanged += (_, _) => { if (!loadingIdentity && HasVm) identityDirty = true; };
+            field.TextChanged += (_, _) => { if (!loadingIdentity && HasVm) { identityDirty = CaptureIdentityDraft() != committedIdentity; UpdatePowerControls(); } };
         Snapshots.SelectionChanged += (_, _) => UpdatePowerControls();
         UsbDevices.SelectionChanged += (_, _) => UpdatePowerControls();
         Closing += ConfirmWindowClose;
@@ -82,7 +82,7 @@ public partial class MainWindow
     private void MarkHardwareDirty()
     {
         if (loadingHardware || !loadedHardware || !HasVm) return;
-        hardwareDirty = true;
+        hardwareDirty = CaptureHardwareDraft() != committedHardware;
         UpdatePowerControls();
     }
 
@@ -104,7 +104,7 @@ public partial class MainWindow
 
     private void ConfirmWindowClose(object? sender, CancelEventArgs e)
     {
-        if (busy) { ShowError("処理中は閉じられません。ディスクへの書き込みが完了してから閉じてください。"); e.Cancel = true; return; }
+        if (IsUiBusy) { ShowError("処理中は閉じられません。ディスクへの書き込みが完了してから閉じてください。"); e.Cancel = true; return; }
         if (!selfTest && !DiscardPendingChanges()) { e.Cancel = true; return; }
         closing = true;
         contextVersion++;
@@ -124,6 +124,8 @@ public partial class MainWindow
         InvalidateReadRequests();
         currentState = "unknown"; latest = default; loadedHardware = false;
         hardwareDirty = identityDirty = false;
+        committedHardware = null; committedIdentity = null;
+        Tabs.SelectedIndex = 0;
         ConsoleView.Detach(); ConsoleView.Visibility = Visibility.Hidden; ConsolePlaceholder.Visibility = Visibility.Visible;
         consoleDetached = false;
         ClipboardSharing.IsChecked = false; ResetClipboard();
@@ -136,6 +138,7 @@ public partial class MainWindow
             Tap.ItemsSource = BridgeTap.ItemsSource = Physical.ItemsSource = Snapshots.ItemsSource = null;
             UsbDevices.ItemsSource = null;
         } finally { loadingIdentity = loadingHardware = false; }
+        RememberHardwareDraft(); RememberIdentityDraft();
         State.Text = "確認中"; StatusDetail.Text = "選択した VM の状態を取得しています。";
         VmSummary.Text = "構成を読み込んでいます。";
         UpdatePowerControls();
@@ -161,13 +164,13 @@ public partial class MainWindow
 
     private void NavigationChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (syncingNavigation || Tabs is null || busy || e.Source != WorkspaceNavigation) return;
+        if (syncingNavigation || Tabs is null || IsUiBusy || e.Source != WorkspaceNavigation) return;
         if (WorkspaceNavigation.SelectedItem is ListBoxItem item && int.TryParse(item.Tag?.ToString(), out int page)) Tabs.SelectedIndex = page;
     }
 
     private void NavigatePage(object sender, RoutedEventArgs e)
     {
-        if (busy || !HasVm) return;
+        if (IsUiBusy || !HasVm) return;
         if (sender is FrameworkElement element && int.TryParse(element.Tag?.ToString(), out int page) && page >= 0 && page < Tabs.Items.Count)
             Tabs.SelectedIndex = page;
     }
@@ -179,18 +182,23 @@ public partial class MainWindow
         try {
             WorkspaceNavigation.SelectedItem = WorkspaceNavigation.Items.Cast<ListBoxItem>().FirstOrDefault(x => x.Tag?.ToString() == Tabs.SelectedIndex.ToString(CultureInfo.InvariantCulture));
             WorkspaceTitle.Text = ((TabItem)Tabs.SelectedItem).Header?.ToString() ?? "";
-            AdvancedButton.Content = WorkspaceNavigation.SelectedItem is null ? WorkspaceTitle.Text + "  ▾" : "接続・詳細設定  ▾";
+            if (SettingsOpen) {
+                Devices.SelectedIndex = Tabs.SelectedIndex == 1 ? hardwareCategory :
+                    Devices.Items.Cast<ListBoxItem>().ToList().FindIndex(x => x.Tag?.ToString() == Tabs.SelectedIndex.ToString(CultureInfo.InvariantCulture));
+                if (Devices.SelectedItem is { } item) Devices.ScrollIntoView(item);
+            }
         } finally { syncingNavigation = false; }
     }
 
     private async void WindowKeyDown(object sender, KeyEventArgs e)
     {
-        if (busy) return;
+        // Do not consume guest Ctrl+N/O/S or F5 while the focused console is active.
+        if (IsUiBusy || ConsoleFocused) return;
         if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None) { e.Handled = true; await RefreshState(); }
         else if (Keyboard.Modifiers == ModifierKeys.Control) {
             if (e.Key == Key.N) { e.Handled = true; NewVm(sender, e); }
             else if (e.Key == Key.O) { e.Handled = true; OpenVm(sender, e); }
-            else if (e.Key == Key.S && Tabs.SelectedIndex == 1) { e.Handled = true; SaveHardware(sender, e); }
+            else if (e.Key == Key.S && SettingsOpen) { e.Handled = true; ApplySettings(sender, e); }
         }
     }
 

@@ -8,120 +8,214 @@ namespace ReimsManager;
 
 public partial class MainWindow
 {
-    // ThemeMode is already used by App.xaml. Opt in only for these isolated render fixtures.
+    // Uses the actual STA WPF renderer, not a browser mockup. Guest pixels are never fabricated.
 #pragma warning disable WPF0001
     internal async Task CheckThemeRendering(string folder)
     {
-        Application.Current.ThemeMode = ThemeMode.Dark;
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-        currentState = "stopped"; State.Text = "完全停止"; StatusDetail.Text = "";
-        Tabs.SelectedIndex = 1; Devices.SelectedIndex = 0; UpdatePowerControls(); UpdateLayout();
-        if (WorkspaceSurface.Background is not SolidColorBrush card ||
-            TryFindResource("ApplicationBackgroundBrush") is not SolidColorBrush canvas ||
-            Foreground is not SolidColorBrush foreground)
-            throw new Exception("Expected native Fluent color resources");
-        var surface = Blend(card.Color, canvas.Color);
-        double contrast = Contrast(foreground.Color, surface);
-        if (contrast < 4.5) throw new Exception($"Dark workspace contrast is too low: {contrast:0.00}");
-        SaveImage(Path.Combine(folder, "dark-hardware.png"));
-        Tabs.SelectedIndex = 0;
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-        UpdateLayout(); SaveImage(Path.Combine(folder, "dark-console.png"));
-        double previousWidth = Width, previousHeight = Height;
-        Width = MinWidth; Height = MinHeight;
-        EngineSettingsExpander.IsExpanded = true;
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-        UpdateLayout(); SidebarScroll.ScrollToEnd();
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-        UpdateLayout();
-        ConsolePlaceholder.ScrollToTop();
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-        var icon = ConsoleSymbol.TransformToAncestor(ConsolePlaceholder).TransformBounds(new Rect(ConsoleSymbol.RenderSize));
-        if (icon.Top < -1 || icon.Bottom > ConsolePlaceholder.ActualHeight + 1)
-            throw new Exception("Compact console clips its leading content");
-        ConsolePlaceholder.ScrollToBottom();
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-        var consoleButton = ConsoleConnectButton.TransformToAncestor(ConsolePlaceholder).TransformBounds(new Rect(ConsoleConnectButton.RenderSize));
-        if (consoleButton.Top < -1 || consoleButton.Bottom > ConsolePlaceholder.ActualHeight + 1)
-            throw new Exception("Compact console hides its connection action");
-        ConsolePlaceholder.ScrollToTop();
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-        var bottomButton = SelectExistingEngineButton.TransformToAncestor(SidebarScroll)
-            .TransformBounds(new Rect(SelectExistingEngineButton.RenderSize));
-        if (bottomButton.Top < -1 || bottomButton.Bottom > SidebarScroll.ActualHeight + 1)
-            throw new Exception("Compact sidebar hides the engine controls");
-        SaveImage(Path.Combine(folder, "compact-engine-settings.png"));
-        EngineSettingsExpander.IsExpanded = false; SidebarScroll.ScrollToTop();
-        Width = previousWidth; Height = previousHeight;
-        await CheckWorkstationRendering(folder);
-        Application.Current.ThemeMode = ThemeMode.System;
-    }
-
-    private async Task CheckWorkstationRendering(string folder)
-    {
-        if (!selfTest) throw new InvalidOperationException("Fixture access only");
-        double originalWidth = Width, originalHeight = Height;
-        GridLength originalLibraryWidth = LibraryColumn.Width;
-        string originalTitle = VmTitle.Text;
-        int originalMachineCount = machines.Count;
+        await CheckPresentationPolicy();
+        await CheckSettingsDraftBehavior();
+        double width = Width, height = Height;
+        string title = VmTitle.Text;
+        int count = machines.Count;
         try {
-            foreach (var scenario in new[] {
-                (Name: "fluent-light", Dark: false, Width: 1380d, Height: 880d, Library: 236d),
-                (Name: "fluent-dark", Dark: true, Width: 1380d, Height: 880d, Library: 236d),
-                (Name: "fluent-compact-wide-library", Dark: true, Width: 1000d, Height: 680d, Library: 340d),
-                (Name: "fluent-compact-light", Dark: false, Width: 1000d, Height: 680d, Library: 200d)
-            }) {
-                Application.Current.ThemeMode = scenario.Dark ? ThemeMode.Dark : ThemeMode.Light;
-                Width = scenario.Width; Height = scenario.Height;
-                LibraryColumn.Width = new GridLength(scenario.Library);
-                currentState = "stopped"; State.Text = "完全停止"; StatusDetail.Text = "";
-                UpdatePowerControls();
-                foreach (int page in new[] { 0, 1 }) {
-                    Tabs.SelectedIndex = page; Devices.SelectedIndex = 0;
-                    await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-                    UpdateLayout();
-                    foreach (FrameworkElement control in new FrameworkElement[] { NewVmCommand, StartButton, PowerOffButton, RestartButton, PowerMoreButton, ConsoleCommand, RefreshButton })
-                        RequireInside(control, CommandBar, "Command bar");
-                    Rect console = ConsoleCommand.TransformToAncestor(CommandBar).TransformBounds(new Rect(ConsoleCommand.RenderSize));
-                    Rect refresh = RefreshButton.TransformToAncestor(CommandBar).TransformBounds(new Rect(RefreshButton.RenderSize));
-                    if (console.Right > refresh.Left + 1) throw new Exception("Command bar commands overlap");
-                    RequireInside(WorkspaceSurface, WorkstationLayout, "Workspace");
-                    RequireInside(AdvancedButton, WorkspaceNavSection, "Advanced navigation");
-                    foreach (ListBoxItem item in WorkspaceNavigation.Items)
-                        RequireInside(item, WorkspaceNavigation, "Page navigation");
-                    if (Library.ActualHeight < 80 || Library.ActualHeight > SidebarScroll.ActualHeight + 1)
-                        throw new Exception("Library does not have a bounded scrolling viewport");
-                    if (page == 0 && ConsolePlaceholder.ActualHeight < 240)
-                        throw new Exception("Compact workstation leaves too little console space");
-                    if (page == 1) {
-                        RequireInside(SaveHardwareButton, SettingsFooter, "Save settings");
-                        RequireInside(ReloadHardwareButton, SettingsFooter, "Revert settings");
-                        RequireInside(Memory, WorkspaceSurface, "Memory editor");
-                    }
-                    SaveImage(Path.Combine(folder, scenario.Name + (page == 0 ? "-console.png" : "-hardware.png")));
+            foreach (bool dark in new[] { false, true }) {
+                Application.Current.ThemeMode = dark ? ThemeMode.Dark : ThemeMode.Light;
+                foreach (bool compact in new[] { false, true }) {
+                    Width = compact ? MinWidth : 1380;
+                    Height = compact ? MinHeight : 880;
+                    string prefix = $"{(dark ? "dark" : "light")}-{(compact ? "compact" : "normal")}";
+                    currentState = "stopped"; State.Text = "完全停止"; StatusDetail.Text = "";
+                    Tabs.SelectedIndex = 0; UpdatePowerControls(); await ArrangeCheck();
+                    RequireManagementGeometry();
+                    SaveImage(Path.Combine(folder, prefix + "-powered-off.png"));
+                    Tabs.SelectedIndex = 1; Devices.SelectedIndex = 0; UpdatePowerControls(); await ArrangeCheck();
+                    RequireSettingsGeometry();
+                    if (SettingsSurface.Background is SolidColorBrush card &&
+                        TryFindResource("ApplicationBackgroundBrush") is SolidColorBrush canvas && Foreground is SolidColorBrush foreground &&
+                        Contrast(foreground.Color, Blend(card.Color, canvas.Color)) < 4.5)
+                        throw new Exception("Settings text fails 4.5:1 contrast");
+                    SaveImage(Path.Combine(folder, prefix + "-settings.png"));
+                    Tabs.SelectedIndex = 0; currentState = "running"; State.Text = "実行中";
+                    presentation.ShowConsole(); UpdatePowerControls(); await ArrangeCheck();
+                    RequireFocusedGeometry();
+                    SaveImage(Path.Combine(folder, prefix + "-powered-on.png"));
+                    currentState = "paused"; State.Text = "一時停止"; UpdatePowerControls(); await ArrangeCheck();
+                    RequireFocusedGeometry();
+                    if (SessionPauseButton.Tag?.ToString() != "Resume" || !SessionPauseButton.IsEnabled)
+                        throw new Exception("The paused console cannot resume from its title bar");
+                    SaveImage(Path.Combine(folder, prefix + "-paused.png"));
+                    OpenSettings(this, new RoutedEventArgs()); await ArrangeCheck();
+                    RequireSettingsGeometry();
+                    // A timer update must not dismiss a settings page while the guest is running.
+                    currentState = "running"; UpdatePowerControls(); await ArrangeCheck();
+                    if (!SettingsOpen || SettingsPage.Visibility != Visibility.Visible)
+                        throw new Exception("Live status dismissed the settings page");
+                    if (!TryCloseSettings()) throw new Exception("Clean settings could not close");
+                    await ArrangeCheck(); RequireFocusedGeometry();
                 }
             }
-            // A long label and a large in-memory library must not push commands off-screen.
+            currentState = "stopped"; State.Text = "完全停止"; UpdatePowerControls();
+            Tabs.SelectedIndex = 1;
+            for (int category = 0; category < Devices.Items.Count; category++) {
+                Devices.SelectedIndex = category;
+                Devices.ScrollIntoView(Devices.SelectedItem);
+                await ArrangeCheck();
+                var item = (ListBoxItem)Devices.SelectedItem;
+                if (Tabs.SelectedIndex.ToString() != item.Tag.ToString()) throw new Exception("Settings route is disconnected");
+                RequireSettingsGeometry(); RequireInside(item, Devices, "Selected settings category");
+                if (category < Editors.Children.Count && Editors.Children.Cast<UIElement>().Count(x => x.Visibility == Visibility.Visible) != 1)
+                    throw new Exception("Settings shows multiple hardware editors");
+                SaveImage(Path.Combine(folder, $"settings-category-{category:00}.png"));
+            }
+            Tabs.SelectedIndex = 0; Width = MinWidth; Height = MinHeight;
+            EngineSettingsExpander.IsExpanded = true; await ArrangeCheck();
+            SidebarScroll.ScrollToEnd(); await ArrangeCheck();
+            RequireInside(SelectExistingEngineButton, SidebarScroll, "Engine controls");
+            SaveImage(Path.Combine(folder, "compact-engine-settings.png"));
+            EngineSettingsExpander.IsExpanded = false; SidebarScroll.ScrollToTop();
+            // Native Fluent expanders animate; dispatcher-idle is not animation completion.
+            await Task.Delay(500); await ArrangeCheck();
             VmTitle.Text = string.Concat(Enumerable.Repeat("日本語の長い仮想マシン名・", 10));
-            for (int i = 0; i < 50; i++)
-                machines.Add(new VmEntry($"検証用 macOS {i:00}", Path.Combine(folder, $"fixture-{i}.reimsvm"), Path.Combine(folder, $"fixture-{i}.data")));
-            UpdateLibraryView();
-            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            UpdateLayout();
+            for (int i = 0; i < 50; i++) machines.Add(new VmEntry($"検証用 macOS {i:00}", Path.Combine(folder, $"fixture-{i}.reimsvm"), Path.Combine(folder, $"fixture-{i}.data")));
+            UpdateLibraryView(); await ArrangeCheck();
+            SaveImage(Path.Combine(folder, "long-name-library.png")); RequireManagementGeometry();
             RequireInside(State, VmHeader, "State with long VM name");
             RequireInside(VmTitle, VmHeader, "Long VM name");
-            if (Library.ActualHeight > SidebarScroll.ActualHeight + 1)
-                throw new Exception("Large library expanded beyond the window");
-            SaveImage(Path.Combine(folder, "fluent-long-name-library.png"));
+            SaveImage(Path.Combine(folder, "long-name-library.png"));
+            currentState = "running"; State.Text = "実行中"; UpdatePowerControls(); await ArrangeCheck();
+            RequireFocusedGeometry();
+            SaveImage(Path.Combine(folder, "long-name-session.png"));
+            currentState = "unknown"; State.Text = "状態を確認できません";
+            StatusDetail.Text = "テスト用: 接続の応答がありません。VM画面は維持し、電源操作は無効化します。";
+            ShowError("テスト用の接続エラー。設定やディスクを変更していません。");
+            UpdatePowerControls(); await ArrangeCheck();
+            if (!ConsoleFocused || SessionPauseButton.IsEnabled || SessionPowerButton.IsEnabled)
+                throw new Exception("Unknown state loses the console or permits mutations");
+            RequireInside(Feedback, AppLayout, "Error feedback");
+            RequireInside(SessionCommands, TitleBar, "Error recovery navigation");
+            SaveImage(Path.Combine(folder, "focused-connection-error.png"));
+            DismissError(this, new RoutedEventArgs()); StatusDetail.Text = "";
+            currentState = "stopped"; UpdatePowerControls(); await ArrangeCheck(); RequireManagementGeometry();
+            // Exercise the new caption controls without closing the running test window.
+            MaximizeWindow(this, new RoutedEventArgs()); await ArrangeCheck();
+            RequireInside(CaptionCommands, TitleBar, "Maximized caption commands");
+            MaximizeWindow(this, new RoutedEventArgs()); await ArrangeCheck();
         } finally {
-            machines.RemoveRange(originalMachineCount, machines.Count - originalMachineCount);
-            UpdateLibraryView();
-            VmTitle.Text = originalTitle;
-            Width = originalWidth; Height = originalHeight; LibraryColumn.Width = originalLibraryWidth;
-            Tabs.SelectedIndex = 0;
+            machines.RemoveRange(count, machines.Count - count); UpdateLibraryView();
+            VmTitle.Text = title; Width = width; Height = height; WindowState = WindowState.Normal;
+            Tabs.SelectedIndex = 0; currentState = "stopped"; StatusDetail.Text = "";
+            Feedback.Visibility = Visibility.Collapsed; UpdatePowerControls();
+            Application.Current.ThemeMode = ThemeMode.System;
         }
     }
 #pragma warning restore WPF0001
+
+    private async Task ArrangeCheck()
+    {
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        UpdateLayout();
+    }
+
+    private void RequireManagementGeometry()
+    {
+        if (SettingsPage.Visibility != Visibility.Collapsed || ConsoleFocused || LibraryPane.Visibility != Visibility.Visible)
+            throw new Exception("Powered-off layout is not the management view");
+        foreach (FrameworkElement control in new FrameworkElement[] { NewVmCommand, StartButton, PowerOffButton, RestartButton, PowerMoreButton, ConsoleCommand, RefreshButton })
+            RequireInside(control, CommandBar, "Management command bar");
+        Rect console = ConsoleCommand.TransformToAncestor(CommandBar).TransformBounds(new Rect(ConsoleCommand.RenderSize));
+        Rect refresh = RefreshButton.TransformToAncestor(CommandBar).TransformBounds(new Rect(RefreshButton.RenderSize));
+        if (console.Right > refresh.Left + 1) throw new Exception("Management commands overlap");
+        RequireInside(WorkspaceSurface, WorkstationLayout, "Workspace");
+        RequireInside(AdvancedButton, WorkspaceNavSection, "Settings destination");
+        if (AdvancedButton.ContextMenu is not null) throw new Exception("Settings categories still use a dropdown");
+        if (Library.ActualHeight < 80 || Library.ActualHeight > SidebarScroll.ActualHeight + 1) throw new Exception($"Library viewport is not bounded: list={Library.ActualHeight:0.##}, sidebar={SidebarScroll.ActualHeight:0.##}, expanded={EngineSettingsExpander.IsExpanded}");
+    }
+
+    private void RequireSettingsGeometry()
+    {
+        if (WorkstationLayout.Visibility != Visibility.Collapsed || SettingsPage.Visibility != Visibility.Visible || !SettingsOpen)
+            throw new Exception("Settings is not a dedicated page");
+        RequireInside(SettingsSurface, SettingsPage, "Settings editor");
+        RequireInside(SaveHardwareButton, SettingsFooter, "Apply settings");
+        RequireInside(ReloadHardwareButton, SettingsFooter, "Cancel settings");
+        RequireInside(SettingsOkButton, SettingsFooter, "OK settings");
+        RequireInside(SettingsBackButton, SettingsPage, "Settings back button");
+        if (SettingsSurface.ActualWidth < 400 || Devices.ActualHeight < 150) throw new Exception("Settings editor or category list is too small");
+    }
+
+    private void RequireFocusedGeometry()
+    {
+        if (!ConsoleFocused || ManagementCommands.Visibility != Visibility.Collapsed || LibraryPane.Visibility != Visibility.Collapsed ||
+            WorkspaceNavSection.Visibility != Visibility.Collapsed || VmHeader.Visibility != Visibility.Collapsed ||
+            OperationLog.Visibility != Visibility.Collapsed || WorkspaceStatusBar.Visibility != Visibility.Collapsed ||
+            ConsoleFooter.Visibility != Visibility.Collapsed || SettingsPage.Visibility != Visibility.Collapsed)
+            throw new Exception("Powered-on view still contains management chrome");
+        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionUsbButton, SessionSharingButton, SessionSnapshotButton, SessionPopOutButton, CaptionCommands })
+            RequireInside(control, TitleBar, "Session title bar");
+        Rect icons = SessionCommands.TransformToAncestor(TitleBar).TransformBounds(new Rect(SessionCommands.RenderSize));
+        Rect caption = CaptionCommands.TransformToAncestor(TitleBar).TransformBounds(new Rect(CaptionCommands.RenderSize));
+        if (icons.Right > caption.Left || TitleBar.ActualHeight > 45) throw new Exception("Session title bar overlaps or is not compact");
+        if (Math.Abs(WorkspaceSurface.ActualWidth - WorkstationLayout.ActualWidth) > 2 ||
+            Math.Abs(WorkspaceSurface.ActualHeight - WorkstationLayout.ActualHeight) > 2)
+            throw new Exception("Console does not fill the workspace");
+    }
+
+    private static async Task CheckPresentationPolicy()
+    {
+        var mode = new WorkspacePresentation();
+        mode.Observe("one", "stopped"); if (mode.Focused(false, false)) throw new Exception("Stopped VM focused");
+        mode.Observe("one", "running"); if (!mode.Focused(false, false)) throw new Exception("Running VM did not focus");
+        foreach (string state in new[] { "paused", "unknown", "running", "suspended" }) {
+            mode.Observe("one", state); if (!mode.Focused(false, false)) throw new Exception("Console layout flickers during transitions");
+        }
+        if (mode.Focused(true, false) || mode.Focused(false, true)) throw new Exception("Settings/pop-out retained console focus");
+        mode.ShowManagement(); mode.Observe("one", "running");
+        if (mode.Focused(false, false)) throw new Exception("Polling undid the Library choice");
+        mode.ShowConsole(); if (!mode.Focused(false, false)) throw new Exception("Return to console failed");
+        mode.Observe("two", "unknown"); if (mode.Focused(false, false)) throw new Exception("New VM inherited console state");
+        mode.Observe("two", "running"); mode.Observe("two", "shutdown"); if (mode.Focused(false, false)) throw new Exception("Shutdown retained console focus");
+        mode.Observe(null, "running"); if (mode.Focused(false, false)) throw new Exception("Missing VM focused");
+        foreach (bool hardwareOk in new[] { false, true }) foreach (bool identityOk in new[] { false, true }) {
+            int hardwareCalls = 0, identityCalls = 0;
+            bool ok = await SettingsCommitSequence.Apply(true, true,
+                () => { hardwareCalls++; return Task.FromResult(hardwareOk); },
+                () => { identityCalls++; return Task.FromResult(identityOk); });
+            if (hardwareCalls != 1 || identityCalls != (hardwareOk ? 1 : 0) || ok != (hardwareOk && identityOk))
+                throw new Exception("Settings save sequence did not stop on failure");
+        }
+    }
+
+    private async Task CheckSettingsDraftBehavior()
+    {
+        currentState = "stopped"; Tabs.SelectedIndex = 1; Devices.SelectedIndex = 0;
+        UpdatePowerControls();
+        RememberHardwareDraft(); RememberIdentityDraft();
+        string memory = Memory.Text, serial = IdentitySerial.Text;
+        long version = contextVersion;
+        Memory.Text = "12288"; IdentitySerial.Text = "UNSAVED-FIXTURE";
+        if (!hardwareDirty || !identityDirty || !SaveHardwareButton.IsEnabled) throw new Exception("Settings dirty state not reflected");
+        Devices.SelectedIndex = 8; Devices.SelectedIndex = 10;
+        if (Memory.Text != "12288" || IdentitySerial.Text != "UNSAVED-FIXTURE") throw new Exception("Category navigation discarded edits");
+        if (TryCloseSettings() || !SettingsOpen) throw new Exception("Settings closed without discard consent");
+        bool sharing = ClipboardSharing.IsChecked == true;
+        if (!RestoreSettingsDrafts() || Memory.Text != memory || IdentitySerial.Text != serial || hardwareDirty || identityDirty ||
+            contextVersion != version || (ClipboardSharing.IsChecked == true) != sharing)
+            throw new Exception("Cancel did not restore only the staged forms");
+        Memory.Text = "not-a-number"; Tabs.SelectedIndex = 3;
+        if (await ApplySettingsDrafts() || Tabs.SelectedIndex != 1 || Devices.SelectedIndex != 0 || !hardwareDirty)
+            throw new Exception("Invalid hardware did not stay open on its failing editor");
+        RestoreSettingsDrafts(); Feedback.Visibility = Visibility.Collapsed;
+        applyingSettings = true; UpdatePowerControls();
+        if (TryCloseSettings() || SettingsOkButton.IsEnabled || ReloadHardwareButton.IsEnabled || Devices.IsEnabled)
+            throw new Exception("Settings can be abandoned while committing");
+        applyingSettings = false; UpdatePowerControls();
+        if (!TryCloseSettings()) throw new Exception("Clean settings failed to close");
+        currentState = "running"; UpdatePowerControls();
+        OpenSettings(this, new RoutedEventArgs());
+        currentState = "stopped"; UpdatePowerControls();
+        if (!SettingsOpen) throw new Exception("Power-off during editing dismissed settings");
+        TryCloseSettings();
+    }
 
     private static void RequireInside(FrameworkElement element, FrameworkElement viewport, string description)
     {

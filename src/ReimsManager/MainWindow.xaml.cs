@@ -150,7 +150,7 @@ public partial class MainWindow : Window
                     StatusDetail.Text = currentState switch {
                         "shutdown" => "macOS は電源オフです。設定変更には「••• → 完全終了」で QEMU も終了してください。",
                         "paused" or "suspended" or "prelaunch" => "「再開」してから macOS の電源操作を行えます。",
-                        "unprepared" => "「接続・詳細設定 → macOS のインストール」から初期セットアップを行ってください。",
+                        "unprepared" => "「仮想マシンの設定 → macOS のインストール」から初期セットアップを行ってください。",
                         _ => ""
                     };
                     if (loadDetails) {
@@ -202,13 +202,20 @@ public partial class MainWindow : Window
         var selected = Resolution.Items.Cast<ComboBoxItem>().FirstOrDefault(x=>x.Content?.ToString()==resolution);
         if (selected is null) { selected = new ComboBoxItem { Content = resolution }; Resolution.Items.Add(selected); }
         Resolution.SelectedItem = selected;
-        hardwareDirty = false;
+        hardwareDirty = false; RememberHardwareDraft();
         } finally { loadingHardware = false; }
     }
 
-    private void DeviceChanged(object sender, SelectionChangedEventArgs e) {
-        if (Editors is null) return;
-        for (int i=0;i<Editors.Children.Count;i++) ((UIElement)Editors.Children[i]).Visibility=i==Devices.SelectedIndex ? Visibility.Visible : Visibility.Collapsed;
+    private void DeviceChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Editors is null || Devices.SelectedIndex < 0 || e.Source != Devices) return;
+        if (Devices.SelectedIndex < Editors.Children.Count) {
+            hardwareCategory = Devices.SelectedIndex;
+            for (int i = 0; i < Editors.Children.Count; i++)
+                ((UIElement)Editors.Children[i]).Visibility = i == hardwareCategory ? Visibility.Visible : Visibility.Collapsed;
+        }
+        if (!syncingNavigation && !IsUiBusy && HasVm && Devices.SelectedItem is ListBoxItem item && int.TryParse(item.Tag?.ToString(), out int page))
+            Tabs.SelectedIndex = page;
     }
     private void MemoryChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
@@ -229,7 +236,7 @@ public partial class MainWindow : Window
 
     private async void SetupEngine(object sender, RoutedEventArgs e)
     {
-        if (busy || !DiscardPendingChanges()) return;
+        if (IsUiBusy || !DiscardPendingChanges()) return;
         busy=true; UpdatePowerControls();
         try {
             var dialog=new EngineSetupWindow { Owner=this };
@@ -241,7 +248,7 @@ public partial class MainWindow : Window
 
     private void BrowseRoot(object sender,RoutedEventArgs e)
     {
-        if (busy || !DiscardPendingChanges()) return;
+        if (IsUiBusy || !DiscardPendingChanges()) return;
         var dialog=new OpenFileDialog { Title="Reims 対応の QEMU を選択", Filter="Reims エンジン|qemu-system-x86_64.exe" };
         if (dialog.ShowDialog(this)!=true) return;
         try {
@@ -257,7 +264,7 @@ public partial class MainWindow : Window
 
     private void UpdatePowerControls()
     {
-        if (StartButton is null || WorkspaceNavigation is null || RevealButton is null) return;
+        if (StartButton is null || WorkspaceNavigation is null || RevealButton is null || SettingsOkButton is null) return;
         StartButton.IsEnabled = CanOperate("Start");
         PowerOffButton.IsEnabled = CanOperate("PowerOff");
         RestartButton.IsEnabled = CanOperate("Restart");
@@ -271,22 +278,17 @@ public partial class MainWindow : Window
         foreach (var item in PowerMoreButton.ContextMenu.Items.OfType<MenuItem>()) item.IsEnabled = CanOperate(item.Tag?.ToString() ?? "");
         EngineNotice.Visibility = HasEngine ? Visibility.Collapsed : Visibility.Visible;
         EngineSummary.Text = HasEngine ? "エンジン設定済み" : "未設定";
-        Welcome.Visibility = HasVm ? Visibility.Collapsed : Visibility.Visible;
-        Tabs.Visibility = WorkspaceContent.Visibility = WorkspaceNavSection.Visibility = HasVm ? Visibility.Visible : Visibility.Collapsed;
-        Library.IsEnabled = LibrarySearch.IsEnabled = WorkspaceNavigation.IsEnabled = AdvancedButton.IsEnabled = !busy;
         RefreshButton.IsEnabled = HasVm && HasEngine && !busy && !refreshing;
         RevealButton.IsEnabled = HasVm;
         foreach (var button in LogicalChildren<Button>(Tabs)) {
             if (button.Tag is string action && !int.TryParse(action, out _)) button.IsEnabled = CanOperate(action);
         }
-        SaveHardwareButton.IsEnabled = CanOperate("SetHardware") && hardwareDirty;
-        ReloadHardwareButton.IsEnabled = !busy && HasVm && HasEngine && hardwareDirty;
-        SettingsHint.Text = !CanOperate("SetHardware") ? "保存するには VM を完全停止してください。" : hardwareDirty ? "未保存の変更があります (Ctrl+S)。" : "変更はありません。";
         ClipboardSharing.IsEnabled = !busy && HasEngine && HasVm && currentState == "running";
         foreach (var button in LogicalChildren<Button>(Tabs).Where(x => x.Tag?.ToString() == "SnapshotRestore")) button.IsEnabled &= Snapshots.SelectedIndex >= 0;
         foreach (var button in LogicalChildren<Button>(Tabs).Where(x => x.Tag?.ToString() is "AttachUsb" or "DetachUsb")) button.IsEnabled &= UsbDevices.SelectedItem is not null;
         ConsoleHeading.Text = currentState switch { "stopped" => "起動する準備ができました", "unprepared" => "macOS をセットアップ", "shutdown" => "macOS は電源オフです", "unknown" => "VM の状態を確認してください", _ => consoleDetached ? "別ウィンドウで表示中" : "VM の画面を待っています" };
-        ConsoleDescription.Text = currentState switch { "stopped" => "上の「起動」から macOS を開始できます。", "unprepared" => "接続・詳細設定からインストーラーを選んでください。", "unknown" => "「更新」で状態を取得してから操作を再試行できます。", _ => "入力の解放は Ctrl + Alt + Win。画面は別ウィンドウにも切り替えられます。" };
+        ConsoleDescription.Text = currentState switch { "stopped" => "上の「起動」から macOS を開始できます。", "unprepared" => "設定画面の「macOS のインストール」からインストーラーを選んでください。", "unknown" => "「更新」で状態を取得してから操作を再試行できます。", _ => "入力の解放は Ctrl + Alt + Win。画面は別ウィンドウにも切り替えられます。" };
+        UpdateWorkspacePresentation();
     }
 
     private void DismissError(object sender,RoutedEventArgs e) { Feedback.Visibility=Visibility.Collapsed; }
@@ -313,13 +315,20 @@ public partial class MainWindow : Window
     }
     private async void RestoreSnapshot(object sender,RoutedEventArgs e) { if (RequireAction("SnapshotRestore") && Snapshots.SelectedIndex >= 0 && Confirm("選択したスナップショットに切り替えます。現在のディスクも保持します。")) await Operate("SnapshotRestore",["-Name",Selected(Snapshots)]); }
     private async void ForceExit(object sender,RoutedEventArgs e) { if (RequireAction("ForceExit") && Confirm("未保存の macOS 作業を失います。強制終了しますか？")) await Operate("ForceExit"); }
-    private async void SaveHardware(object sender,RoutedEventArgs e) {
-        if (!RequireAction("SetHardware") || !ValidateHardware()) return;
+    private async void SaveHardware(object sender,RoutedEventArgs e) => await SaveHardwareCore();
+    private async Task<bool> SaveHardwareCore() {
+        if (!RequireAction("SetHardware") || !ValidateHardware()) return false;
         var args=new List<string> {"-Cpus",Cpus.Text.Trim(),"-MemoryMiB",Memory.Text.Trim(),"-Resolution",Selected(Resolution),"-Iso",HardwareIsoPath.Text.Trim(),"-Network",Bridge.IsChecked==true?"bridge":"nat","-Adapter",Selected(Tap),"-GuestHost",GuestHost.Text.Trim(),"-Audio",Sound.IsChecked==true?"dsound":"none"};
         if (Microphone.IsChecked==true) args.Add("-Microphone");
         args.AddRange(["-UsbBackend",UsbBackend.SelectedIndex==1?"usbdk":"winusb"]);
         if (HardwareIso.IsChecked==true) args.Add("-WithInstaller");
-        if (await Operate("SetHardware",args.ToArray())) { loadedHardware=false; await RefreshState(); }
+        bool saved = await Operate("SetHardware",args.ToArray());
+        if (saved) {
+            // The backend committed these values even if the following status read fails.
+            RememberHardwareDraft();
+            loadedHardware=false; await RefreshState();
+        }
+        return saved;
     }
     private async void ReloadHardware(object sender,RoutedEventArgs e) {
         if (!DiscardPendingChanges()) return;
@@ -377,7 +386,7 @@ public partial class MainWindow : Window
         for (int tab=0;tab<Tabs.Items.Count;tab++) {
             Tabs.SelectedIndex=tab; await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle); UpdateLayout();
             if (tab==1) {
-                for (int device=0;device<Devices.Items.Count;device++) {
+                for (int device=0;device<Editors.Children.Count;device++) {
                     Devices.SelectedIndex=device; await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle); UpdateLayout();
                     if (((UIElement)Editors.Children[device]).Visibility!=Visibility.Visible) throw new Exception("Missing device editor");
                     SaveImage(Path.Combine(folder,$"hardware-{device}.png"));

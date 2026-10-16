@@ -78,9 +78,9 @@ public partial class MainWindow
             try {
                 IdentityModel.Text = i.GetProperty("model").GetString(); IdentitySerial.Text = i.GetProperty("serial").GetString();
                 IdentityMlb.Text = i.GetProperty("mlb").GetString(); IdentityUuid.Text = i.GetProperty("uuid").GetString(); IdentityRom.Text = i.GetProperty("rom").GetString();
-                identityDirty = false;
+                identityDirty = false; RememberIdentityDraft();
             } finally { loadingIdentity = false; }
-            return true;
+            UpdatePowerControls(); return true;
         } catch (Exception error) { if (version == contextVersion && !closing && error is not OperationCanceledException) ShowError(error.Message); return false; }
     }
     private async void LoadIdentityClick(object sender, RoutedEventArgs e) {
@@ -89,13 +89,18 @@ public partial class MainWindow
         long version = contextVersion;
         identityDirty = false;
         if (!await ReadIdentity() && version == contextVersion) identityDirty = wasDirty;
+        UpdatePowerControls();
     }
-    private async void SaveIdentity(object sender, RoutedEventArgs e)
+    private bool ConfirmIdentityChange() => !selfTest && Confirm("この VM の識別情報を変更します。Apple Account の再認証が必要になることがあります。");
+    private async void SaveIdentity(object sender, RoutedEventArgs e) => await SaveIdentityCore();
+    private async Task<bool> SaveIdentityCore(bool confirm = true)
     {
-        if (!RequireAction("SetIdentity")) return;
+        if (!RequireAction("SetIdentity") || confirm && !ConfirmIdentityChange()) return false;
         string data = JsonSerializer.Serialize(new { model = IdentityModel.Text, serial = IdentitySerial.Text, mlb = IdentityMlb.Text, uuid = IdentityUuid.Text, rom = IdentityRom.Text });
-        if (Confirm("この VM の識別情報を変更します。Apple Account の再認証が必要になることがあります。"))
-            if (await Operate("SetIdentity", input: data)) await ReadIdentity();
+        if (!await Operate("SetIdentity", input: data)) return false;
+        RememberIdentityDraft();
+        await ReadIdentity();
+        return true;
     }
 
     private sealed record UsbEntry(string Id, string Label);
