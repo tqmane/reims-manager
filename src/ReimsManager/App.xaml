@@ -5,10 +5,13 @@
       <ResourceDictionary.MergedDictionaries>
         <ResourceDictionary Source="pack://application:,,,/PresentationFramework.Fluent;component/Themes/Fluent.xaml"/>
       </ResourceDictionary.MergedDictionaries>
+      <Style x:Key="Eyebrow" TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Opacity" Value="0.7"/></Style>
+      <Style x:Key="NoticeCard" TargetType="Border"><Setter Property="Padding" Value="16"/><Setter Property="CornerRadius" Value="8"/><Setter Property="BorderThickness" Value="1"/><Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/><Setter Property="Background" Value="{DynamicResource CardBackground}"/></Style>
+      <Style x:Key="WelcomeAction" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="Padding" Value="24,20"/><Setter Property="Margin" Value="0,0,0,12"/></Style>
       <SolidColorBrush x:Key="SelectionBackground" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" Opacity="0.14"/>
       <SolidColorBrush x:Key="ItemHoverBackground" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" Opacity="0.12"/>
       <Style x:Key="NavigationItem" TargetType="ListBoxItem">
-        <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="14,10"/><Setter Property="Margin" Value="0,2"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="12,9"/><Setter Property="Margin" Value="0,2"/>
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
           <Grid><Border x:Name="Surface" Background="Transparent" CornerRadius="6" BorderThickness="1" BorderBrush="Transparent"/>
             <Border x:Name="Accent" Width="3" HorizontalAlignment="Left" Margin="0,10" CornerRadius="2" Background="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" Visibility="Collapsed"/>

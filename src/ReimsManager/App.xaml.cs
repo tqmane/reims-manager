@@ -11,6 +11,15 @@ public partial class App : Application
     {
         base.OnStartup(e);
         try {
+            if (e.Args.Length == 1 && e.Args[0] == "--console-fixture") {
+                var fixtureWindow = new Window {
+                    Title = "Reims isolated native console test", Width = 640, Height = 420,
+                    Content = new System.Windows.Controls.TextBlock {
+                        Text = "Native console test fixture — not a macOS guest", Margin = new Thickness(32), FontSize = 20
+                    }
+                };
+                MainWindow = fixtureWindow; fixtureWindow.Show(); return;
+            }
             if (e.Args.Length >= 2 && e.Args[0] == "--echo-args") {
                 File.WriteAllText(e.Args[1], JsonSerializer.Serialize(e.Args.Skip(2))); Shutdown(0); return;
             }
@@ -56,11 +65,13 @@ public partial class App : Application
                 window.Opacity = 0; window.ShowInTaskbar = false; window.Show();
                 await SelfChecks.Run(folder);
                 await window.RenderChecks(folder);
+                await window.CheckThemeRendering(folder);
+                await window.CheckNativeConsoleLifecycle();
                 string fixture=Path.Combine(folder,"fixture.reimsvm");
                 if (File.Exists(fixture)) File.Delete(fixture);
                 var entry=VmLibrary.Create(fixture,Path.Combine(folder,"fixture.data"));
                 if (VmLibrary.Open(fixture)!=entry) throw new Exception("VM library roundtrip failed");
-                File.WriteAllText(Path.Combine(folder,"result.json"),JsonSerializer.Serialize(new {fluent_theme=true,argument_roundtrip=true,vm_library_roundtrip=true,qmp_correlation=true,qmp_error_handling=true,pid_identity=true,settings_roundtrip=true,profile_containment=true,engine_setup=true,pages_rendered=window.Tabs.Items.Count+window.Devices.Items.Count}));
+                File.WriteAllText(Path.Combine(folder,"result.json"),JsonSerializer.Serialize(new {fluent_theme=true,argument_roundtrip=true,vm_library_roundtrip=true,qmp_correlation=true,qmp_error_handling=true,pid_identity=true,settings_roundtrip=true,profile_containment=true,engine_setup=true,action_policy=true,workspace_navigation=true,unsaved_edits=true,vm_context_invalidation=true,exact_memory_sync=true,safe_vm_creation=true,corrupt_settings_backup=true,backend_output_bounds=true,read_helper_cancellation=true,compact_layout=true,dark_theme_render=true,console_focus_layout=true,settings_dedicated_page=true,settings_cancel_preserves_data=true,settings_save_sequence=true,native_console_lifecycle=true,pages_rendered=Directory.GetFiles(folder,"*.png").Length}));
                 window.Close(); Shutdown(0); return;
             }
             window.Show();

@@ -78,36 +78,7 @@ function Assert-Administrator {
     if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'この操作には Windows の管理者権限が必要です。' }
 }
 
-function Get-NewVmPorts {
-    $reserved = [Collections.Generic.HashSet[int]]::new()
-    $legacy=Join-Path $ProjectRoot 'vm/state/config.json'
-    if (Test-Path $legacy) {
-        $legacyConfig=Get-Content -Raw $legacy | ConvertFrom-Json
-        [void]$reserved.Add([int]$legacyConfig.qmp_port); [void]$reserved.Add([int]$legacyConfig.ssh_port)
-    }
-    $library = Join-Path $ProjectRoot '.work/manager-library.json'
-    if (Test-Path $library) {
-        foreach ($file in (Get-Content -Raw $library | ConvertFrom-Json)) {
-            if (!(Test-Path -LiteralPath $file)) { continue }
-            $entry = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
-            $directory = [IO.Path]::GetFullPath($entry.directory, (Split-Path $file))
-            $configFile = Join-Path $directory 'state/config.json'
-            if (Test-Path $configFile) {
-                $entryConfig = Get-Content -Raw $configFile | ConvertFrom-Json
-                [void]$reserved.Add([int]$entryConfig.qmp_port); [void]$reserved.Add([int]$entryConfig.ssh_port)
-            }
-        }
-    }
-    $result = @()
-    for ($port = 4444; $port -lt 65000 -and $result.Count -lt 2; $port++) {
-        if ($reserved.Contains($port)) { continue }
-        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,$port)
-        try { $listener.Start(); $result += $port } catch [Net.Sockets.SocketException] { }
-        finally { $listener.Stop() }
-    }
-    if ($result.Count -ne 2) { throw 'VM の接続ポートを確保できません。' }
-    return $result
-}
+. "$PSScriptRoot/manager-ports.ps1"
 
 if ($Action -eq 'Status') {
     $runtime = Get-ReimsRuntime
@@ -279,8 +250,11 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         if ($Cpus -gt $hostInfo.NumberOfLogicalProcessors -or [long]$MemoryMiB * 1MB -ge $hostInfo.TotalPhysicalMemory) { throw 'ホストの CPU / メモリ容量以内で設定してください。' }
         if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
         if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid guest address.' }
+        if ($WithInstaller -and !$Iso) { throw 'インストーラーを接続する場合は ISO を選択してください。' }
         if ($Iso) { & "$PSScriptRoot/prepare-vm.ps1" -Iso $Iso | Out-Null }
         $config = Get-ReimsVmConfig
+        # Empty input explicitly clears the remembered ISO instead of silently retaining it.
+        $config.iso = $Iso
         $config.cpus = $Cpus; $config.memory_mib = $MemoryMiB; $config.resolution = $Resolution
         $config | Add-Member -Force audio $Audio
         $config | Add-Member -Force microphone ([bool]$Microphone)

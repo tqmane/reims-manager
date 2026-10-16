@@ -13,6 +13,7 @@ internal sealed class ManagerSettings
     internal static string DataDirectory => Path.GetFullPath(
         Environment.GetEnvironmentVariable("REIMS_MANAGER_HOME") ??
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reims", "Manager"));
+    private bool preserveUnreadableSettings;
     private static string SettingsFile => Path.Combine(DataDirectory, "settings.json");
 
     internal static ManagerSettings Load(out string? warning)
@@ -28,7 +29,7 @@ internal sealed class ManagerSettings
             return settings;
         } catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException) {
             warning = "アプリの設定を読み込めませんでした。VM のファイルから開き直せます。";
-            return new();
+            return new() { preserveUnreadableSettings = true };
         }
     }
 
@@ -37,8 +38,11 @@ internal sealed class ManagerSettings
         Directory.CreateDirectory(DataDirectory);
         string temporary = SettingsFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try {
+            if (preserveUnreadableSettings && File.Exists(SettingsFile))
+                File.Copy(SettingsFile, SettingsFile + ".unreadable-" + Guid.NewGuid().ToString("N") + ".json", false);
             File.WriteAllText(temporary, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
             File.Move(temporary, SettingsFile, true);
+            preserveUnreadableSettings = false;
         } finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 }
