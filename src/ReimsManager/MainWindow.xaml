@@ -114,6 +114,19 @@
             <Button x:Name="SessionRestartButton" Content="" Tag="Restart" Click="ActionClick" Style="{StaticResource ChromeButton}" ToolTip="macOSを再起動" AutomationProperties.Name="macOSを再起動"/>
             <Border Width="1" Margin="6,9" Background="{DynamicResource CardBorderBrush}"/>
             <Button x:Name="SessionSettingsButton" Content="" Click="OpenSettings" Style="{StaticResource ChromeButton}" ToolTip="仮想マシンの設定" AutomationProperties.Name="仮想マシンの設定"/>
+            <Button x:Name="SessionCursorAidButton" Content="カーソルを表示" Tag="EnableCursorAid" Click="ActionClick" Style="{StaticResource CommandButton}" shell:WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="1 回のクリックで、SSH ペアリング済みの VM に同梱ヘルパーを検証・導入して起動します。解除は「設定 → ディスプレイ → カーソル互換表示 → オフにする」。" AutomationProperties.Name="カーソルを表示"/>
+            <Button x:Name="SessionCursorMenuButton" Content="" Click="ShowPowerMenu" Style="{StaticResource ChromeButton}" Width="26" ToolTip="カーソルの移動と設定" AutomationProperties.Name="カーソルの移動と設定">
+              <Button.ContextMenu><ContextMenu>
+                <MenuItem Header="VM 本体の画面へ移動" Tag="MoveCursorToMainDisplay" Click="MenuAction"/>
+                <MenuItem Header="拡張画面へ移動" Tag="MoveCursorToExtendedDisplay" Click="MenuAction"/>
+                <Separator/>
+                <MenuItem Header="Windows 側のカーソルを隠す" Tag="HideHostCursor" Click="MenuAction"/>
+                <MenuItem Header="Windows 側のカーソルを表示" Tag="ShowHostCursor" Click="MenuAction"/>
+                <Separator/>
+                <MenuItem Header="カーソル互換表示をオフ" Tag="DisableCursorAid" Click="MenuAction"/>
+                <MenuItem Header="Windows に戻す: Ctrl + Alt + Home（対応エンジン）" IsEnabled="False"/>
+              </ContextMenu></Button.ContextMenu>
+            </Button>
             <Button x:Name="SessionUsbButton" Content="" Tag="usb" Click="OpenSettingsCategory" Style="{StaticResource ChromeButton}" ToolTip="USBデバイス" AutomationProperties.Name="USBデバイス"/>
             <Button x:Name="SessionSharingButton" Content="" Tag="2" Click="NavigatePage" Style="{StaticResource ChromeButton}" ToolTip="クリップボード共有" AutomationProperties.Name="クリップボード共有"/>
             <Button x:Name="SessionSnapshotButton" Content="" Tag="4" Click="NavigatePage" Style="{StaticResource ChromeButton}" ToolTip="スナップショット" AutomationProperties.Name="スナップショット"/>
@@ -123,7 +136,7 @@
             <TextBlock Text="" Style="{StaticResource CommandIcon}" Margin="0,0,10,0"/>
             <TextBlock Text="Reims Manager" FontWeight="SemiBold" TextWrapping="NoWrap"/>
           </StackPanel>
-          <TextBlock x:Name="SessionTitle" Grid.Column="1" Text="{Binding Text, ElementName=VmTitle}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="12,0" FontSize="12" ToolTip="入力をWindowsに戻す: Ctrl + Alt + Win"/>
+          <TextBlock x:Name="SessionTitle" Grid.Column="1" Text="{Binding Text, ElementName=VmTitle}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="12,0" FontSize="12" ToolTip="入力を Windows に戻す: Ctrl + Alt + Home / Ctrl + Alt + Win（Home は対応エンジンが必要です）"/>
           <StackPanel x:Name="CaptionCommands" Grid.Column="2" Orientation="Horizontal">
             <Button x:Name="MinimizeCommand" Content="" Click="MinimizeWindow" Style="{StaticResource CaptionButton}" ToolTip="最小化" AutomationProperties.Name="最小化"/>
             <Button x:Name="MaximizeCommand" Content="" Click="MaximizeWindow" Style="{StaticResource CaptionButton}" ToolTip="最大化 / 元に戻す" AutomationProperties.Name="最大化または元に戻す"/>
@@ -470,7 +483,7 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
-                  <TextBlock Text="入力を Windows に戻す: Ctrl + Alt + Win" Style="{StaticResource MutedText}" FontSize="12" VerticalAlignment="Center"/>
+                  <TextBlock Text="Windows に戻す: Ctrl + Alt + Home / Ctrl + Alt + Win" Style="{StaticResource MutedText}" FontSize="12" VerticalAlignment="Center"/>
                   <Button Grid.Column="1" Content="別ウィンドウで開く" Click="PopOutConsole" Tag="Console" Style="{StaticResource CommandButton}" Margin="0"/>
                 </Grid>
               </Grid>
@@ -621,7 +634,7 @@
               <Grid/>
             </TabItem>
             <TabItem Header="設定">
-              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <ScrollViewer x:Name="HardwareScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid x:Name="Editors" Margin="24,24,24,20">
                   <StackPanel x:Name="MemoryPage">
                     <TextBlock Text="メモリ" Style="{StaticResource PageHeading}"/>
@@ -717,6 +730,34 @@
                     </ComboBox>
                     <Button Content="実行中の macOS に適用" Click="ApplyResolution" HorizontalAlignment="Left" Margin="0,18,0,0" Tag="ApplyResolution"/>
                     <TextBlock Text="macOS 26 の Intel VM では、画面幅が 2048 ピクセルを超えると表示が乱れる既知の問題があります。安定した操作には 1920 × 1080 を推奨します。4K は描画負荷も高くなります。" Style="{StaticResource MutedText}" Margin="0,20,0,0"/>
+                    <Border x:Name="CursorAidCard" Style="{StaticResource NoticeCard}" Margin="0,20,0,0"><StackPanel>
+                      <TextBlock Text="カーソル互換表示" FontSize="18" FontWeight="SemiBold"/>
+                      <TextBlock Text="画面ミラーリングでカーソルが見えないときに、macOS の実際のカーソルを通常の画面内容として描画します。" Style="{StaticResource MutedText}" Margin="0,8,0,8"/>
+                      <TextBlock Text="この VM の macOS ユーザーで、ログイン後もオンの状態が続きます。ミラーリングは自動検出しません。必要なときだけオンにし、不要になったらオフにしてください。操作には実行中の VM と SSH ペアリングが必要です。" Style="{StaticResource MutedText}"/>
+                      <WrapPanel Margin="0,16,0,0">
+                        <Button x:Name="EnableCursorAidButton" Content="オンにする" Tag="EnableCursorAid" Click="ActionClick" AutomationProperties.Name="カーソル互換表示をオンにする"/>
+                        <Button x:Name="DisableCursorAidButton" Content="オフにする" Tag="DisableCursorAid" Click="ActionClick" AutomationProperties.Name="カーソル互換表示をオフにする"/>
+                      </WrapPanel>
+                      <WrapPanel Margin="0,8,0,0">
+                        <Button x:Name="MoveCursorMainButton" Content="VM 本体の画面へ移動" Tag="MoveCursorToMainDisplay" Click="ActionClick"/>
+                        <Button x:Name="MoveCursorExtendedButton" Content="拡張画面へ移動" Tag="MoveCursorToExtendedDisplay" Click="ActionClick"/>
+                      </WrapPanel>
+                      <TextBlock Text="移動先の画面配置と倍率を読み取り、実際の画面中央へ移動します。拡張画面を複数検出した場合は自動選択しません。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                      <WrapPanel Margin="0,12,0,0">
+                        <Button x:Name="HideHostCursorButton" Content="Windows 側を隠す" Tag="HideHostCursor" Click="ActionClick"/>
+                        <Button x:Name="ShowHostCursorButton" Content="Windows 側を表示" Tag="ShowHostCursor" Click="ActionClick"/>
+                      </WrapPanel>
+                      <TextBlock Text="Windows 側の非表示には対応エンジンが必要です。VM の画面内だけに適用します。入力を Windows に戻す: Ctrl + Alt + Home / Ctrl + Alt + Win。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                    </StackPanel></Border>
+                    <Border x:Name="ExtendedDisplayCard" Style="{StaticResource NoticeCard}" Margin="0,16,0,0"><StackPanel>
+                      <TextBlock Text="拡張画面の軽量化" FontSize="18" FontWeight="SemiBold"/>
+                      <TextBlock Text="拡張画面の広さを保ったまま、描画ピクセル数が少ないモードに切り替えます。文字の精細さは下がります。VM 本体の画面は変更しません。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                      <WrapPanel Margin="0,16,0,0">
+                        <Button x:Name="LightenExtendedDisplayButton" Content="拡張画面を軽くする" Tag="LightenExtendedDisplay" Click="ActionClick"/>
+                        <Button x:Name="RestoreExtendedDisplayButton" Content="元の画質へ戻す" Tag="RestoreExtendedDisplay" Click="ActionClick"/>
+                      </WrapPanel>
+                      <TextBlock Text="現在のログイン中だけ適用します。再接続後は必要に応じて再適用してください。変更後に別の設定が適用された場合は、保存した設定で上書きしません。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                    </StackPanel></Border>
                     <TextBlock Text="Reims vGPU · Apple Paravirtualized Graphics" Style="{StaticResource MutedText}" Margin="0,24,0,0"/>
                   </StackPanel>
                 </Grid>

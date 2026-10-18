@@ -103,6 +103,50 @@ clipboard and snapshot pages are immediate operations; the footer states that
 Cancel does not undo them. Unknown state and guest-only shutdown are not treated
 as permission to write offline configuration.
 
+## Cursor compatibility display
+
+The display settings page offers explicit `カーソル互換表示` On/Off actions for
+screen mirroring. The guest helper draws the actual macOS cursor as ordinary
+Mac window content. Enabling is opt-in; its per-user LaunchAgent remains enabled
+across logins until explicitly disabled. It does not detect mirroring processes
+or sessions automatically; the helper can remain alive and idle. Turn it off
+when it is no longer needed.
+
+The VM console toolbar's `カーソルを表示` button invokes that same enable operation
+in one click: the backend verifies, installs and starts the bundled helper
+through paired SSH. Repeating enable is idempotent. It needs no browser,
+manual download or terminal flow. Use display settings' Off action to undo it;
+the toolbar button is an action, not a persistent state indicator.
+
+`EnableCursorAid` and `DisableCursorAid` use the existing selected-VM backend
+operation path without elevation or additional arguments. Both require a running
+VM, a configured engine and paired SSH. Failures use the normal operation error
+and log feedback. No new status field or inferred enabled-state indicator is used.
+The isolated display-page fixture checks button routing, policy and compact
+visibility without invoking a guest helper. It does not qualify real cursor
+appearance, screen mirroring, Dock behavior or latency.
+
+The adjacent cursor menu and display settings offer `VM 本体の画面へ移動`
+and `拡張画面へ移動`. These read current logical display bounds and move to
+the selected screen's center; an absent or ambiguous extension is refused.
+They do not make absolute tablet input cross display edges automatically.
+
+`Windows 側を隠す` changes only the Reims window's host pointer, using a
+compatible engine's live QOM property. It does not create a macOS cursor or
+change the guest's cursor visibility. The policy is saved separately in the
+selected VM's `state/host-cursor.json`, leaving hardware and USB settings
+alone. `Windows 側を表示` also clears the saved policy while fully stopped;
+an unreadable policy is backed up before recovery. Ctrl+Alt+Win releases
+captured input; compatible engines additionally support Ctrl+Alt+Home.
+
+`拡張画面を軽くする` selects an offered mode with the same logical size and
+60 Hz refresh but at most one quarter of the pixel count. It changes only a
+unique eligible extended display for the current login session. Text becomes
+less sharp. `元の画質へ戻す` restores the recorded mode only while the display,
+login session and managed mode still match; it refuses unrelated changes.
+There is no automatic reapplication after reconnecting. A short-lived helper
+cannot distinguish every unplug/replug that reuses the same display identity.
+
 ## OpenCore controls
 
 The macOS 26.x boot profile controls APFS/HFS disk scanning. It rebuilds the
