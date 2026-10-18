@@ -5,7 +5,7 @@
 #include <map>
 #include <gsl/span>
 
-// Authored bounded IPv4/ARP MAC translation, following the MIT ndisapi
+// Authored bounded MAC translation, following the MIT ndisapi
 // ethernet_bridge sample. Unsupported Ethernet protocols never leave this relay.
 namespace reims {
 using mac = std::array<uint8_t, 6>;
@@ -59,12 +59,17 @@ inline void broadcast_dhcp(bytes b, const layout& l) {
         auto updated=uint16_t(~sum); put16(b,u+6,updated?updated:0xffff);
     }
 }
+}
+#include "ipv6.hpp"
+namespace reims {
 class translator {
     mac wifi_,guest_;
     std::map<uint32_t,mac> addresses_;
+    translator6 ipv6_;
 public:
-    translator(mac wifi, mac guest):wifi_(wifi),guest_(guest) {}
+    translator(mac wifi, mac guest):wifi_(wifi),guest_(guest),ipv6_(wifi,guest) {}
     bool translate(bytes b, bool from_tap) {
+        if(b.size()>=14 && be16(b,12)==0x86dd)return ipv6_.translate(b,from_tap);
         layout l;
         if(!inspect(b,l)) return false;
         if(from_tap) {
