@@ -64,30 +64,79 @@ function Assert-ReimsBridgeMembers($Record) {
     if ($enabled.Count -ne 2 -or !$enabled.SetEquals($expected) -or !$native.SetEquals($expected)) { throw 'Current bridge members include foreign/missing adapters or unconfirmed bindings; no bridge was changed.' }
 }
 
+function Test-ReimsUsableIpv4([string]$Address) {
+    $ip=$null
+    if (![Net.IPAddress]::TryParse($Address,[ref]$ip) -or $ip.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { return $false }
+    $bytes=$ip.GetAddressBytes()
+    return $bytes[0] -gt 0 -and $bytes[0] -lt 224 -and $bytes[0] -ne 127 -and !($bytes[0] -eq 169 -and $bytes[1] -eq 254)
+}
+
+function Get-ReimsAdapterIpv4State([string]$Id) {
+    $adapter=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop | Where-Object { ([guid]$_.InterfaceGuid).ToString('D') -eq $Id })
+    if ($adapter.Count -ne 1) { throw 'Cannot uniquely identify the selected network interface for IPv4 readiness.' }
+    $config=@(Get-NetIPConfiguration -InterfaceIndex $adapter[0].InterfaceIndex -ErrorAction Stop)
+    if ($config.Count -ne 1) { throw 'Cannot read the selected interface IPv4 configuration.' }
+    $addresses=@(foreach($address in @($config[0].IPv4Address)){if($null -ne $address -and (Test-ReimsUsableIpv4 $address.IPAddress)){$address.IPAddress}})
+    $gateways=@(foreach($gateway in @($config[0].IPv4DefaultGateway)){if($null -ne $gateway -and (Test-ReimsUsableIpv4 $gateway.NextHop)){$gateway.NextHop}})
+    $up=[string]$adapter[0].Status -eq 'Up'
+    return @{adapter_id=$Id;up=$up;usable=($up -and $addresses.Count -gt 0 -and $gateways.Count -gt 0);addresses=$addresses;gateways=$gateways}
+}
+
+function Get-ReimsNetworkTime { [DateTime]::UtcNow }
+
+function Wait-ReimsBridgeIpv4([string]$Id) {
+    $deadline=(Get-ReimsNetworkTime).AddSeconds(30)
+    $reason='IPv4/default gateway not ready'
+    do {
+        try {
+            $state=Get-ReimsAdapterIpv4State $Id
+            if ($state.usable) { return $state }
+            $reason='no usable IPv4/default gateway'
+        } catch { $reason=$_.Exception.Message }
+        if ((Get-ReimsNetworkTime) -ge $deadline) { throw "New bridge did not recover host IPv4/default gateway within 30 seconds: $reason" }
+        Start-Sleep -Milliseconds 500
+    } while ($true)
+}
+
 function New-ReimsHostBridge([string]$TapName,[string]$PhysicalSelection) {
+    Assert-ReimsVmStopped
     $uplink=Resolve-ReimsPhysicalUplink $PhysicalSelection
     if (!$uplink.connected) { throw 'Connect the selected physical adapter before creating a bridge.' }
     $taps=@((Get-ReimsNetworkInventory).tap_adapters | Where-Object name -EQ $TapName)
     if ($taps.Count -ne 1) { throw 'Select the dedicated internal TAP adapter; no physical NIC is passed to QEMU.' }
     $before=@(Get-ReimsHostBridgeIds)
     if ($before.Count) { throw 'Existing Windows bridges are preserved. Inspect them before creating a new Reims bridge.' }
+    $beforeIpv4=Get-ReimsAdapterIpv4State $uplink.id
+    if (!$beforeIpv4.up) { throw 'The selected physical uplink is no longer up; no bridge was created.' }
     $created=@()
     $createSucceeded=$false
     try {
+        Assert-ReimsVmStopped
         [void](Invoke-ReimsNetworkCommand @('bridge','create',([guid]$taps[0].id).ToString('B'),([guid]$uplink.id).ToString('B')))
         $createSucceeded=$true
         $created=@(Get-ReimsHostBridgeIds | Where-Object { $_ -notin $before })
         if ($created.Count -ne 1) { throw 'Cannot uniquely identify the new bridge; no unknown bridge will be deleted.' }
         $record=@{schema=1;bridge_id=$created[0];tap_id=$taps[0].id;tap_name=$taps[0].name
             physical_adapter_id=$uplink.id;physical_adapter_name=$uplink.name;connectivity='unverified'}
+        $record.host_ipv4_before=$beforeIpv4
+        $record.host_ipv4_readiness='not_required'
+        if ($beforeIpv4.usable) {
+            $record.host_ipv4_after=Wait-ReimsBridgeIpv4 $created[0]
+            $record.host_ipv4_readiness='recovered'
+        }
+        Assert-ReimsVmStopped
+        Assert-ReimsBridgeMembers $record
         Write-ReimsJson (Join-Path $VmRoot 'state/host-bridge.json') $record
         return $record
     } catch {
         $failure=$_
         if ($createSucceeded -and !$created.Count) { $created=@(Get-ReimsHostBridgeIds | Where-Object { $_ -notin $before }) }
         if ($created.Count -eq 1) {
-            try { [void](Invoke-ReimsNetworkCommand @('bridge','destroy',([guid]$created[0]).ToString('B'))) }
-            catch { throw "Bridge setup failed and rollback failed. Inspect Windows network settings. Setup: $($failure.Exception.Message); rollback: $($_.Exception.Message)" }
+            try {
+                Assert-ReimsBridgeMembers @{bridge_id=$created[0];tap_id=$taps[0].id;physical_adapter_id=$uplink.id}
+                [void](Invoke-ReimsNetworkCommand @('bridge','destroy',([guid]$created[0]).ToString('B')))
+            }
+            catch { throw "Bridge setup failed; safe owned rollback could not be confirmed/completed. Inspect Windows network settings. Setup: $($failure.Exception.Message); rollback: $($_.Exception.Message)" }
         }
         throw $failure
     }

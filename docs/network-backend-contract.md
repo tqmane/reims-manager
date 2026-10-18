@@ -125,20 +125,45 @@ CPU-only checks run with synthetic files, inventory and native calls:
 with `ReimsManager.exe --network-page-check <private-output-directory>`; it
 does not invoke the host network backend or boot a VM.
 
-## Proposed host-readiness gate (not implemented)
+## Host IPv4 readiness transaction
 
-CreateBridge currently does not verify host lease recovery. The reviewed
-minimal proposal is to read the selected physical uplink's IPv4/default
-gateway before creation, aborting before mutation if that query fails. If
-it previously had usable non-link-local IPv4 and a default gateway, wait up
-to 30 seconds at 500 ms intervals for the uniquely identified new bridge
-to regain usable IPv4 plus a default gateway. Do this before saving its
-ownership record or applying bridged VM settings. On timeout/unresolved
-identity, raise through the existing owned-bridge rollback path and leave
-the VM's NAT configuration unchanged. Never reset adapters, renew leases,
-change metrics/other NICs, or use an Internet ping as acceptance. Before
-destroying during rollback, ownership/membership must remain provable.
-Synthetic tests should cover immediate/delayed recovery, LLA-only/missing
-gateway, missing bridge identity, timeout, rollback failure and NAT/foreign
-NIC preservation. These tests and the lease gate are pending, not proof of
-Internet access or guest DHCP.
+CreateBridge itself asserts the VM is fully stopped, in addition to the
+dispatcher guard. It resolves the selected physical uplink by interface GUID
+and reads that interface's IPv4/default gateway before any native creation.
+A query failure or a link no longer up aborts before mutation. A usable
+configuration means an up interface with non-link-local unicast IPv4 and a
+usable IPv4 default gateway; unspecified, loopback, multicast, IPv6 and
+169.254/16 addresses do not qualify.
+
+If the uplink previously had that configuration, the new bridge interface
+must regain usable IPv4 plus a default gateway within a 30-second polling
+window, at 500 ms intervals. The bridge is resolved by its new native GUID,
+not a display name or guessed physical NIC. A missing/ambiguous bridge
+interface or failed query remains unready until the deadline. No Internet
+ping, IP renew, adapter reset, metric change, or unrelated-NIC IP query is
+performed. If the uplink previously lacked usable IPv4/gateway, no lease
+migration gate is required; this is recorded rather than claiming recovery.
+
+Only after readiness, another stopped-VM check and exact member validation
+does the ownership record get saved. `host_ipv4_before` captures the prior
+state; `host_ipv4_readiness` is `recovered` or `not_required`, with
+`host_ipv4_after` for a recovered lease. `connectivity` remains `unverified`:
+this is IPv4 configuration evidence, not Internet or guest-DHCP acceptance.
+
+On timeout or any later failure, the new owned bridge is removed only after
+revalidating exact recorded TAP/uplink membership with the same guard used
+by RemoveBridge. Foreign/unknown members or topology refuse cleanup and
+return an explicit manual-inspection error, rather than disconnecting other
+NICs. A failed native destroy also returns an explicit rollback failure.
+No bridged VM settings are applied by CreateBridge; prior NAT/config and
+prior ownership-record bytes remain unchanged on readiness failure. There
+is no promise of automatic DHCP recovery after removal, or an atomic lock
+against another administrator changing topology after the final check.
+
+`backend/tests/bridge-readiness.ps1` uses authored adapter/IP/native/time
+providers. It covers immediate/delayed recovery, LLA-only/missing gateway,
+missing bridge identity and query failures, the 30s/500ms budget, rollback
+failure, exact NAT preservation, and refusing to destroy a foreign-added
+member. No real host calls or waits occur. The shared network fixture runs
+this alongside the RemoveBridge cases; actual host lease recovery remains
+an integration check for an authorized operator.
