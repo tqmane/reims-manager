@@ -14,6 +14,7 @@ param(
 . "$PSScriptRoot/engine-package.ps1"
 . "$PSScriptRoot/wifi-macnat.ps1"
 . "$PSScriptRoot/network-uplinks.ps1"
+. "$PSScriptRoot/host-cursor.ps1"
 $script:ReimsEngine = Read-ReimsEngine $ProjectRoot
 
 function Get-ReimsSshKnownHostsOption([string]$Path) {
@@ -198,6 +199,7 @@ function Get-ReimsQemuArguments($Config, [string]$RunDirectory, [switch]$Paused,
         displays = 1; resolution = $Config.resolution; romfile = $Config.rom.Replace('\', '/')
         'display-modes' = @("$($Config.resolution)@60", '1280x720@60', '1920x1080@60', '2560x1440@60', '3840x2160@60') | Select-Object -Unique
     }
+    if (Get-ReimsHostCursorHidden) { $gfx['hide-host-cursor']=$true }
     # macOS needs QEMU's measured TSC leaf; Hyper-V passthrough reported 6.4 GHz for a 3.187 GHz clock.
     $qemuArguments = @(
         '-L', (ConvertTo-ReimsQemuPath (Get-ReimsEnginePath 'firmware' 'vendor/qemu/pc-bios')),
@@ -265,9 +267,9 @@ if (!$DryRun -and $runtime -and (Get-ReimsVmProcess $runtime)) {
         throw "VM is $($status.status). Use qmp.ps1 to control it; start only powers on a shut-down VM."
     }
     $previous = Get-Content -Raw -LiteralPath (Join-Path $runtime.run_directory 'command.json') | ConvertFrom-Json
-    # Launch-time -S does not constrain a retained VM's next power-on.
-    $original = @(Remove-ReimsUsbLaunchArguments $previous.arguments | Where-Object { $_ -ne '-S' })
-    $expected = @(Remove-ReimsUsbLaunchArguments (Get-ReimsQemuArguments $config $runtime.run_directory -Headless:$Headless -WithoutInstaller:$WithoutInstaller -DiagnosticTcg:$DiagnosticTcg) | Where-Object { $_ -ne '-S' })
+    # Launch-time -S and a live host-cursor policy do not constrain power-on.
+    $original = @(Remove-ReimsHostCursorLaunchPolicy (Remove-ReimsUsbLaunchArguments $previous.arguments) | Where-Object { $_ -ne '-S' })
+    $expected = @(Remove-ReimsHostCursorLaunchPolicy (Remove-ReimsUsbLaunchArguments (Get-ReimsQemuArguments $config $runtime.run_directory -Headless:$Headless -WithoutInstaller:$WithoutInstaller -DiagnosticTcg:$DiagnosticTcg)) | Where-Object { $_ -ne '-S' })
     $selectedUsb=@(Get-ReimsUsbSelections $config | ForEach-Object id | Sort-Object)
     $peripherals=Invoke-ReimsQmp $runtime qom-list @{path='/machine/peripheral'}
     $liveUsb=@($peripherals | Where-Object name -Like 'hostusb-*' | ForEach-Object name | Sort-Object)
@@ -319,6 +321,7 @@ $accelerators = Invoke-ReimsTool $Qemu @('-accel', 'help')
 if (!$DiagnosticTcg -and 'whpx' -notin ($accelerators | ForEach-Object { $_.Trim() })) { throw 'This QEMU was not built with WHPX.' }
 $properties = Invoke-ReimsTool $Qemu @('-device', 'apple-gfx-pci,help')
 if (($properties -join "`n") -notmatch 'resolution') { throw 'This QEMU lacks the reims apple-gfx-pci ABI.' }
+if ((Get-ReimsHostCursorHidden) -and ($properties -join "`n") -notmatch 'hide-host-cursor') { throw 'This engine lacks host cursor control. Update the engine or use ShowHostCursor while the VM is stopped.' }
 if ((Get-ReimsNetworkMode $config) -eq 'bridge' -and $config.network.adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) {
     throw 'The configured TAP adapter is missing. Install TAP-Windows6, create a Windows bridge, or switch to NAT.'
 }

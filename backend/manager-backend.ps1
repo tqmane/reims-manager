@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','EnableCursorAid','DisableCursorAid','MoveCursorToMainDisplay','MoveCursorToExtendedDisplay','LightenExtendedDisplay','RestoreExtendedDisplay','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','HideHostCursor','ShowHostCursor','EnableCursorAid','DisableCursorAid','MoveCursorToMainDisplay','MoveCursorToExtendedDisplay','LightenExtendedDisplay','RestoreExtendedDisplay','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -148,6 +148,7 @@ if ($Action -eq 'Status') {
     @{state=$state; prepared=$prepared; snapshots=$snapshots; taps=$taps; adapters=$adapters;
         runtime=$(if ($runtime -and (Get-ReimsVmProcess $runtime)) {$runtime} else {$null});
         vm_directory=$VmRoot;
+        host_cursor_hidden=(Get-ReimsHostCursorHidden);
         microphone=[bool]($config -and $config.PSObject.Properties['microphone'] -and $config.microphone);
         usb_backend=$(if ($config -and $config.PSObject.Properties['usb_backend']) {$config.usb_backend} else {'winusb'});
         cpus=$(if ($config) {$config.cpus} else {8}); memory_mib=$(if ($config) {$config.memory_mib} else {8192});
@@ -163,6 +164,14 @@ if ($Action -eq 'Status') {
     return
 }
 switch ($Action) {
+    HideHostCursor {
+        Set-ReimsHostCursor $true | Out-Null
+        'ホストカーソルを隠す設定を QEMU と保存値に反映しました。UI キューで処理されます。'
+    }
+    ShowHostCursor {
+        Set-ReimsHostCursor $false | Out-Null
+        'ホストカーソルの非表示設定を解除しました。'
+    }
     LightenExtendedDisplay {
         . "$PSScriptRoot/display-optimization.ps1"
         Invoke-ReimsDisplayOptimization 'lighten'
