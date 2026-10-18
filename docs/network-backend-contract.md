@@ -42,9 +42,10 @@ retains `adapter` as the QEMU TAP name and adds `physical_adapter_id` and
 The legacy internal-TAP-only parameters remain accepted. NAT saving never
 creates/destroys a host bridge and remains the default.
 
-This change does not replace the existing `InstallTap` action. Automatic
-official ZIP/signature/devcon installation is a separate integration owned
-by the host installer work. A dedicated TAP must already be available for
+The optional `InstallTap` action can now prepare the official signed 9.27.0
+driver and a dedicated adapter without a file dialog; see
+[its contract](tap-installer-contract.md). It never changes host bridges.
+A dedicated TAP must already be available for
 `CreateBridge`. CPU fixtures simulate inventory/native operations/rollback;
 actual wired/Wi-Fi bridge connectivity has not been tested by this change.
 

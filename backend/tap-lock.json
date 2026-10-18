@@ -1,0 +1,6 @@
+{
+  "version": "9.27.0",
+  "url": "https://github.com/OpenVPN/tap-windows6/releases/download/9.27.0/dist.win10.zip",
+  "sha256": "36e2609b7ceefedcb978ce5c48caf9e0e5af83423717c4e2e3c1d7ebca8f62a5",
+  "directory": "dist.win10/amd64"
+}
