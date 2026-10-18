@@ -200,7 +200,7 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     SetIdentity {
         Assert-ReimsVmStopped
-        $temporary = Join-Path $ProjectRoot ('.work/tmp/identity-' + [guid]::NewGuid() + '.json')
+        $temporary = Join-Path $ReimsWorkRoot ('tmp/identity-' + [guid]::NewGuid() + '.json')
         try {
             $json = [Console]::In.ReadToEnd()
             if ($json.Length -gt 4096) { throw 'Identity data is too large.' }

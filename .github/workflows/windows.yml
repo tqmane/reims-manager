@@ -26,6 +26,8 @@ jobs:
           if ($LASTEXITCODE) { throw 'Recorded firmware pair fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/opencore-backup.ps1
           if ($LASTEXITCODE) { throw 'VM-owned OpenCore backup fixture failed.' }
+          pwsh -NoProfile -File ./backend/tests/portable-support.ps1
+          if ($LASTEXITCODE) { throw 'Immutable engine support fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/native-probe.ps1
           if ($LASTEXITCODE) { throw 'Native timeout fixture failed.' }
           python ./tools/test_package_engine.py

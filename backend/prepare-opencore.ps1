@@ -18,13 +18,14 @@ if ($GenerateIdentity -and !$Rebuild) { throw 'Use -GenerateIdentity with -Rebui
 if ($IdentityFile -and (!$Rebuild -or $GenerateIdentity)) { throw 'Use -IdentityFile with -Rebuild, without -GenerateIdentity.' }
 if ($AppleAccountCompatibility -ne 'Keep' -and !$Rebuild) { throw 'Use -AppleAccountCompatibility with -Rebuild.' }
 if ($ApplyBootProfile -and !$Rebuild) { throw 'Use -ApplyBootProfile with -Rebuild.' }
-$downloads = Join-Path $ProjectRoot '.work/downloads'
+$downloads = Join-Path $ReimsSupportRoot 'downloads'
+New-Item -ItemType Directory -Force -Path $downloads | Out-Null
 $pin = (Get-ReimsEngineLock).opencore
 if ($Version -ne $pin.version) { throw 'Use the OpenCore version qualified with this manager.' }
 $expectedHash = $pin.sha256; $url = $pin.url
 $archive = if ($script:ReimsEngine) { Get-ReimsEnginePath 'opencore_archive' '' } else { Join-Path $downloads $pin.file }
 Get-ReimsPinnedDownload $url $expectedHash $archive
-$package = Join-Path $downloads "OpenCore-$Version-$($expectedHash.Substring(0,12))"
+$package = Join-Path $ReimsSupportRoot "opencore/OpenCore-$Version-$($expectedHash.Substring(0,12))"
 $validatedArchive = "$package.sha256"
 if (!(Test-Path -LiteralPath $validatedArchive)) {
     if (Test-Path -LiteralPath $package) { throw 'Unverified OpenCore extraction already exists; use a new engine folder.' }

@@ -53,6 +53,12 @@ All manifest paths are relative to the engine directory. QEMU's `-L`,
 disk tools, OVMF templates, ISO inspection and GPU ROM resolve through that
 manifest. VM-local writable firmware and disks stay in the VM directory.
 Changing the engine never overwrites the VM's NVRAM or SMBIOS identity.
+Portable runtimes require a VM directory outside the engine package. Their
+scratch/cache/report directories live in `<VM>/support`; verified OpenCore
+tools are extracted to `<VM>/support/opencore/OpenCore-1.0.8-2011e8b7216e`.
+The installed engine is not modified by OpenCore setup, so full package-file
+verification remains valid afterwards. Development checkout build caches
+continue to use that checkout's `.work` directory.
 Rebuilding an existing VM reuses its recorded `firmware_code` and variables
 template, checking both recorded hashes before changing configuration or
 the EFI image. A newer engine's OVMF is selected only for new VMs. An

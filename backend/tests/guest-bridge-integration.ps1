@@ -4,9 +4,12 @@ param([Parameter(Mandatory)][string]$EngineRoot,[Parameter(Mandatory)][string]$T
 $ErrorActionPreference='Stop'
 $env:REIMS_PROJECT_ROOT_OVERRIDE=[IO.Path]::GetFullPath($EngineRoot)
 $env:REIMS_MANAGER_TOOLS_ROOT=[IO.Path]::GetFullPath($ToolsRoot)
-$fixture=Join-Path $env:REIMS_PROJECT_ROOT_OVERRIDE ('.work/tmp/guest-bridge-fixture-'+[guid]::NewGuid().ToString('N'))
+$testParent=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")
+$fixture=Join-Path $testParent ('guest-bridge-fixture-'+[guid]::NewGuid().ToString('N'))
 $env:REIMS_VM_ROOT_OVERRIDE=$fixture
 $sourceScripts=Split-Path $PSScriptRoot
+. "$sourceScripts/engine-package.ps1"
+[void](Read-ReimsEngine $env:REIMS_PROJECT_ROOT_OVERRIDE -VerifyFiles)
 . "$sourceScripts/start.ps1" -FunctionsOnly
 . "$sourceScripts/firmware.ps1"
 $lock=$null
@@ -108,9 +111,10 @@ assert c['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['csr-active-con
     if(!$rejected -or (Get-FileHash $statePath).Hash -ne $oldConfig -or (Get-FileHash $ocPath).Hash -ne $oldOc){throw 'Failed metadata switch was not rolled back'}
     if(Test-Path (Join-Path $fixture 'state/runtime.json')){throw 'Fixture unexpectedly recorded a VM process'}
     if((Get-FileHash $live).Hash -ne $liveHash){throw 'Live NVRAM changed during config/addon rebuild'}
-    'PASS: recorded OVMF pair/NVRAM, authored addon validation, enable/disable, identity and bounds, active EFI rebuild, metadata rollback; no VM boot'
+    [void](Read-ReimsEngine $env:REIMS_PROJECT_ROOT_OVERRIDE -VerifyFiles)
+    'PASS: immutable engine reverified, recorded OVMF pair/NVRAM, addon enable/disable, identity/bounds, active EFI rebuild and rollback; no VM boot'
 } finally {
     if($lock){$lock.Dispose()}
-    $allowed=[IO.Path]::GetFullPath((Join-Path $env:REIMS_PROJECT_ROOT_OVERRIDE '.work/tmp'))+[IO.Path]::DirectorySeparatorChar
+    $allowed=$testParent.TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
     if([IO.Path]::GetFullPath($fixture).StartsWith($allowed,[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $fixture)){Remove-Item -LiteralPath $fixture -Recurse -Force}
 }

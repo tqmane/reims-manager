@@ -28,7 +28,7 @@ if ($Mode -eq 'Enable') {
     Invoke-ReimsTool $python @('-X','utf8',$patch,'check-release','.',$pinPath)
     if (!$script:ReimsEngine -or $script:ReimsEngine.id -ne $pin.required_engine_id) { throw 'Select the matching portable engine package before applying this guest bridge.' }
 }
-$work=Join-Path $ProjectRoot ('.work/tmp/guest-bridge-'+[guid]::NewGuid().ToString('N'))
+$work=Join-Path $ReimsSupportRoot ('tmp/guest-bridge-'+[guid]::NewGuid().ToString('N'))
 $slot=Join-Path $VmRoot ('firmware/guest-bridge-'+[guid]::NewGuid().ToString('N'))
 $keepSlot=$false; $archiveLock=$null
 New-Item -ItemType Directory -Path $work | Out-Null
@@ -45,7 +45,9 @@ try {
             $Sha256=$Matches[1]
             $url="https://github.com/$($pin.release_repository)/releases/download/$($pin.id)/$($pin.asset)"
             if ($assets[0].browser_download_url -ne $url) { throw 'Unexpected guest bridge URL.' }
-            $Archive=Join-Path $ProjectRoot ".work/downloads/$($pin.id).zip"
+            $downloads=Join-Path $ReimsSupportRoot 'downloads'
+            New-Item -ItemType Directory -Force -Path $downloads | Out-Null
+            $Archive=Join-Path $downloads "$($pin.id).zip"
             Get-ReimsPinnedDownload $url $Sha256 $Archive
         }
         $archiveLock=[IO.File]::Open($Archive,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
@@ -91,7 +93,7 @@ try {
     "Metal / WebGL 互換設定: $Mode / $($pin.abi_family)。元の EFI と識別情報を保持しました。"
 } finally {
     if ($archiveLock) { $archiveLock.Dispose() }
-    $workPrefix=[IO.Path]::GetFullPath((Join-Path $ProjectRoot '.work/tmp'))+[IO.Path]::DirectorySeparatorChar
+    $workPrefix=[IO.Path]::GetFullPath((Join-Path $ReimsSupportRoot 'tmp'))+[IO.Path]::DirectorySeparatorChar
     if ([IO.Path]::GetFullPath($work).StartsWith($workPrefix,[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $work)) { Remove-Item -LiteralPath $work -Recurse -Force }
     $slotPrefix=[IO.Path]::GetFullPath((Join-Path $VmRoot 'firmware'))+[IO.Path]::DirectorySeparatorChar
     if (!$keepSlot -and [IO.Path]::GetFullPath($slot).StartsWith($slotPrefix,[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $slot)) { Remove-Item -LiteralPath $slot -Recurse -Force }

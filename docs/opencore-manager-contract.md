@@ -55,13 +55,19 @@ All paths below are relative to the explicit `VmDirectory`:
 - `state/opencore-identity.json`: saved VM identity.
 - `backups/opencore/*.plist`: unique backups before identity/profile/account/update edits.
 - `firmware/guest-bridge-*/`: new EFI image/root and prior metadata backups.
+- `support/opencore/OpenCore-1.0.8-2011e8b7216e/`: verified extracted official tools, including `Utilities/ocvalidate/ocvalidate.exe` referenced by the manifest.
+- `support/downloads`, `support/kexts`, `support/tmp`, `support/cache`, `support/diagnostics`: VM-owned downloads, extracted addons and runtime scratch/reports.
 
 These are user data. Keep them with the VM outside developer `.work`
 directories when registering/migrating the library. Changing the engine or
 restarting the manager must not change `VmDirectory`. Existing files are
 not moved by this backend change; migration is a separate operation.
-Engine-local `.work/downloads`, `.work/tmp` and diagnostic logs are caches
-or scratch, not the source of the VM's identity/library registration.
+Installed engines remain immutable, including their complete file inventory.
+Portable runtime environment/cache/report writes go to the VM's `support`,
+not engine-local `.work`. A portable engine requires an explicit VM directory
+outside its package. Development source checkouts retain their own `.work`
+build environment. OpenCore tools/downloads belong to VM support in either
+mode. Do not persist old engine-cache `ocvalidate` paths during migration.
 
 Existing firmware paths/hashes and identity are reused on rebuilds. A new
 engine's OVMF does not replace an existing pair; an explicit incompatible
