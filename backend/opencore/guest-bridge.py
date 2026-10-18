@@ -103,6 +103,11 @@ def patch_config(config, pin, enable):
     if lilu:
         version = lambda s: tuple(map(int, s.split('.')))
         low, high = lilu[0].get('MinKernel', ''), lilu[0].get('MaxKernel', '')
+        if lilu[0].get('Comment') == 'Reims Manager WebGL' and low and high:
+            if not version(pin['min_kernel']) <= version(low) <= version(high) <= version(pin['max_kernel']):
+                raise ValueError('Owned Lilu bounds are outside this package ABI family')
+            lilu[0].update(MinKernel=pin['min_kernel'], MaxKernel=pin['max_kernel'])
+            low, high = pin['min_kernel'], pin['max_kernel']
         if (low and version(low) > version(pin['min_kernel'])) or (high and version(high) < version(pin['max_kernel'])):
             raise ValueError('Existing Lilu excludes this kernel; its bounds were not changed')
     def entry(name):
@@ -114,6 +119,7 @@ def patch_config(config, pin, enable):
         entries.insert(0, lilu[0])
     if bridge:
         bridge[0]['Enabled'] = True
+        bridge[0].update(MinKernel=pin['min_kernel'], MaxKernel=pin['max_kernel'])
         entries.remove(bridge[0])
     else:
         bridge = [entry(BRIDGE)]

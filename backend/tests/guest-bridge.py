@@ -13,11 +13,11 @@ bridge = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bridge)
 PIN = json.loads((BACKEND/'guest-bridge-lock.json').read_text(encoding='utf-8-sig'))
 READY = dict(copy.deepcopy(PIN), id='fixture-qualified-generic', min_kernel='25.0.0', max_kernel='25.99.99',
-             scope='generic-metal', runtime_validation='abi-checked', release_ready=True)
+             scope='generic-metal', runtime_validation='abi-checked', release_ready=True, qualified_kernels=['25.4.0'])
 
 
 def config():
-    return {'Kernel': {'Add': [{'BundlePath': 'Keep.kext', 'Enabled': True}], 'Quirks': {}},
+    return {'Kernel': {'Add': [{'BundlePath': 'Keep.kext', 'Enabled': True, 'MinKernel': '25.1.0', 'MaxKernel': '25.2.0'}], 'Quirks': {}},
             'PlatformInfo': {'Generic': {'SystemUUID': 'fixture-uuid', 'MLB': 'fixture-board', 'ROM': b'123456'}},
             'NVRAM': {'Add': {bridge.APPLE: {'boot-args': '-v keepsyms=1', 'csr-active-config': bytes(4)}}},
             'Misc': {'Security': {'ScanPolicy': 0x301, 'SecureBootModel': 'x86legacy'}}}
@@ -71,18 +71,35 @@ class GuestBridgeTests(unittest.TestCase):
         self.assertEqual(disabled['Kernel']['Add'][1]['MaxKernel'], '25.99.99')
         self.assertEqual(disabled['NVRAM']['Add'][bridge.APPLE]['boot-args'], '-v keepsyms=1')
 
-    def test_existing_bounds_are_not_widened_or_downgraded(self):
+    def test_qualified_reapply_migrates_old_bridge_bounds_only_within_family(self):
         enabled = bridge.patch_config(config(), READY, True)
         enabled['Kernel']['Add'][0].update(MinKernel='25.0.0', MaxKernel='25.99.99')
         self.assertEqual(bridge.patch_config(enabled, READY, True)['Kernel']['Add'][0], enabled['Kernel']['Add'][0])
         enabled['Kernel']['Add'][1].update(MinKernel='25.4.0', MaxKernel='25.4.0')
-        self.assertEqual(bridge.patch_config(enabled, READY, True)['Kernel']['Add'][1], enabled['Kernel']['Add'][1])
+        before = copy.deepcopy(enabled)
+        reapplied = bridge.patch_config(enabled, READY, True)
+        self.assertEqual((reapplied['Kernel']['Add'][1]['MinKernel'], reapplied['Kernel']['Add'][1]['MaxKernel']), ('25.0.0', '25.99.99'))
+        self.assertEqual(reapplied['Kernel']['Add'][2], enabled['Kernel']['Add'][2])
+        self.assertEqual(enabled, before)
         enabled['Kernel']['Add'][1]['MaxKernel'] = '26.0.0'
         before = copy.deepcopy(enabled)
         with self.assertRaisesRegex(ValueError, 'kernel bounds differ'):
             bridge.patch_config(enabled, READY, True)
         self.assertEqual(enabled, before)
         self.assertEqual(bridge.patch_config(enabled, READY, False)['Kernel']['Add'][1]['MaxKernel'], '26.0.0')
+
+    def test_only_owned_lilu_entry_migrates_with_explicit_qualified_enable(self):
+        old = bridge.patch_config(config(), READY, True)
+        for entry in old['Kernel']['Add'][:2]:
+            entry.update(MinKernel='25.4.0', MaxKernel='25.4.0')
+        updated = bridge.patch_config(old, READY, True)
+        self.assertTrue(all((e['MinKernel'], e['MaxKernel']) == ('25.0.0', '25.99.99') for e in updated['Kernel']['Add'][:2]))
+        custom = copy.deepcopy(old); custom['Kernel']['Add'][0]['Comment'] = 'Custom Lilu policy'
+        with self.assertRaisesRegex(ValueError, 'Existing Lilu excludes'):
+            bridge.patch_config(custom, READY, True)
+        self.assertEqual(custom['Kernel']['Add'][0]['MaxKernel'], '25.4.0')
+        with self.assertRaisesRegex(ValueError, 'still a candidate'):
+            bridge.patch_config(old, PIN, True)
 
     def test_package_hashes_source_and_kernel_pin_are_checked(self):
         with tempfile.TemporaryDirectory() as tmp:

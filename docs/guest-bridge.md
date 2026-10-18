@@ -6,12 +6,13 @@ runtime ABI before enabling translation. The manager does not select apps
 or browsers, and it does not treat a successful OS boot as WebGL proof.
 
 **The current source pin is a candidate, not a generic release.** It points
-to the previously qualified 25.4.0 implementation while the common Metal
-routing/runtime fix is completed and qualified in the Reims repository.
+to the global Metal implementation at `ac60717c` while the common host
+runtime fix and guest ABI path are qualified in the Reims repository.
 `release_ready=false` prevents publication and application. Candidate CI
 artifacts can be built for review, but cannot be applied through the manager.
-The current pin's 25.4.0 bounds have not been widened. No claim that all
-26.x versions work is made by this candidate.
+Its proposed Darwin 25 family bounds are candidate metadata only: there
+are no recorded qualified kernels, so those bounds cannot be applied.
+No claim that all 26.x versions work is made by this candidate.
 
 The addon is independent of the published Windows core engine. Its build
 and release do not rebuild or replace `engine-d8b9c2af-7100064d-1`.
@@ -21,7 +22,7 @@ and release do not rebuild or replace `engine-d8b9c2af-7100064d-1`.
 `backend/guest-bridge-lock.json` records source commits, ABI range, routing
 scope, runtime-validation status and actually qualified kernels:
 
-- Reims: `d8b9c2afb778d456069bf54cb4cd40e4cc77a0e7` (current candidate).
+- Reims: `ac60717cc18c1f3069e043ba7f7cb384de0631de` (global candidate).
 - Lilu 1.7.2 headers/plugin startup: `e4748cc081bf060302c7d3c44a643ce1d11b7e1d`.
 - MacKernelSDK: `3f750085caa17ec3a7880f11c11bf4f48cd6a164`.
 
@@ -79,7 +80,11 @@ metadata switch failures restore old metadata and retain both images.
 Identity, SIP, unrelated patches, scan policy and other NVRAM values are
 preserved. Applying enables the existing activation flag, orders Lilu before
 the bridge and enables its required DisableLinkeditJettison quirk. New entry
-bounds come from the reviewed ABI range; existing narrower bounds are kept.
+bounds come from the reviewed ABI range. Explicit enable/reapply migrates
+an existing authored bridge entry, and a manager-owned Lilu entry, from
+narrower bounds within that family to the qualified package range. This
+requires release-ready metadata; candidate packages cannot migrate bounds.
+Custom Lilu bounds remain unchanged and must cover the package range.
 An incompatible existing range or a conflicting Lilu build is rejected.
 Disabling turns off the bridge and its activation flags, preserving bounds,
 Lilu and shared quirks for other plugins. Ordinary OpenCore rebuilds follow

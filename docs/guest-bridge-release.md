@@ -6,5 +6,7 @@ release remains independent.
 Publication requires the common Metal implementation and safe runtime ABI
 validation to be qualified. The recorded qualified kernels describe actual
 checks; they do not claim every macOS 26.x release is tested. Apply only the
-reviewed release from the manager to a stopped VM. Identity and existing
-kernel bounds are preserved. CI compilation alone is not guest acceptance.
+reviewed release from the manager to a stopped VM. Identity and unrelated
+kernel entries are preserved. Explicit enable/reapply updates owned bridge
+and Lilu entries to the qualified ABI range; disabling preserves bounds.
+CI compilation alone is not guest acceptance.

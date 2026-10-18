@@ -43,8 +43,11 @@ For readiness text, the distributed `scripts/guest-bridge-lock.json` carries
 working generic support. The backend itself rejects enable/publication
 until qualified global Metal routing and runtime ABI checks are recorded,
 and rejects a mismatched host engine. `generic-metal` means all clients,
-with no process-name or suffix policy. The existing candidate pin is kept
-as provenance until the common implementation is qualified and repinned.
+with no process-name or suffix policy. The current global `ac60717c`
+candidate has no qualified kernels. Its proposed family bounds are not
+applicable until the common implementation and matching host are qualified.
+No bridge readiness fields have been added to `Status`; absent metadata
+must remain unconfirmed in the UI, not inferred from an enabled EFI entry.
 
 ## Persistent VM data
 
@@ -73,3 +76,7 @@ Existing firmware paths/hashes and identity are reused on rebuilds. A new
 engine's OVMF does not replace an existing pair; an explicit incompatible
 pair is refused. The bridge path switches validated EFI copies and retains
 old images/metadata for rollback rather than editing an active image.
+Explicit qualified `EnableGuestBridge` also migrates owned bridge/Lilu
+entries from narrower bounds within the reviewed ABI family to the package
+range. Custom Lilu policy is preserved or rejected if incompatible; unrelated
+entries are untouched. Ordinary rebuilds and disable retain existing bounds.

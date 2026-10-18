@@ -24,11 +24,12 @@ download generic QEMU as a substitute: it lacks the Reims device.
 ## Components and source pins
 
 `backend/engine-lock.json` is the reviewed source of version pins. It selects
-Reims `d8b9c2af`, QEMU `7100064d` and metal2vulkan `d41a1c2f`, rather than
+Reims `b8b4486c`, QEMU `7100064d` and metal2vulkan `ea5d6b87`, rather than
 following moving `windows-native-tahoe` branches. The latter runtime is the
 pin in Reims's Cargo manifest; later runtime development commits are not
-silently substituted. These pins preserve the currently qualified host
-implementation, including the guest bridge source at that Reims revision.
+silently substituted. Engine `engine-b8b4486c-7100064d-2` is the next build
+candidate for the common Metal path; native qualification remains pending.
+Guest bridge source is independently pinned in `guest-bridge-lock.json`.
 
 The engine package contains:
 
@@ -113,9 +114,11 @@ manager's OpenCore page fetches and applies the separate [guest bridge
 addon](guest-bridge.md), built by its own macOS CI job from those exact
 sources. Its release does not rebuild or replace the Windows engine.
 Application is optional and requires a qualified generic implementation and
-runtime ABI validation. The current candidate remains disabled with its
-previous 25.4.0 bounds. OS updates require
-testing the plugin against the new kernel before expanding its bounds.
+runtime ABI validation. The global `ac60717c` candidate records proposed
+Darwin 25 family bounds but has no qualified kernels and cannot be applied.
+After qualification, explicit enable/reapply migrates owned bridge/Lilu
+entries to the reviewed package range; ordinary rebuilds preserve bounds.
+Native guest and browser checks are required before release promotion.
 
 ## Build and publication
 
