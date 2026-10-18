@@ -9,6 +9,9 @@
 #include <mscat.h>
 #include <bcrypt.h>
 #include <ntddndis.h>
+#include <iphlpapi.h>
+#include <netioapi.h>
+#include <objbase.h>
 #include <common.h>
 #include <ndisapi.h>
 #include "packet.hpp"
@@ -42,6 +45,11 @@ static std::wstring guid(std::wstring v){
     require(v!=L"{00000000-0000-0000-0000-000000000000}","Empty GUID");return v;
 }
 static std::string ascii(const std::wstring& v){std::string out;for(auto c:v){require(c<=127,"ASCII identity required");out+=static_cast<char>(c);}return out;}
+static void require_router_discovery_disabled(const NET_LUID& tap){
+    MIB_IPINTERFACE_ROW row{};row.Family=AF_INET6;row.InterfaceLuid=tap;
+    require(GetIpInterfaceEntry(&row)==NO_ERROR && row.RouterDiscoveryBehavior==RouterDiscoveryDisabled,
+        "Dedicated TAP RouterDiscovery must remain disabled before forwarding IPv6");
+}
 static unsigned long long number(const std::wstring& v){
     require(!v.empty() && v.find_first_not_of(L"0123456789")==v.npos,"Invalid numeric identity");
     size_t end{};auto n=std::stoull(v,&end);require(n && end==v.size(),"Invalid numeric identity");return n;
@@ -63,12 +71,14 @@ static std::string escaped(const std::string& v){
     std::string out;for(unsigned char c:v){if(c=='"'||c=='\\')out+='\\';out+=c<32?' ':char(c);}return out;
 }
 static void status(const fs::path& folder,const std::string& session,const char* state,
-    unsigned long pid,unsigned long long start,const std::string& error="",bool cleanup=false){
+    unsigned long pid,unsigned long long start,const std::string& error="",bool cleanup=false,const std::string& filters="null"){
     const auto temp=folder/L"status.json.new",target=folder/L"status.json";
     {std::ofstream f(temp,std::ios::binary|std::ios::trunc);require(bool(f),"Cannot write forwarder state");
     f<<"{\"schema\":1,\"session\":\""<<session<<"\",\"state\":\""<<state
      <<"\",\"qemu_pid\":"<<pid<<",\"qemu_start_ticks\":"<<start
-     <<",\"helper_pid\":"<<GetCurrentProcessId()<<",\"cleanup_confirmed\":"<<(cleanup?"true":"false")<<",\"error\":\""<<escaped(error)<<"\"}";
+     <<",\"helper_pid\":"<<GetCurrentProcessId()<<",\"cleanup_confirmed\":"<<(cleanup?"true":"false")
+     <<",\"ipv6_enabled\":"<<(std::string(state)=="ready"?"true":"false")
+     <<",\"hardware_filters\":"<<filters<<",\"error\":\""<<escaped(error)<<"\"}";
     f.flush();require(bool(f),"Cannot flush forwarder state");}
     require(MoveFileExW(temp.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0,"Cannot commit forwarder state");
 }
@@ -99,20 +109,30 @@ static bool verify_catalog(const std::wstring& catalog,const std::wstring& file)
 }
 struct capture {
     CNdisApi& api;HANDLE adapter{};handle event{CreateEventW(nullptr,TRUE,FALSE,nullptr)};
-    handle mutex;bool attached{},owned{},filter_owned{};DWORD previous_filter{},our_filter{};bool& cleanup_confirmed;
-    capture(CNdisApi& a,HANDLE h,const std::wstring& id,bool& cleaned):api(a),adapter(h),
-        mutex(CreateMutexW(nullptr,TRUE,(L"Global\\ReimsWifiMacNat-"+id).c_str())),cleanup_confirmed(cleaned){
+    handle mutex;bool attached{},owned{},filter_owned{},filter_before_read{},filter_read{},filter_restored{};DWORD previous_filter{},our_filter{},readback_filter{};bool& cleanup_confirmed;std::string* receipt;
+    capture(CNdisApi& a,HANDLE h,const std::wstring& id,bool& cleaned,std::string* saved=nullptr):api(a),adapter(h),
+        mutex(CreateMutexW(nullptr,TRUE,(L"Global\\ReimsWifiMacNat-"+id).c_str())),cleanup_confirmed(cleaned),receipt(saved){
         const auto existing=GetLastError()==ERROR_ALREADY_EXISTS;
         require(mutex.value && !existing,"Selected adapter already reserved by another helper");
         require(event.value!=nullptr,"Cannot create capture event");
     }
-    void start(bool promiscuous=false){
+    void start(DWORD additional_filter=0){
         ADAPTER_MODE mode{adapter,0};
         require(api.GetAdapterMode(&mode)!=0 && mode.dwFlags==0,"Unknown or active foreign NDIS mode; refusing capture");
-        if(promiscuous){
-            require(api.GetHwPacketFilter(adapter,&previous_filter)!=0,"Cannot record TAP hardware filter");
-            our_filter=previous_filter|NDIS_PACKET_TYPE_PROMISCUOUS;
-            if(!api.SetHwPacketFilter(adapter,our_filter)){cleanup_confirmed=false;throw std::runtime_error("Cannot confirm owned TAP hardware filter");}filter_owned=true;
+        if(additional_filter){
+            require(api.GetHwPacketFilter(adapter,&previous_filter)!=0,"Cannot record selected hardware filter");
+            filter_before_read=true;
+            our_filter=previous_filter|additional_filter;
+            if(our_filter!=previous_filter){
+                if(!api.SetHwPacketFilter(adapter,our_filter)){cleanup_confirmed=false;throw std::runtime_error("Cannot confirm owned hardware filter");}filter_owned=true;
+            }
+            DWORD confirmed{};
+            require(api.GetHwPacketFilter(adapter,&confirmed)!=0,"Cannot read back selected hardware filter");
+            readback_filter=confirmed;filter_read=true;
+            if(confirmed!=our_filter){
+                if(confirmed==previous_filter)filter_owned=false;
+                throw std::runtime_error("Required selected hardware filter was not confirmed; relay not ready");
+            }
         }
         require(api.SetPacketEvent(adapter,event.value)!=0,"Cannot attach capture event");attached=true;
         mode.dwFlags=MSTCP_FLAG_SENT_LISTEN|MSTCP_FLAG_RECV_LISTEN|MSTCP_FLAG_FILTER_DIRECT|MSTCP_FLAG_LOOPBACK_BLOCK;
@@ -130,12 +150,21 @@ struct capture {
         if(filter_owned){
             DWORD current{};
             if(!api.GetHwPacketFilter(adapter,&current) || current!=our_filter)ok=false;
-            else ok=(api.SetHwPacketFilter(adapter,previous_filter)!=0)&&ok;
+            else{
+                DWORD restored{};
+                filter_restored=api.SetHwPacketFilter(adapter,previous_filter)!=0 &&
+                    api.GetHwPacketFilter(adapter,&restored)!=0 && restored==previous_filter;
+                ok=filter_restored&&ok;
+            }
             filter_owned=false;
         }
         cleanup_confirmed=ok && cleanup_confirmed;return ok;
     }
-    ~capture(){cleanup_confirmed=stop() && cleanup_confirmed;}
+    ~capture(){cleanup_confirmed=stop() && cleanup_confirmed;if(receipt)*receipt=filter_receipt();}
+    std::string filter_receipt()const{
+        return "{\"before\":"+(filter_before_read?std::to_string(previous_filter):"null")+",\"requested\":"+(filter_before_read?std::to_string(our_filter):"null")+
+            ",\"read_back\":"+(filter_read?std::to_string(readback_filter):"null")+",\"restore_confirmed\":"+(filter_restored?"true":"false")+"}";
+    }
 };
 static size_t find_adapter(const TCP_AdapterList& list,const std::wstring& id){
     std::optional<size_t> found;
@@ -151,7 +180,7 @@ static size_t find_adapter(const TCP_AdapterList& list,const std::wstring& id){
     require(bool(found),"Selected adapter is missing from packet-filter inventory");return *found;
 }
 int wmain(int argc,wchar_t** argv){
-    fs::path folder;std::string session;unsigned long pid{};unsigned long long start{};bool cleanup_confirmed=true;
+    fs::path folder;std::string session,filters="null",tap_filters="null",wifi_filters="null";unsigned long pid{};unsigned long long start{};bool cleanup_confirmed=true;
     try{
         if(argc==4 && std::wstring(argv[1])==L"--verify-catalog")return verify_catalog(argv[2],argv[3])?0:1;
         if(argc==4 && std::wstring(argv[1])==L"--check"){
@@ -174,19 +203,27 @@ int wmain(int argc,wchar_t** argv){
         handle qemu(OpenProcess(SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid));
         require(qemu.value && ticks(qemu.value)==start && WaitForSingleObject(qemu.value,0)==WAIT_TIMEOUT,"QEMU identity changed or exited");
         status(folder,session,"starting",pid,start);
+        GUID tap_guid{};NET_LUID tap_luid{};
+        require(CLSIDFromString(tap.c_str(),&tap_guid)==S_OK && ConvertInterfaceGuidToLuid(&tap_guid,&tap_luid)==NO_ERROR,"Cannot resolve dedicated TAP IPv6 identity");
+        require_router_discovery_disabled(tap_luid);
         CNdisApi api;require(api.IsDriverLoaded()!=0,"Packet filter driver unavailable");TCP_AdapterList list{};
         require(api.GetTcpipBoundAdaptersInfo(&list)!=0 && list.m_nAdapterCount<=ADAPTER_LIST_SIZE,"Cannot read adapter inventory");
         const auto ti=find_adapter(list,tap),wi=find_adapter(list,wifi);
         require((list.m_nAdapterMediumList[ti]==0 || list.m_nAdapterMediumList[ti]==16) &&
                 (list.m_nAdapterMediumList[wi]==0 || list.m_nAdapterMediumList[wi]==16),"Unsupported adapter medium");
-        capture tap_capture(api,list.m_nAdapterHandle[ti],tap,cleanup_confirmed),wifi_capture(api,list.m_nAdapterHandle[wi],wifi,cleanup_confirmed);
-        tap_capture.start(true);wifi_capture.start();
+        capture tap_capture(api,list.m_nAdapterHandle[ti],tap,cleanup_confirmed,&tap_filters),wifi_capture(api,list.m_nAdapterHandle[wi],wifi,cleanup_confirmed,&wifi_filters);
+        tap_capture.start(NDIS_PACKET_TYPE_PROMISCUOUS);
+        // Receive solicited-node multicast for guest addresses, not just groups
+        // joined by the host's own IPv6 stack. Restore this filter on cleanup.
+        wifi_capture.start(NDIS_PACKET_TYPE_ALL_MULTICAST);
+        filters="{\"tap\":"+tap_capture.filter_receipt()+",\"wifi\":"+wifi_capture.filter_receipt()+"}";
         reims::mac wifi_mac{};std::copy_n(list.m_czCurrentAddress[wi],6,wifi_mac.begin());
         reims::translator translator(wifi_mac,guest);
-        status(folder,session,"ready",pid,start);
+        status(folder,session,"ready",pid,start,"",false,filters);
         const HANDLE events[]{qemu.value,tap_capture.event.value,wifi_capture.event.value};
         auto packet=std::make_unique<INTERMEDIATE_BUFFER>();
         while(WaitForSingleObject(qemu.value,0)==WAIT_TIMEOUT && !fs::exists(folder/L"stop")){
+            require_router_discovery_disabled(tap_luid);
             const auto waited=WaitForMultipleObjects(3,events,FALSE,100);
             require(waited!=WAIT_FAILED,"Capture wait failed");
             if(waited==WAIT_OBJECT_0)break;
@@ -197,6 +234,11 @@ int wmain(int argc,wchar_t** argv){
                 // Bounded batches ensure stop/QEMU-exit checks cannot starve under traffic.
                 for(unsigned count=0;count<256 && api.ReadPacket(&request);++count){
                     if(packet->m_dwDeviceFlags!=PACKET_FLAG_ON_RECEIVE || packet->m_Length>sizeof(packet->m_IBuffer))continue;
+                    if(packet->m_Length>=14 && reims::be16(reims::bytes(packet->m_IBuffer,packet->m_Length),12)==0x86dd){
+                        reims::layout6 layout;
+                        if(reims::inspect6(reims::bytes(packet->m_IBuffer,packet->m_Length),layout) && layout.nd==134)
+                            require_router_discovery_disabled(tap_luid);
+                    }
                     if(!translator.translate(reims::bytes(packet->m_IBuffer,packet->m_Length),side==0))continue;
                     request.hAdapterHandle=output.adapter;
                     require(api.SendPacketToAdapter(&request)!=0,"Packet reinjection failed");
@@ -209,9 +251,11 @@ int wmain(int argc,wchar_t** argv){
         }
         const bool cleaned_wifi=wifi_capture.stop(),cleaned_tap=tap_capture.stop();
         require(cleaned_wifi && cleaned_tap,"Owned capture cleanup failed; inspect driver state before retrying");
-        status(folder,session,"stopped",pid,start,"",true);return 0;
+        filters="{\"tap\":"+tap_capture.filter_receipt()+",\"wifi\":"+wifi_capture.filter_receipt()+"}";
+        status(folder,session,"stopped",pid,start,"",true,filters);return 0;
     }catch(const std::exception& error){
-        if(!folder.empty() && !session.empty())try{status(folder,session,"error",pid,start,error.what(),cleanup_confirmed);}catch(...){}
+        filters="{\"tap\":"+tap_filters+",\"wifi\":"+wifi_filters+"}";
+        if(!folder.empty() && !session.empty())try{status(folder,session,"error",pid,start,error.what(),cleanup_confirmed,filters);}catch(...){}
         return 1;
     }
 }

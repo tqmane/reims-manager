@@ -57,5 +57,5 @@ int main() {
         std::vector<uint8_t> v(90);bytes p(v.data(),v.size());put16(p,12,0x0800);p[14]=uint8_t(0x40|ihl);put16(p,16,uint16_t(total));layout l;
         check(inspect(p,l)==(ihl>=5 && total>=ihl*4));
     }
-    std::cout<<"PASS bounded Ethernet/ARP/IPv4/UDP/DHCP, MAC translation, IPv6 refusal fixtures\n";
+    std::cout<<"PASS bounded Ethernet/ARP/IPv4/UDP/DHCP and MAC translation fixtures\n";
 }
