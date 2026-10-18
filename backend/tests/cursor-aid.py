@@ -8,6 +8,7 @@ import plistlib
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('cursor_aid', Path(__file__).resolve().parents[1] / 'guest-cursor-aid.py')
 aid = importlib.util.module_from_spec(spec)
@@ -32,6 +33,12 @@ class Launchctl:
         self.move_code = 0
         self.move_calls = []
         self.calls = []
+        self.pid = 123
+        self.stop_delay = 0
+        self.stop_pending = None
+        self.never_stop = False
+        self.foreign_on_stop = False
+        self.replacement_on_stop = False
 
     def __call__(self, args, **kwargs):
         self.calls.append(args)
@@ -51,13 +58,26 @@ class Launchctl:
         if verb == 'print':
             if len(args[2].split('/')) == 2:
                 code = 0 if self.gui else 1
-            elif self.live:
-                path = '/foreign.plist' if self.foreign else str(self.agent)
-                output = f'\tpath = {path}\n\tprogram = {self.executable}\n\tpid = 123\n'
             else:
-                code = 113
+                if self.stop_pending is not None and not self.never_stop:
+                    if self.stop_pending == 0:
+                        self.live = False
+                        self.stop_pending = None
+                    else:
+                        self.stop_pending -= 1
+                if self.live:
+                    path = '/foreign.plist' if self.foreign else str(self.agent)
+                    output = f'\tpath = {path}\n\tprogram = {self.executable}\n\tpid = {self.pid}\n'
+                else:
+                    code = 113
         elif verb == 'bootout':
-            self.live = False
+            self.stop_pending = self.stop_delay
+            if self.foreign_on_stop:
+                self.foreign = True
+                self.never_stop = True
+            if self.replacement_on_stop:
+                self.pid += 1
+                self.never_stop = True
         elif verb == 'bootstrap':
             if self.fail_bootstrap:
                 self.fail_bootstrap -= 1
@@ -65,6 +85,7 @@ class Launchctl:
             else:
                 assert self.agent.exists() and self.executable.exists()
                 self.live = True
+                self.stop_pending = None
         elif verb not in ('enable', 'kickstart'):
             raise AssertionError(args)
         return subprocess.CompletedProcess(args, code, output, 'synthetic failure' if code else '')
@@ -104,6 +125,68 @@ class CursorAid(unittest.TestCase):
         self.apply(dict(schema=1, operation='disable'))
         self.assertFalse(self.directory.exists())
         self.assertFalse(any(args[1] == 'bootout' for args in self.control.calls))
+
+    def test_async_bootout_waits_before_upgrading(self):
+        self.apply(request())
+        self.control.stop_delay = 3
+        self.control.calls.clear()
+        with patch.object(aid.time, 'sleep') as sleep:
+            self.apply(request(b'new authored fixture', 'b' * 40))
+        self.assertEqual(sleep.call_count, 3)
+        verbs = [args[1] for args in self.control.calls]
+        self.assertEqual(verbs.count('bootout'), 1)
+        self.assertGreaterEqual(verbs.index('bootstrap') - verbs.index('bootout'), 5)
+        self.assertEqual(self.control.executable.read_bytes(), b'new authored fixture')
+        self.assertTrue(self.control.live)
+
+    def test_nonexit_does_not_change_files_or_bootstrap(self):
+        self.apply(request())
+        before = {path: path.read_bytes() for path in (self.receipt, self.control.agent, self.control.executable)}
+        self.control.never_stop = True
+        self.control.calls.clear()
+        clock = [0.0]
+        def advance(seconds):
+            clock[0] += seconds
+        with patch.object(aid.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(aid.time, 'sleep', side_effect=advance):
+            with self.assertRaisesRegex(RuntimeError, 'not confirmed within 5 seconds'):
+                self.apply(request(b'new', 'b' * 40))
+        self.assertLess(clock[0], 5.2)
+        self.assertFalse(any(args[1] == 'bootstrap' for args in self.control.calls))
+        for path, data in before.items():
+            self.assertEqual(path.read_bytes(), data)
+
+    def test_foreign_transition_during_teardown_preserves_files(self):
+        self.apply(request())
+        before = {path: path.read_bytes() for path in (self.receipt, self.control.agent, self.control.executable)}
+        for kind, message in (('foreign_on_stop', 'unowned path'), ('replacement_on_stop', 'PID changed')):
+            with self.subTest(kind=kind):
+                self.control.foreign = False
+                self.control.never_stop = False
+                self.control.foreign_on_stop = False
+                self.control.replacement_on_stop = False
+                self.control.stop_pending = None
+                setattr(self.control, kind, True)
+                self.control.calls.clear()
+                with self.assertRaisesRegex((ValueError, RuntimeError), message):
+                    self.apply(request(b'new', 'b' * 40))
+                self.assertFalse(any(args[1] == 'bootstrap' for args in self.control.calls))
+                for path, data in before.items():
+                    self.assertEqual(path.read_bytes(), data)
+
+    def test_rollback_stops_new_service_before_restoring_old_files(self):
+        self.apply(request())
+        before = {path: path.read_bytes() for path in (self.receipt, self.control.agent, self.control.executable)}
+        self.control.stop_delay = 2
+        original_run = self.control
+        def run(args, **kwargs):
+            if args[1] == 'kickstart' and self.control.executable.read_bytes() == b'new':
+                return subprocess.CompletedProcess(args, 5, '', 'synthetic kickstart failure')
+            return original_run(args, **kwargs)
+        with patch.object(aid.time, 'sleep'), self.assertRaisesRegex(RuntimeError, 'kickstart failed'):
+            aid.apply(request(b'new', 'b' * 40), self.home, os.getuid() if hasattr(os, 'getuid') else 0, run)
+        self.assertTrue(self.control.live)
+        for path, data in before.items():
+            self.assertEqual(path.read_bytes(), data)
 
     def test_move_verifies_enables_then_runs_only_fixed_target(self):
         for target in ('main', 'extended'):

@@ -99,10 +99,22 @@ class LaunchAgent:
         return result.stdout
 
     def stop(self):
-        if self.loaded() is not None:
-            self.require('bootout', self.service)
-            if self.loaded() is not None:
-                raise RuntimeError('Cursor aid service is still loaded after bootout')
+        output = self.loaded()
+        if output is None:
+            return
+        owned_pid = re.search(r'^\s*pid = ([1-9][0-9]*)$', output, re.M)
+        self.require('bootout', self.service)
+        deadline = time.monotonic() + 5
+        while True:
+            output = self.loaded()  # Rechecks both owned paths on every poll.
+            if output is None:
+                return
+            current_pid = re.search(r'^\s*pid = ([1-9][0-9]*)$', output, re.M)
+            if current_pid and (not owned_pid or current_pid.group(1) != owned_pid.group(1)):
+                raise RuntimeError('Cursor aid service PID changed during teardown; refusing replacement')
+            if time.monotonic() >= deadline:
+                raise RuntimeError('Cursor aid teardown was not confirmed within 5 seconds')
+            time.sleep(0.1)
 
     def start(self):
         self.require('enable', self.service)
@@ -206,8 +218,9 @@ def apply(request, home, uid, run=subprocess.run):
     current = dict(before)
     created_directory = not directory.exists()
     attempted = False
+    # No files changed yet: an unconfirmed stop must never trigger bootstrap.
+    control.stop()
     try:
-        control.stop()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         agent.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         record = dict(schema=1, owner=LABEL, enabled=enable,
