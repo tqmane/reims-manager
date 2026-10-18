@@ -50,6 +50,17 @@ try {
     Invoke-ReimsCursorAid disable | Out-Null
     Assert-True ($script:Request.operation -ceq 'disable' -and !$script:Request.Contains('payload')) 'Disable required bundle or sent payload'
 
+    $env:REIMS_MANAGER_TOOLS_ROOT=Join-Path $work 'runtimes'
+    foreach($target in @('main','extended')){
+        $script:Reply=@{schema=1;enabled=$true;pid=123;move=@{schema=1;action='move-to-display';target=$target;ok=$true;cgError=0;displayID=22;candidateCount=1;boundsCG=@{x=0;y=0;width=1600;height=900};positionCG=@{x=800;y=450};error=$null}}|ConvertTo-Json -Depth 5 -Compress
+        Invoke-ReimsCursorAid "move-$target" | Out-Null
+        Assert-True ($script:Request.operation -ceq "move-$target" -and $script:Request.Contains('manifest') -and $script:Request.Contains('payload')) 'Move skipped verified enable payload'
+    }
+    $script:Reply='{"schema":1,"enabled":true,"pid":123,"move":{"action":"move-to-display","target":"extended","ok":false,"cgError":0}}'
+    Reject {Invoke-ReimsCursorAid move-extended}
+    $script:Reply='{"schema":1,"enabled":true,"pid":123,"move":{"action":"move-to-display","target":"main","ok":true,"cgError":0}}'
+    Reject {Invoke-ReimsCursorAid move-extended}
+
     # Extract the actual private function; replace only its fixed executable for an offline argv/stdin spy.
     $ast=[scriptblock]::Create((Get-Content -Raw "$PSScriptRoot/../manager-backend.ps1")).Ast
     $body=$ast.Find({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-GuestControl'},$true).Extent.Text
@@ -87,7 +98,7 @@ try {
     Assert-True ($script:SSHCalls -eq $count) 'Non-running VM reached SSH'
     $script:Active=$true;$script:SshExit=9
     Reject {Invoke-GuestControl -Command 'fixed' -InputJson '{}'}
-    'PASS cursor aid bundle validation, typed results, strict SSH alias/path, stdin/legacy -n, runtime guards and native SSH failure; no guest connection.'
+    'PASS cursor aid bundle/move payload validation, typed move feedback, strict SSH alias/path, stdin/legacy -n, runtime guards and native SSH failure; no guest connection.'
 } finally {
     $env:REIMS_MANAGER_TOOLS_ROOT=$oldTools
     $prefix=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")+[IO.Path]::DirectorySeparatorChar

@@ -1,7 +1,7 @@
 # Fixed Manager code and a bundled authored executable; no caller-controlled paths or commands.
-function Invoke-ReimsCursorAid([ValidateSet('enable','disable')][string]$Operation) {
+function Invoke-ReimsCursorAid([ValidateSet('enable','disable','move-main','move-extended')][string]$Operation) {
     $request = @{schema=1;operation=$Operation}
-    if ($Operation -eq 'enable') {
+    if ($Operation -ne 'disable') {
         if (!$env:REIMS_MANAGER_TOOLS_ROOT) { throw 'Cursor aid is missing. Re-extract the complete Manager package.' }
         $directory = Join-Path $env:REIMS_MANAGER_TOOLS_ROOT 'cursor-aid'
         $manifestPath = Join-Path $directory 'manifest.json'
@@ -27,9 +27,17 @@ function Invoke-ReimsCursorAid([ValidateSet('enable','disable')][string]$Operati
     $json = Invoke-GuestControl -Command $command -InputJson ($request | ConvertTo-Json -Depth 4 -Compress)
     if ([Text.Encoding]::UTF8.GetByteCount($json) -gt 4096) { throw 'Unexpected cursor aid result size.' }
     $result = $json | ConvertFrom-Json -AsHashtable
-    if ($result -isnot [Collections.IDictionary] -or ($result.schema -isnot [long] -and $result.schema -isnot [int]) -or $result.schema -ne 1 -or $result.enabled -isnot [bool] -or $result.enabled -ne ($Operation -eq 'enable') -or
+    if ($result -isnot [Collections.IDictionary] -or ($result.schema -isnot [long] -and $result.schema -isnot [int]) -or $result.schema -ne 1 -or $result.enabled -isnot [bool] -or $result.enabled -ne ($Operation -ne 'disable') -or
         ($result.enabled -and ($result.pid -isnot [long] -and $result.pid -isnot [int] -or $result.pid -le 0)) -or
         (!$result.enabled -and $null -ne $result.pid)) { throw 'Cursor aid did not confirm the requested state.' }
-    if ($result.enabled) { 'カーソル補助を有効にしました。macOS への次回ログイン時も起動します。' }
+    if ($Operation -like 'move-*') {
+        $target = if ($Operation -eq 'move-main') { 'main' } else { 'extended' }
+        $move = $result.move
+        if ($move -isnot [Collections.IDictionary] -or ($move.schema -isnot [long] -and $move.schema -isnot [int]) -or $move.schema -ne 1 -or
+            $move.action -cne 'move-to-display' -or $move.target -cne $target -or $move.error -ne $null -or
+            $move.ok -isnot [bool] -or !$move.ok -or ($move.cgError -isnot [long] -and $move.cgError -isnot [int]) -or $move.cgError -ne 0) { throw 'Cursor movement was not confirmed; cursor aid remains enabled.' }
+        if ($target -eq 'main') { 'カーソルをメイン画面へ移動しました。' } else { 'カーソルを拡張画面へ移動しました。' }
+    }
+    elseif ($result.enabled) { 'カーソル補助を有効にしました。macOS への次回ログイン時も起動します。' }
     else { 'カーソル補助を無効にしました。' }
 }

@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import plistlib
@@ -120,8 +121,29 @@ class LaunchAgent:
 
 def apply(request, home, uid, run=subprocess.run):
     if (not isinstance(request, dict) or type(request.get('schema')) is not int
-            or request['schema'] != 1 or request.get('operation') not in ('enable', 'disable')):
+            or request['schema'] != 1 or request.get('operation') not in ('enable', 'disable', 'move-main', 'move-extended')):
         raise ValueError('Invalid cursor aid request')
+    if request['operation'].startswith('move-'):
+        # Movement is a separate operation after enable commits successfully.
+        enabled = apply(dict(request, operation='enable'), home, uid, run)
+        target = 'main' if request['operation'] == 'move-main' else 'extended'
+        try:
+            executable = home / 'Library/Application Support/Reims/CursorAid' / EXECUTABLE
+            receipt_path = executable.parent / 'receipt.json'
+            for path in (executable, receipt_path):
+                check_path(path, home, uid)
+            receipt = json.loads(read_file(receipt_path, 4096))
+            expected = manifest(request.get('manifest'))
+            if (receipt.get('owner') != LABEL or receipt.get('enabled') is not True
+                    or manifest(receipt.get('manifest')) != expected
+                    or digest(read_file(executable, MAX_BINARY)) != expected['sha256']):
+                raise ValueError('Installed cursor aid changed before movement')
+            result = run([str(executable), '--move-to-display', target],
+                         capture_output=True, text=True, timeout=10, check=False)
+            moved = move_result(result, target)
+            return dict(enabled, move=moved)
+        except Exception as error:
+            raise RuntimeError(f'Cursor aid remains enabled; cursor movement failed: {error}') from error
     enable = request['operation'] == 'enable'
     incoming = manifest(request.get('manifest')) if enable else None
     payload = None
@@ -228,6 +250,38 @@ def apply(request, home, uid, run=subprocess.run):
         except Exception as rollback:
             raise RuntimeError(f'Cursor aid failed: {error}; rollback unconfirmed: {rollback}') from error
         raise
+
+
+def move_result(result, target):
+    if len(result.stdout.encode('utf-8')) > 4096:
+        raise ValueError('Cursor movement result is too large')
+    if result.returncode == 2 and not result.stdout.strip():
+        raise RuntimeError('The bundled cursor aid does not support this operation; install a matching Manager package')
+    value = json.loads(result.stdout)
+    keys = {'schema', 'action', 'target', 'ok', 'cgError', 'displayID', 'boundsCG', 'positionCG', 'candidateCount', 'error'}
+    integer = lambda x: type(x) is int and 0 <= x <= 0xffffffff
+    if (not isinstance(value, dict) or set(value) != keys or type(value['schema']) is not int or value['schema'] != 1
+            or value['action'] != 'move-to-display' or value['target'] != target or type(value['ok']) is not bool
+            or not integer(value['candidateCount'])
+            or (value['cgError'] is not None and type(value['cgError']) is not int)
+            or (value['displayID'] is not None and not integer(value['displayID']))
+            or (value['error'] is not None and (not isinstance(value['error'], str) or len(value['error']) > 128))):
+        raise ValueError('Unexpected typed cursor movement result')
+    for key, fields in (('boundsCG', {'x', 'y', 'width', 'height'}), ('positionCG', {'x', 'y'})):
+        point = value[key]
+        if point is not None and (not isinstance(point, dict) or set(point) != fields
+                or any(type(number) not in (int, float) or not math.isfinite(number) for number in point.values())):
+            raise ValueError('Invalid logical cursor coordinates')
+    if not value['ok'] or result.returncode != 0:
+        raise RuntimeError(f'Native cursor movement was refused ({value["error"] or "runtime failure"}; CGError={value["cgError"]})')
+    bounds, position = value['boundsCG'], value['positionCG']
+    if (value['cgError'] != 0 or value['error'] is not None or not value['displayID'] or bounds is None or position is None
+            or bounds['width'] <= 0 or bounds['height'] <= 0
+            or not bounds['x'] <= position['x'] < bounds['x'] + bounds['width']
+            or not bounds['y'] <= position['y'] < bounds['y'] + bounds['height']
+            or (target == 'extended' and value['candidateCount'] != 1)):
+        raise ValueError('Cursor movement did not confirm the selected logical display')
+    return value
 
 
 def main():
