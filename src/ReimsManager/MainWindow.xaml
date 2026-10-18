@@ -666,7 +666,7 @@
                     <RadioButton x:Name="Nat" Content="NAT（通常はこちら）" IsChecked="True" Margin="0,18,0,6"/>
                     <TextBlock Text="Windows のインターネット接続を共有します。Apple Account も使用できます。" Style="{StaticResource MutedText}" Margin="24,0,0,20"/>
                     <RadioButton x:Name="Bridge" Content="LAN に直接接続" Margin="0,0,0,6"/>
-                    <TextBlock Text="Wi-Fi は互換接続（IPv4）、有線 LAN は Windows ブリッジを使用します。" Style="{StaticResource MutedText}" Margin="24,0,0,8"/>
+                    <TextBlock Text="Wi-Fi は IPv4 / IPv6 の互換接続、有線 LAN は Windows ブリッジを使用します。" Style="{StaticResource MutedText}" Margin="24,0,0,8"/>
                     <TextBlock Text="ホストの接続先" Style="{StaticResource FieldLabel}"/>
                     <ComboBox x:Name="Uplink" DisplayMemberPath="DisplayName" SelectedValuePath="Id" ToolTip="{Binding SelectedItem.Description, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="物理 Wi-Fi・有線 LAN の接続先"/>
                     <TextBlock x:Name="NetworkNotice" Style="{StaticResource MutedText}" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
@@ -869,8 +869,8 @@
                   <ComboBox x:Name="Physical" DisplayMemberPath="DisplayName" SelectedValuePath="Id" ToolTip="{Binding SelectedItem.Description, RelativeSource={RelativeSource Self}}" SelectionChanged="WifiSelectionChanged" AutomationProperties.Name="LAN に接続する物理 Wi-Fi・有線 LAN"/>
                   <Button Content="接続先を更新" Click="ReloadNetworkChoices" HorizontalAlignment="Left" Margin="0,12,0,0"/>
                   <Border x:Name="WifiCompatCard" Style="{StaticResource NoticeCard}" Margin="0,16,0,0" Visibility="Collapsed"><StackPanel>
-                    <TextBlock Text="Wi-Fi 互換接続（IPv4）" FontSize="18" FontWeight="SemiBold"/>
-                    <TextBlock Text="専用 TAP を自動で準備します。外部 IPv6 には対応していません。" Style="{StaticResource MutedText}" Margin="0,8,0,12"/>
+                    <TextBlock Text="Wi-Fi 互換接続（IPv4 / IPv6）" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock Text="専用 TAP を自動で準備します。IPv6 の実際の利用可否はルーター・回線の対応状況にも依存します。" Style="{StaticResource MutedText}" Margin="0,8,0,12"/>
                     <TextBlock x:Name="WifiForwarderSummary" Text="転送状態は未確認です" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/>
                     <ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="WifiForwarderDetail" Style="{StaticResource MutedText}" Margin="0,6,0,12"/></ScrollViewer>
                     <TextBlock Text="外部ドライバーは非商用の個人・学術用途、商用評価向けです。商用運用・再配布には配布元の別ライセンスが必要です。導入時は Windows 全体の通信が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>

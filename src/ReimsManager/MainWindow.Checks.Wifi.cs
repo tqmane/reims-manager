@@ -30,11 +30,25 @@ public partial class MainWindow
             latest=JsonSerializer.SerializeToElement(new {});ReadWifiStatus();UpdatePowerControls();
             if(PrepareWifiButton.IsEnabled || !WifiForwarderSummary.Text.Contains("未確認")) throw new Exception("Missing status was reported ready.");
             latest=WifiUiChecks.Snapshot(running:true,ready:true,pid:1234);ReadWifiStatus();currentState="running";State.Text="実行中";UpdatePowerControls();
-            if(PrepareWifiButton.IsEnabled || DisableWifiButton.IsEnabled || !WifiForwarderSummary.Text.Contains("転送プロセス")) throw new Exception("Running Wi-Fi permits a host configuration change.");
+            if(PrepareWifiButton.IsEnabled || DisableWifiButton.IsEnabled || !WifiForwarderSummary.Text.Contains("転送プロセス") || !WifiForwarderSummary.Text.Contains("IPv4 / IPv6"))
+                throw new Exception("Running Wi-Fi permits a host configuration change or loses protocol capability.");
             WifiForwarderSummary.BringIntoView();await ArrangeCheck();SaveImage(Path.Combine(folder,"wifi-compat-ready.png"));
             latest=WifiUiChecks.Snapshot(running:true,ready:true,pid:1234,error:"Authored forwarding error");ReadWifiStatus();UpdatePowerControls();
             if(!WifiForwarderSummary.Text.Contains("エラー") || !WifiForwarderDetail.Text.Contains("Authored forwarding error")) throw new Exception("Worker error was hidden behind a ready flag.");
             await ArrangeCheck();SaveImage(Path.Combine(folder,"wifi-compat-error.png"));
+            currentState="stopped";State.Text="完全停止";
+            latest=WifiUiChecks.Snapshot(kind:WifiForwarderState.LegacyMacNat,configured:false,error:"Reapply PrepareWifi for IPv6");ReadWifiStatus();hardwareForwarder=WifiForwarderState.LegacyMacNat;
+            loadingHardware=true;
+            try { Nat.IsChecked=false;Bridge.IsChecked=true;SelectSavedUplink(id);Tap.SelectedItem="Dedicated test TAP"; }
+            finally { loadingHardware=false; }
+            hardwareDirty=identityDirty=false;RememberHardwareDraft();Memory.Text=(int.Parse(Memory.Text)+1024).ToString();Nat.IsChecked=true;
+            if(!RestoreSettingsDrafts() || hardwareForwarder!=WifiForwarderState.LegacyMacNat || Nat.IsChecked==true || SelectedUplink!=id)
+                throw new Exception("Cancelling settings upgraded or dropped the legacy IPv4 profile.");
+            UpdatePowerControls();
+            if(!PrepareWifiButton.IsEnabled || !DisableWifiButton.IsEnabled || !WifiForwarderDetail.Text.Contains("再実行") ||
+                !WifiForwarderDetail.Text.Contains("Reapply PrepareWifi for IPv6") || ValidateHardware())
+                throw new Exception("Legacy Wi-Fi was silently qualified or cannot prepare/clean up its owned TAP.");
+            Feedback.Visibility=Visibility.Collapsed;WifiForwarderSummary.BringIntoView();await ArrangeCheck();SaveImage(Path.Combine(folder,"wifi-compat-legacy.png"));
             currentState="stopped";State.Text="完全停止";latest=WifiUiChecks.Snapshot();ReadWifiStatus();hardwareForwarder=WifiForwarderState.MacNat;
             loadingHardware=true;
             try { Nat.IsChecked=false;Bridge.IsChecked=true;SelectSavedUplink(id);Tap.SelectedItem="Dedicated test TAP"; }
@@ -47,7 +61,7 @@ public partial class MainWindow
                 throw new Exception("Cancelling another hardware edit dropped the Wi-Fi forwarding configuration.");
             UpdatePowerControls();
             if(!DisableWifiButton.IsEnabled || !ValidateHardware()) throw new Exception("Configured Wi-Fi cannot preserve its owned GUID without TAP plumbing.");
-            File.WriteAllText(Path.Combine(folder,"wifi-page-result.json"),"{\"single_wifi_card\":true,\"terms_before_missing_driver\":true,\"missing_status_unconfirmed\":true,\"ready_is_worker_only\":true,\"errors_visible\":true,\"stopped_only\":true,\"draft_forwarder_retained\":true,\"unrelated_edits_preserved\":true,\"no_host_network_calls\":true}");
+            File.WriteAllText(Path.Combine(folder,"wifi-page-result.json"),"{\"single_wifi_card\":true,\"terms_before_missing_driver\":true,\"missing_status_unconfirmed\":true,\"ready_is_worker_only\":true,\"errors_visible\":true,\"stopped_only\":true,\"draft_forwarder_retained\":true,\"unrelated_edits_preserved\":true,\"no_host_network_calls\":true,\"ipv6_capability_not_lan\":true,\"legacy_ipv4_cancel_retains_profile\":true,\"legacy_requires_reprepare_allows_cleanup\":true}");
         } finally {
             committedHardware=oldDraft;hardwareDirty=true;identityDirty=false;RestoreSettingsDrafts();committedHardware=oldCommitted;
             latest=oldLatest;wifiForwarder=oldWifi;wifiStatusError=oldStatusError;hardwareForwarder=oldDraft.Forwarder;currentState=oldState;State.Text=oldStateText;loadedHardware=oldLoaded;

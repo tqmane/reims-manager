@@ -123,8 +123,19 @@ The optional `network_forwarder` status is authoritative for the forwarding
 worker. Missing/malformed status is unconfirmed, a reported error stays visible,
 and `ready` means the live worker initialized, not that DHCP, LAN or Internet
 works. Active Wi-Fi status is polled from the backend instead of reusing a
-cached readiness flag. The compatibility path forwards IPv4 only; external IPv6
-is unsupported. Physical link presence is labeled separately from connectivity.
+cached readiness flag. New `macnat` profiles prepare IPv4/IPv6 forwarding. The
+typed `ipv6_enabled` flag is true only for a matching prepared record with the
+owned TAP's IPv6 router-discovery guard; `ipv4_only` must be its inverse. Missing,
+untyped or contradictory capability fields are unconfirmed. Neither the flag nor
+worker readiness establishes a usable IPv6 route or Internet connection. Physical
+link presence is labeled separately from connectivity.
+
+Legacy `macnat-ipv4` profiles retain their identifier in hardware drafts and
+remain available for cleanup. They show an explicit IPv6 preparation notice and
+require `Wi-Fi 互換接続を準備` again; opening or cancelling settings never silently
+upgrades a profile. The backend supplies their unconfigured IPv6 status and
+restores only its recorded owned TAP settings on disable. The UI never reads or
+changes raw router-discovery records.
 
 The hardware draft retains the selected physical GUID and forwarding mode.
 Unrelated unsaved memory/identity changes must be applied or cancelled before
@@ -134,8 +145,9 @@ cannot bypass cleanup. Preparation reads only the fixed, fresh schema-1 result
 after successful elevated process exit, with a 64 KiB input limit. An unreadable
 result reports possible partial changes rather than assuming rollback.
 
-CPU fixtures cover status parsing, error/readiness precedence, explicit consent,
-stopped-state policy and fresh/bounded result validation. The focused network
+CPU fixtures cover status parsing, typed IPv6 capability and legacy migration,
+error/readiness precedence, explicit consent, stopped-state policy and
+fresh/bounded result validation. The focused network
 page fixture checks the actual Fluent controls, draft retention and action
 visibility with synthetic metadata and no host network calls. Neither fixture
 establishes real Wi-Fi, driver installation or guest connectivity.

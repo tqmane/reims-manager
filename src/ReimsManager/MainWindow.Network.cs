@@ -18,7 +18,7 @@ public partial class MainWindow
             var inventory = NetworkInventory.Parse(await Execute("GetNetworkUplinks", [], cancellation: statusCancellation.Token));
             if (version != contextVersion || busy || closing) return;
             ApplyNetworkChoices(inventory);
-            NetworkNotice.Text = "物理リンクの表示は LAN・インターネットの疎通確認ではありません。Wi-Fi の互換接続は IPv4 専用です。";
+            NetworkNotice.Text = "物理リンクの表示は LAN・インターネットの疎通確認ではありません。IPv4 / IPv6 の利用可否は回線・ルーターにも依存します。";
         } catch (Exception error) {
             if (version == contextVersion && !closing) NetworkNotice.Text = "接続先を取得できません。現在の VM 設定は保持しています。\n" + error.Message;
         }
@@ -66,18 +66,20 @@ public partial class MainWindow
     {
         if (WifiCompatCard is null) return;
         bool selectedWifi = Physical.SelectedItem is NetworkUplink { Kind: "wifi" };
-        bool configured = wifiForwarder is { Kind: null or WifiForwarderState.MacNat } &&
-            (wifiForwarder.Configured || wifiForwarder.Running || !string.IsNullOrWhiteSpace(wifiForwarder.Error));
-        WifiCompatCard.Visibility = selectedWifi || configured || hardwareForwarder == WifiForwarderState.MacNat ? Visibility.Visible : Visibility.Collapsed;
-        WiredBridgeControls.Visibility = selectedWifi || configured || hardwareForwarder==WifiForwarderState.MacNat ? Visibility.Collapsed : Visibility.Visible;
+        bool configured = wifiForwarder is { KnownKind: true } &&
+            (wifiForwarder.Configured || wifiForwarder.Running || wifiForwarder.Kind==WifiForwarderState.LegacyMacNat || !string.IsNullOrWhiteSpace(wifiForwarder.Error));
+        WifiCompatCard.Visibility = selectedWifi || configured || WifiForwarderState.IsMacNat(hardwareForwarder) ? Visibility.Visible : Visibility.Collapsed;
+        WiredBridgeControls.Visibility = selectedWifi || configured || WifiForwarderState.IsMacNat(hardwareForwarder) ? Visibility.Collapsed : Visibility.Visible;
         WifiForwarderSummary.Text = currentState == "unknown" || wifiForwarder is null ? "転送状態は未確認です" : wifiForwarder.Summary(currentState);
         string? error = currentState=="unknown" ? StatusDetail.Text : wifiStatusError ?? wifiForwarder?.Error;
         WifiForwarderDetail.Text = string.IsNullOrWhiteSpace(error)
-            ? "準備完了はプロセスの初期化状態です。LAN・インターネットの疎通は別途確認してください。外部 IPv6 には対応していません。"
+            ? "準備完了はプロセスの初期化状態です。LAN・インターネットの IPv4 / IPv6 疎通は別途確認してください。"
             : error.Length > 2048 ? error[..2048]+"…" : error;
-        PrepareWifiButton.IsEnabled = !IsUiBusy && CanOperate("PrepareWifi") && selectedWifi && wifiForwarder is { Kind: null or WifiForwarderState.MacNat } &&
+        if (wifiForwarder?.Kind==WifiForwarderState.LegacyMacNat)
+            WifiForwarderDetail.Text="旧 IPv4 設定です。「Wi-Fi 互換接続を準備」を再実行して、IPv6 用の設定を準備してください。\n"+WifiForwarderDetail.Text;
+        PrepareWifiButton.IsEnabled = !IsUiBusy && CanOperate("PrepareWifi") && selectedWifi && wifiForwarder is { KnownKind: true } &&
             (wifiForwarder.Installed || PacketFilterTerms.IsChecked == true);
-        DisableWifiButton.IsEnabled = !IsUiBusy && CanOperate("DisableWifi") && (configured || hardwareForwarder==WifiForwarderState.MacNat);
+        DisableWifiButton.IsEnabled = !IsUiBusy && CanOperate("DisableWifi") && (configured || WifiForwarderState.IsMacNat(hardwareForwarder));
         PacketFilterTerms.IsEnabled = !IsUiBusy;
     }
 
@@ -97,7 +99,7 @@ public partial class MainWindow
     private async void PrepareWifi(object sender, RoutedEventArgs e)
     {
         if (!RequireAction("PrepareWifi") || !CanCommitWifiOperation()) return;
-        if (Physical.SelectedItem is not NetworkUplink { Kind: "wifi" } physical || wifiForwarder is null) { ShowError("物理 Wi-Fi と転送状態を確認してください。");return; }
+        if (Physical.SelectedItem is not NetworkUplink { Kind: "wifi" } physical || wifiForwarder is not { KnownKind: true }) { ShowError("物理 Wi-Fi と転送状態を確認してください。");return; }
         string[] arguments;
         try { arguments = WifiForwarderState.PrepareArguments(physical.Id,wifiForwarder.Installed,PacketFilterTerms.IsChecked == true); }
         catch(Exception error) { ShowError(error.Message);return; }
