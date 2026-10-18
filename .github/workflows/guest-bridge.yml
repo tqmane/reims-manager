@@ -1,0 +1,51 @@
+name: macOS guest bridge package
+on:
+  pull_request:
+    paths:
+      - .github/workflows/guest-bridge.yml
+      - backend/guest-bridge-lock.json
+      - backend/opencore/guest-bridge.py
+      - tools/build_guest_bridge.py
+      - docs/guest-bridge*.md
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the qualified-kernel guest bridge addon
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  bridge:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Require generic ABI qualification before a publication request
+        if: inputs.publish
+        run: python3 backend/opencore/guest-bridge.py check-release . backend/guest-bridge-lock.json
+      - name: Build pinned authored bridge and verify its package
+        run: python3 tools/build_guest_bridge.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ReimsGuestBridge
+          path: artifacts/guest-bridge/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+  publish:
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    needs: bridge
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Publish standalone addon without replacing the Windows engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 backend/opencore/guest-bridge.py check-release . backend/guest-bridge-lock.json
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name ReimsGuestBridge --dir guest-release
+          tag=$(python3 -c 'import json; print(json.load(open("backend/guest-bridge-lock.json"))["id"])')
+          gh release create "$tag" guest-release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Reims Metal/WebGL guest bridge (Darwin 25 ABI)" --notes-file docs/guest-bridge-release.md

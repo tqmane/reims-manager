@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -24,10 +24,40 @@ param(
     [ValidateSet('winusb','usbdk')][string]$UsbBackend = 'winusb',
     [switch]$WithInstaller
 )
+$ErrorActionPreference='Stop'
+if ($Action -eq 'GetNetworkUplinks') {
+    . "$PSScriptRoot/network-uplinks.ps1"
+    Get-ReimsNetworkInventory | ConvertTo-Json -Depth 5 -Compress
+    return
+}
+if ($Action -eq 'GetPrerequisites') {
+    . "$PSScriptRoot/host-prerequisites.ps1"
+    Get-ReimsPrerequisites $Root $ToolsRoot $Cpus $MemoryMiB | ConvertTo-Json -Depth 6 -Compress
+    return
+}
+if ($Action -eq 'EnableWhpx') {
+    # Host onboarding does not require a selected VM or create developer caches.
+    & "$PSScriptRoot/enable-whpx.ps1"
+    return
+}
+if ($Action -eq 'InstallUsbDk' -and !$VmDirectory) {
+    $cache=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'ReimsManager/support'
+    & "$PSScriptRoot/install-usbdk.ps1" -CacheDirectory $cache
+    return
+}
+if ($Action -eq 'InstallTap' -and !$VmDirectory) {
+    & "$PSScriptRoot/install-tap.ps1" -Installer $Installer -Adapter $Adapter
+    return
+}
+if ($Action -eq 'Setup') {
+    . "$PSScriptRoot/engine-package.ps1"
+    if (!(Read-ReimsEngine $Root)) { throw '先に Manager から対応エンジンをセットアップしてください。' }
+}
 $env:REIMS_PROJECT_ROOT_OVERRIDE = [IO.Path]::GetFullPath($Root)
 if ($ToolsRoot) { $env:REIMS_MANAGER_TOOLS_ROOT = [IO.Path]::GetFullPath($ToolsRoot) }
 $env:REIMS_VM_ROOT_OVERRIDE = if ($VmDirectory) { [IO.Path]::GetFullPath($VmDirectory) } else { '' }
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
+. "$PSScriptRoot/network-uplinks.ps1"
 
 function Get-GuestEndpoint($Config) {
     if ((Get-ReimsNetworkMode $Config) -eq 'nat') { return @{host='127.0.0.1';port=$Config.ssh_port} }
@@ -54,7 +84,7 @@ function Invoke-GuestControl([string]$Operation, [string]$Command) {
     $guest = if (Test-Path $guestPath) { Get-Content $guestPath -Raw | ConvertFrom-Json } else { $null }
     $alias = if ($guest -and $guest.PSObject.Properties['host_key_alias']) { @('-o', "HostKeyAlias=$($guest.host_key_alias)") } else { @() }
     $output = @(& "$env:SystemRoot/System32/OpenSSH/ssh.exe" -F NUL -n -o ConnectTimeout=5 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes `
-        -o "UserKnownHostsFile=$known" -o KexAlgorithms=curve25519-sha256 @alias -p $endpoint.port -i $key `
+        -o (Get-ReimsSshKnownHostsOption $known) -o KexAlgorithms=curve25519-sha256 @alias -p $endpoint.port -i $key `
         "$account@$($endpoint.host)" $(if ($Command) {$Command} else {"sudo -n /sbin/shutdown $Operation now"}) 2>&1 | ForEach-Object ToString)
     $exitCode = $LASTEXITCODE
     if ($Command) {
@@ -78,36 +108,7 @@ function Assert-Administrator {
     if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'この操作には Windows の管理者権限が必要です。' }
 }
 
-function Get-NewVmPorts {
-    $reserved = [Collections.Generic.HashSet[int]]::new()
-    $legacy=Join-Path $ProjectRoot 'vm/state/config.json'
-    if (Test-Path $legacy) {
-        $legacyConfig=Get-Content -Raw $legacy | ConvertFrom-Json
-        [void]$reserved.Add([int]$legacyConfig.qmp_port); [void]$reserved.Add([int]$legacyConfig.ssh_port)
-    }
-    $library = Join-Path $ProjectRoot '.work/manager-library.json'
-    if (Test-Path $library) {
-        foreach ($file in (Get-Content -Raw $library | ConvertFrom-Json)) {
-            if (!(Test-Path -LiteralPath $file)) { continue }
-            $entry = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
-            $directory = [IO.Path]::GetFullPath($entry.directory, (Split-Path $file))
-            $configFile = Join-Path $directory 'state/config.json'
-            if (Test-Path $configFile) {
-                $entryConfig = Get-Content -Raw $configFile | ConvertFrom-Json
-                [void]$reserved.Add([int]$entryConfig.qmp_port); [void]$reserved.Add([int]$entryConfig.ssh_port)
-            }
-        }
-    }
-    $result = @()
-    for ($port = 4444; $port -lt 65000 -and $result.Count -lt 2; $port++) {
-        if ($reserved.Contains($port)) { continue }
-        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,$port)
-        try { $listener.Start(); $result += $port } catch [Net.Sockets.SocketException] { }
-        finally { $listener.Stop() }
-    }
-    if ($result.Count -ne 2) { throw 'VM の接続ポートを確保できません。' }
-    return $result
-}
+. "$PSScriptRoot/manager-ports.ps1"
 
 if ($Action -eq 'Status') {
     $runtime = Get-ReimsRuntime
@@ -134,6 +135,7 @@ if ($Action -eq 'Status') {
         audio=$(if ($config -and $config.PSObject.Properties['audio']) {$config.audio} else {'none'});
         with_installer=$installerAttached; network_adapter=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.adapter} else {''});
         guest_host=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.guest_host} else {''});
+        network_uplink_id=$(if ($config -and $config.PSObject.Properties['network'] -and $config.network.PSObject.Properties['physical_adapter_id']) {$config.network.physical_adapter_id} else {''});
         resolution=$(if ($config) {$config.resolution} else {'1920x1080'});
         network=$(if ($config) {Get-ReimsNetworkMode $config} else {'nat'});
         iso=$(if ($config) {$config.iso} else {''})} | ConvertTo-Json -Depth 5 -Compress
@@ -200,7 +202,7 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     SetIdentity {
         Assert-ReimsVmStopped
-        $temporary = Join-Path $ProjectRoot ('.work/tmp/identity-' + [guid]::NewGuid() + '.json')
+        $temporary = Join-Path $ReimsWorkRoot ('tmp/identity-' + [guid]::NewGuid() + '.json')
         try {
             $json = [Console]::In.ReadToEnd()
             if ($json.Length -gt 4096) { throw 'Identity data is too large.' }
@@ -215,22 +217,9 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         & "$PSScriptRoot/bootstrap.ps1"
         & "$PSScriptRoot/build.ps1"
     }
-    EnableWhpx {
-        Assert-ReimsVmStopped
-        Assert-Administrator
-        & "$PSScriptRoot/enable-whpx.ps1"
-    }
     Setup {
-        Assert-ReimsVmStopped
-        if (!$Iso) { throw 'macOS インストーラーを選択してください。' }
-        & "$PSScriptRoot/prepare-opencore.ps1" -Rebuild | Out-Null
-        $ports = Get-NewVmPorts
-        & "$PSScriptRoot/prepare-vm.ps1" -Iso $Iso -DiskGiB $DiskGiB -QmpPort $ports[0] -SshPort $ports[1] | Out-Null
-        if (!(Test-Path (Join-Path $VmRoot 'state/opencore-identity.json'))) {
-            & "$PSScriptRoot/prepare-opencore.ps1" -GenerateIdentity -Rebuild | Out-Null
-        }
-        & "$PSScriptRoot/prepare-tools.ps1"
-        '準備完了。インストーラー付きで起動し、macOS インストール後に ReimsTools の setup.command を実行してください。'
+        . "$PSScriptRoot/setup.ps1"
+        Invoke-ReimsVmSetup $Iso $DiskGiB $Cpus $MemoryMiB
     }
     Start { & "$PSScriptRoot/start.ps1" -Qemu $Qemu -WithoutInstaller:(!$WithInstaller) }
     PowerOff { Invoke-GuestControl '-h'; & "$PSScriptRoot/stop.ps1" }
@@ -249,6 +238,9 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     SnapshotCreate { & "$PSScriptRoot/snapshot.ps1" -Action Create -Name $Name }
     SnapshotRestore { & "$PSScriptRoot/snapshot.ps1" -Action Restore -Name $Name }
+    EnableGuestBridge { & "$PSScriptRoot/prepare-guest-bridge.ps1" -Mode Enable }
+    DisableGuestBridge { & "$PSScriptRoot/prepare-guest-bridge.ps1" -Mode Disable }
+    ApplyBootProfile { & "$PSScriptRoot/prepare-opencore.ps1" -ApplyBootProfile -Rebuild }
     GenerateIdentity { & "$PSScriptRoot/prepare-opencore.ps1" -GenerateIdentity -Rebuild }
     EnableAppleAccount { & "$PSScriptRoot/prepare-opencore.ps1" -AppleAccountCompatibility Enable -Rebuild }
     DisableAppleAccount { & "$PSScriptRoot/prepare-opencore.ps1" -AppleAccountCompatibility Disable -Rebuild }
@@ -268,7 +260,7 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw '実在する TAP-Windows アダプターを選択してください。' }
         if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid macOS IP / hostname.' }
         $config = Get-ReimsVmConfig
-        $config | Add-Member -Force network @{mode=$Network; adapter=$Adapter; guest_host=$GuestHost}
+        $config | Add-Member -Force network (Get-ReimsSavedNetwork $config $Network $Adapter $GuestHost $PhysicalAdapter)
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         'ネットワーク設定を保存しました。次回起動時に適用します。'
     }
@@ -279,14 +271,18 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         if ($Cpus -gt $hostInfo.NumberOfLogicalProcessors -or [long]$MemoryMiB * 1MB -ge $hostInfo.TotalPhysicalMemory) { throw 'ホストの CPU / メモリ容量以内で設定してください。' }
         if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
         if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid guest address.' }
+        $selectedNetwork=Get-ReimsSavedNetwork (Get-ReimsVmConfig) $Network $Adapter $GuestHost $PhysicalAdapter
+        if ($WithInstaller -and !$Iso) { throw 'インストーラーを接続する場合は ISO を選択してください。' }
         if ($Iso) { & "$PSScriptRoot/prepare-vm.ps1" -Iso $Iso | Out-Null }
         $config = Get-ReimsVmConfig
+        # Empty input explicitly clears the remembered ISO instead of silently retaining it.
+        $config.iso = $Iso
         $config.cpus = $Cpus; $config.memory_mib = $MemoryMiB; $config.resolution = $Resolution
         $config | Add-Member -Force audio $Audio
         $config | Add-Member -Force microphone ([bool]$Microphone)
         $config | Add-Member -Force usb_backend $UsbBackend
         $config | Add-Member -Force connect_installer ([bool]$WithInstaller)
-        $config | Add-Member -Force network @{mode=$Network;adapter=$Adapter;guest_host=$GuestHost}
+        $config | Add-Member -Force network $selectedNetwork
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         '仮想マシン設定を保存しました。次回起動に適用します。'
     }
@@ -321,19 +317,21 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     CreateBridge {
         Assert-ReimsVmStopped
         Assert-Administrator
-        if ($Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
-        $physical = @(Get-NetAdapter | Where-Object { $_.Name -eq $PhysicalAdapter -and $_.HardwareInterface })
-        if ($physical.Count -ne 1) { throw '実在する物理ネットワークアダプターを選択してください。' }
-        Invoke-ReimsTool "$env:SystemRoot/System32/netsh.exe" @('bridge','create',$Adapter,$PhysicalAdapter)
+        $bridge=New-ReimsHostBridge $Adapter $PhysicalAdapter
+        "Windows bridge created: $($bridge.bridge_id). Guest DHCP/LAN connectivity remains unverified; Wi-Fi depends on its driver and access point."
+    }
+    RemoveBridge {
+        Assert-Administrator
+        $removed=Remove-ReimsHostBridge
+        "Owned Windows bridge removed: $($removed.bridge_id). VM network saved as NAT. Host DHCP/IP connectivity remains unverified."
     }
     InstallTap {
-        Assert-Administrator
-        $file = Get-Item -LiteralPath $Installer
-        if ($file.Extension -ne '.exe') { throw '公式 TAP-Windows インストーラー (.exe) を選択してください。' }
-        $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
-        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'OpenVPN') { throw '有効な OpenVPN 署名のないインストーラーは実行しません。' }
-        $process = Start-Process -FilePath $file.FullName -ArgumentList '/S' -WindowStyle Hidden -PassThru -Wait
-        if ($process.ExitCode -ne 0) { throw "TAP installer failed ($($process.ExitCode))." }
+        Assert-ReimsVmStopped
+        $tapJson=(& "$PSScriptRoot/install-tap.ps1" -Installer $Installer -Adapter $Adapter) -join "`n"
+        $tapResult=$tapJson | ConvertFrom-Json -AsHashtable
+        if ($tapResult -isnot [Collections.IDictionary] -or !$tapResult.Contains('schema') -or $tapResult.schema -ne 1) { throw 'Unexpected TAP result schema; no confirmed result was saved.' }
+        Write-ReimsJson (Join-Path $VmRoot 'state/tap-install-result.json') $tapResult
+        $tapJson
     }
     Pair {
         if (!$User -or $Fingerprint -notmatch '^SHA256:[A-Za-z0-9+/]{43}$') { throw 'macOS のユーザー名と setup.command が表示した SHA256 指紋を入力してください。' }

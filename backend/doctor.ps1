@@ -45,7 +45,7 @@ $report = [ordered]@{
     Tools = $tools
 }
 $json = $report | ConvertTo-Json -Depth 6
-$json | Set-Content -LiteralPath (Join-Path $ProjectRoot '.work\diagnostics\doctor.json') -Encoding UTF8
+$json | Set-Content -LiteralPath (Join-Path $ReimsWorkRoot 'diagnostics/doctor.json') -Encoding UTF8
 $json
 if ($RequireWhpx -and (-not $report.WhpxFeatureEnabled -or -not $report.WhpxHypervisorPresent)) {
     throw 'WHPX is unavailable. Enable HypervisorPlatform from an administrator PowerShell and restart Windows; TCG is not selected.'

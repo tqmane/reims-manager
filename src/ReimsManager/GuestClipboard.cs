@@ -10,6 +10,13 @@ internal static class GuestClipboard
 {
     internal const int MaxBytes = 1024 * 1024;
 
+    internal static string KnownHostsOption(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.IndexOfAny(['"', '\r', '\n', '\0']) >= 0)
+            throw new ArgumentException("Invalid SSH known-hosts path.");
+        return "UserKnownHostsFile=\"" + path.Replace('\\', '/') + "\"";
+    }
+
     internal static async Task<string> Transfer(string vmDirectory, string? text, CancellationToken cancellation = default)
     {
         if (text is not null && Encoding.UTF8.GetByteCount(text) > MaxBytes)
@@ -39,7 +46,7 @@ internal static class GuestClipboard
         };
         foreach (string arg in new[] { "-F", "NUL", "-T", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
             "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "KexAlgorithms=curve25519-sha256",
-            "-o", "UserKnownHostsFile=" + Path.Combine(state, "known_hosts"), "-p", port,
+            "-o", KnownHostsOption(Path.Combine(state, "known_hosts")), "-p", port,
             "-i", Path.Combine(state, "ssh/id_ed25519") }) info.ArgumentList.Add(arg);
         if (paired.RootElement.TryGetProperty("host_key_alias", out var alias)) {
             info.ArgumentList.Add("-o"); info.ArgumentList.Add("HostKeyAlias=" + alias.GetString());

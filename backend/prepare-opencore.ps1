@@ -7,20 +7,25 @@ param(
     [switch]$GenerateIdentity,
     [string]$IdentityFile,
     [ValidateSet('Keep','Enable','Disable')][string]$AppleAccountCompatibility = 'Keep',
+    [switch]$ApplyBootProfile,
     [switch]$Rebuild
 )
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
+. "$PSScriptRoot/firmware.ps1"
+. "$PSScriptRoot/opencore-backup.ps1"
 Assert-ReimsVmStopped
 if ($GenerateIdentity -and !$Rebuild) { throw 'Use -GenerateIdentity with -Rebuild.' }
 if ($IdentityFile -and (!$Rebuild -or $GenerateIdentity)) { throw 'Use -IdentityFile with -Rebuild, without -GenerateIdentity.' }
 if ($AppleAccountCompatibility -ne 'Keep' -and !$Rebuild) { throw 'Use -AppleAccountCompatibility with -Rebuild.' }
-$downloads = Join-Path $ProjectRoot '.work/downloads'
+if ($ApplyBootProfile -and !$Rebuild) { throw 'Use -ApplyBootProfile with -Rebuild.' }
+$downloads = Join-Path $ReimsSupportRoot 'downloads'
+New-Item -ItemType Directory -Force -Path $downloads | Out-Null
 $pin = (Get-ReimsEngineLock).opencore
 if ($Version -ne $pin.version) { throw 'Use the OpenCore version qualified with this manager.' }
 $expectedHash = $pin.sha256; $url = $pin.url
 $archive = if ($script:ReimsEngine) { Get-ReimsEnginePath 'opencore_archive' '' } else { Join-Path $downloads $pin.file }
 Get-ReimsPinnedDownload $url $expectedHash $archive
-$package = Join-Path $downloads "OpenCore-$Version-$($expectedHash.Substring(0,12))"
+$package = Join-Path $ReimsSupportRoot "opencore/OpenCore-$Version-$($expectedHash.Substring(0,12))"
 $validatedArchive = "$package.sha256"
 if (!(Test-Path -LiteralPath $validatedArchive)) {
     if (Test-Path -LiteralPath $package) { throw 'Unverified OpenCore extraction already exists; use a new engine folder.' }
@@ -32,6 +37,38 @@ $QemuImg = Get-ReimsTool 'qemu-img.exe' $QemuImg
 $python = Get-ReimsTool 'python.exe'
 $destination = Join-Path $VmRoot "firmware/opencore-$Version"
 $efiRoot = Join-Path $destination 'root'
+$image = Join-Path $destination 'OpenCore.img'
+$manifestPath = Join-Path $VmRoot 'state/opencore.json'
+$active = $null
+if (Test-Path -LiteralPath $manifestPath) {
+    $active = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+    if ($active.version -ne $Version) { throw 'Keep the installed OpenCore version when rebuilding an existing VM.' }
+    $activeConfig = Assert-ReimsArtifactPath $active.config
+    $efiRoot = Split-Path (Split-Path (Split-Path $activeConfig))
+    if ([IO.Path]::GetFullPath((Join-Path $efiRoot 'EFI/OC/config.plist')) -ne $activeConfig) { throw 'Unexpected active OpenCore configuration layout.' }
+    $destination = Split-Path $efiRoot
+    $image = Assert-ReimsArtifactPath $active.image
+}
+$defaults = if ($script:ReimsEngine) { @(Get-ReimsEnginePath 'firmware' '') } else { @((Join-Path $MsysRoot 'ucrt64/share/qemu'), (Join-Path $MsysRoot 'mingw64/share/qemu'), (Join-Path $ProjectRoot 'build/qemu/pc-bios')) }
+if ($active) {
+    [void](Assert-ReimsArtifactPath $active.firmware_code)
+    [void](Assert-ReimsArtifactPath $active.firmware_vars_template)
+}
+$selectedFirmware = Resolve-ReimsFirmwarePair $active $FirmwareDirectory $defaults
+$code = if ($active) { $selectedFirmware.code } else { Join-Path $VmRoot 'firmware/OVMF_CODE.fd' }
+$varsTemplate = if ($active) { $selectedFirmware.vars } else { Join-Path $VmRoot 'firmware/OVMF_VARS.template.fd' }
+# Validate both destinations before copying either part of a new pair.
+foreach ($pair in @(@($selectedFirmware.code,$code), @($selectedFirmware.vars,$varsTemplate))) {
+    if ((Test-Path -LiteralPath $pair[1]) -and (Get-FileHash -LiteralPath $pair[0]).Hash -ne (Get-FileHash -LiteralPath $pair[1]).Hash) {
+        throw 'Existing unrecorded firmware differs. Restore its matching manifest or select a new VM folder; no OVMF file was replaced.'
+    }
+}
+foreach ($pair in @(@($selectedFirmware.code,$code), @($selectedFirmware.vars,$varsTemplate))) {
+    if (!(Test-Path -LiteralPath $pair[1])) {
+        New-Item -ItemType Directory -Force -Path (Split-Path $pair[1]) | Out-Null
+        Copy-Item -LiteralPath $pair[0] -Destination $pair[1]
+    }
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $efiRoot 'EFI/BOOT'), (Join-Path $efiRoot 'EFI/OC/Drivers') | Out-Null
 foreach ($relative in @('BOOT/BOOTx64.efi', 'OC/OpenCore.efi', 'OC/Drivers/OpenRuntime.efi', 'OC/Drivers/OpenPartitionDxe.efi', 'OC/Drivers/OpenHfsPlus.efi')) {
     Copy-Item -LiteralPath (Join-Path $package "X64/EFI/$relative") -Destination (Join-Path $efiRoot "EFI/$relative") -Force
@@ -53,8 +90,7 @@ if ($GenerateIdentity) {
         model = $model; serial = $match.Groups[1].Value
         mlb = $match.Groups[2].Value; mac = $vmConfig.mac
     }
-    $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-identity-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
-    Copy-Item -LiteralPath $plist -Destination $backup
+    $backup = Backup-ReimsOpenCoreConfig $VmRoot $plist 'identity'
     $script = @'
 import json, pathlib, plistlib, sys, uuid
 p, manifest = map(pathlib.Path, sys.argv[1:])
@@ -76,10 +112,18 @@ manifest.write_text(json.dumps(i, indent=2) + '\n', encoding='utf-8')
     "Generated a VM-specific identity; preserved SystemUUID. Backup: $backup"
 }
 $validate = Join-Path $package 'Utilities/ocvalidate/ocvalidate.exe'
+if ($ApplyBootProfile) {
+    $backup = Backup-ReimsOpenCoreConfig $VmRoot $plist 'boot-profile'
+    $candidate = "$backup.candidate"
+    & $python -X utf8 "$PSScriptRoot/opencore/boot-policy.py" $plist $candidate
+    if ($LASTEXITCODE -ne 0) { throw 'Boot profile update failed; the original config is unchanged.' }
+    Invoke-ReimsTool $validate @($candidate) | Out-Null
+    Move-Item -LiteralPath $candidate -Destination $plist -Force
+    "起動項目を APFS / HFS に限定しました。変更前の設定: $backup"
+}
 if ($IdentityFile) {
     [void](Assert-ReimsArtifactPath $IdentityFile)
-    $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-edit-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
-    Copy-Item -LiteralPath $plist -Destination $backup
+    $backup = Backup-ReimsOpenCoreConfig $VmRoot $plist 'edit'
     $candidate = "$backup.candidate"
     $identityEdit = @'
 import json, pathlib, plistlib, re, sys, uuid
@@ -112,8 +156,7 @@ i.update(uuid=str(u).upper(),rom=rom.hex()); identity.write_text(json.dumps(i),e
     "識別情報を保存しました。変更前の設定: $backup"
 }
 if ($AppleAccountCompatibility -ne 'Keep') {
-    $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-account-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
-    Copy-Item -LiteralPath $plist -Destination $backup
+    $backup = Backup-ReimsOpenCoreConfig $VmRoot $plist 'account'
     $candidate = "$backup.candidate"
     & $python -X utf8 "$PSScriptRoot/opencore/apple-account.py" $plist $candidate $AppleAccountCompatibility
     if ($LASTEXITCODE -ne 0) { throw 'Apple Account compatibility update failed; the original config is unchanged.' }
@@ -123,9 +166,7 @@ if ($AppleAccountCompatibility -ne 'Keep') {
 }
 $validation = Invoke-ReimsTool $validate @($plist)
 $validation | Set-Content -LiteralPath (Join-Path $destination 'ocvalidate.log') -Encoding utf8NoBOM
-$image = Join-Path $destination 'OpenCore.img'
 $configHash = (Get-FileHash -LiteralPath $plist).Hash
-$manifestPath = Join-Path $VmRoot 'state/opencore.json'
 if (!$Rebuild -and (Test-Path -LiteralPath $image) -and (Test-Path -LiteralPath $manifestPath)) {
     $previous = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     if ($previous.image -eq $image -and ($previous.config_sha256 -ne $configHash -or
@@ -145,33 +186,13 @@ if ($Rebuild -or !(Test-Path -LiteralPath $image)) {
     } finally { $stream.Dispose() }
     Move-Item -LiteralPath "$image.partial" -Destination $image -Force
 }
-if (!$FirmwareDirectory) {
-    $candidates = if ($script:ReimsEngine) { @(Get-ReimsEnginePath 'firmware' '') } else { @((Join-Path $MsysRoot 'ucrt64/share/qemu'), (Join-Path $MsysRoot 'mingw64/share/qemu'), (Join-Path $ProjectRoot 'build/qemu/pc-bios')) }
-    $FirmwareDirectory = $candidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'edk2-x86_64-code.fd') } | Select-Object -First 1
-}
-if (!$FirmwareDirectory) { throw 'Pass -FirmwareDirectory from a native QEMU package with x86_64 OVMF code and variables.' }
-$codeSource = Join-Path $FirmwareDirectory 'edk2-x86_64-code.fd'
-$varsSource = Join-Path $FirmwareDirectory 'edk2-i386-vars.fd'
-foreach ($source in @($codeSource, $varsSource)) {
-    if (!(Test-Path -LiteralPath $source -PathType Leaf)) { throw "Incomplete OVMF pair: $source" }
-}
-$firmware = Join-Path $VmRoot 'firmware'
-$code = Join-Path $firmware 'OVMF_CODE.fd'
-$varsTemplate = Join-Path $firmware 'OVMF_VARS.template.fd'
-foreach ($pair in @(@($codeSource, $code), @($varsSource, $varsTemplate))) {
-    if (Test-Path -LiteralPath $pair[1]) {
-        if ((Get-FileHash -LiteralPath $pair[0]).Hash -ne (Get-FileHash -LiteralPath $pair[1]).Hash) {
-            throw "Existing firmware differs from this package: $($pair[1]). Keep a matched code/variables pair."
-        }
-    } else { Copy-Item -LiteralPath $pair[0] -Destination $pair[1] }
-}
 $manifest = [ordered]@{
     schema = 1; version = $Version; release_url = $url; release_sha256 = $expectedHash
     image = $image; image_sha256 = (Get-FileHash -LiteralPath $image).Hash
     config = $plist; config_sha256 = $configHash
     ocvalidate = $validate; firmware_code = $code; firmware_vars_template = $varsTemplate
     code_sha256 = (Get-FileHash -LiteralPath $code).Hash; vars_sha256 = (Get-FileHash -LiteralPath $varsTemplate).Hash
-    firmware_source = $FirmwareDirectory; validated = $true
+    firmware_source = $selectedFirmware.source; validated = $true
 }
 Write-ReimsJson $manifestPath $manifest
 $manifest | ConvertTo-Json -Depth 5

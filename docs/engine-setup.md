@@ -1,12 +1,50 @@
 # Portable Windows engine
 
+## First launch
+
+From an empty library, choose **macOS をセットアップ**. The guided flow installs
+or validates an existing pinned engine, checks Windows prerequisites, then asks
+for an ISO/IMG, a VM name and a destination. It prepares OpenCore, matched OVMF,
+the GPU ROM, persistent identity, disks, guest tools and the qualified addon;
+macOS installation and first-run account setup remain in the VM console.
+
+The engine defaults to the current user's local application-data directory
+under `Reims/Engines/<pinned-id>`. VMs default to Documents under
+`Reims/Virtual Machines`, each with its descriptor and data in one VM folder.
+Both locations have folder pickers and accept absolute paths on other writable
+drives. A developer checkout or working directory is not a product default.
+The disk defaults to a sparse 300 GiB image, memory to 4096 MiB, and CPU to at
+most four of the host's logical processors.
+
+Engine selection is saved before a prerequisite can request administrator
+elevation or a Windows restart. The Manager never restarts Windows. Relaunch
+and choose setup again to resume the prerequisite/ISO flow with the saved
+engine; an installed engine is reused without downloading again. Reuse checks
+the engine's complete immutable inventory before accepting it.
+
+Required failures remain visible and block preparation. USB is optional and
+TAP is unnecessary for the default NAT network. Current available RAM and the
+requested CPU/memory plan are displayed separately from required features.
+Insufficient RAM permits creating the VM while disabling automatic start;
+capacity is checked again after preparation immediately before automatic boot.
+No other application or VM is stopped to make room. Setup errors retain the
+descriptor for retry while the backend restores/removes incomplete active
+configuration rather than reporting a ready VM.
+
 In Reims Manager choose **Set up engine**, choose a new directory on any
 writable drive, then start setup. A VM can live in a different directory.
 No developer checkout, MSYS2 installation, Rust, system Python or separate
 PowerShell installation is required by the delivered application.
 
 Setup looks up the engine release paired with this manager in
-`tqmane/reims-manager`. If the first engine release has not been published,
+`tqmane/reims-manager`. Its published ZIP size and tag/asset are pinned in
+`engine-lock.json`: installation downloads that public HTTPS URL directly,
+without GitHub API access, authentication or a ZIP SHA requirement.
+Anonymous API rate limits therefore do not block this engine download.
+Missing assets/network errors and size mismatches remain errors. Extracted
+package inventory/source pins and native probes still apply before atomic
+installation. No different tag or generic QEMU is substituted on failure.
+If the engine release has not been published,
 download the ZIP inside the **Windows engine package** Actions artifact and
 choose **Use downloaded engine ZIP**. The corresponding `.zip.sha256` file
 from that same release or CI artifact must be beside the ZIP. No checksum
@@ -24,11 +62,13 @@ download generic QEMU as a substitute: it lacks the Reims device.
 ## Components and source pins
 
 `backend/engine-lock.json` is the reviewed source of version pins. It selects
-Reims `d8b9c2af`, QEMU `7100064d` and metal2vulkan `d41a1c2f`, rather than
+Reims `b8b4486c`, QEMU `7100064d` and metal2vulkan `ea5d6b87`, rather than
 following moving `windows-native-tahoe` branches. The latter runtime is the
 pin in Reims's Cargo manifest; later runtime development commits are not
-silently substituted. These pins preserve the currently qualified host
-implementation, including the guest bridge source at that Reims revision.
+silently substituted. Engine `engine-b8b4486c-7100064d-2` is paired with the
+common Metal path. Guest bridge source, recorded qualification and limits are
+independently pinned in `guest-bridge-lock.json`; setup checks release readiness
+rather than assuming that any available engine/addon combination is qualified.
 
 The engine package contains:
 
@@ -53,6 +93,21 @@ All manifest paths are relative to the engine directory. QEMU's `-L`,
 disk tools, OVMF templates, ISO inspection and GPU ROM resolve through that
 manifest. VM-local writable firmware and disks stay in the VM directory.
 Changing the engine never overwrites the VM's NVRAM or SMBIOS identity.
+Portable runtimes require a VM directory outside the engine package. Their
+scratch/cache/report directories live in `<VM>/support`; verified OpenCore
+tools are extracted to `<VM>/support/opencore/OpenCore-1.0.8-2011e8b7216e`.
+The installed engine is not modified by OpenCore setup, so full package-file
+verification remains valid afterwards. Development checkout build caches
+continue to use that checkout's `.work` directory.
+Rebuilding an existing VM reuses its recorded `firmware_code` and variables
+template, checking both recorded hashes before changing configuration or
+the EFI image. A newer engine's OVMF is selected only for new VMs. An
+explicit `-FirmwareDirectory` is checked against the existing pair: differing
+code or template is refused with a firmware/NVRAM migration explanation.
+Configuration and kext rebuilds do not migrate OVMF or regenerate identity.
+OpenCore edit backups live under the selected VM's `backups/opencore`, not
+the engine's build/scratch directories. See the [UI/backend contract](opencore-manager-contract.md)
+for persistent paths and the OpenCore/guest bridge action arguments.
 
 Downloads and the file manifest are checked automatically. ZIP traversal,
 duplicates, links, excessive extraction size, unknown source revisions and
@@ -62,7 +117,8 @@ checks for WHPX **support in the executable**, not host hypervisor readiness;
 it never boots a VM. A native probe exceeding its 30-second deadline has
 only its owned process tree terminated, with a bounded wait before disposal.
 Failed setup removes only its own staging directory.
-Existing destination folders are never replaced. Retrying uses a new one.
+Existing destination folders are never replaced. Use the explicit reuse option
+for a complete installed engine; an incomplete destination needs another folder.
 Windows may briefly keep an executable image locked after a probe exits;
 the final directory rename retries for at most five seconds before failing.
 
@@ -74,6 +130,13 @@ The authored configuration changes are kept as executable source:
 
 - `backend/opencore/base.py`: derives a fresh VM configuration from the
   official `Docs/Sample.plist`, with iMac20,1, firmware quirks and drivers.
+  Its `ScanPolicy=0x301` combines filesystem lock (bit 0), APFS (bit 8),
+  and HFS (bit 9); FAT/ESP entries cannot recursively start OpenCore itself.
+  Auxiliary entries remain visible for installers. Existing VMs keep their
+  custom scan policy on ordinary rebuilds. **Repair boot entries** explicitly
+  applies this scan profile, preserving identity and auxiliary visibility;
+  the previous configuration is backed up first. Rebuilds follow the active
+  configuration/image recorded in the VM's OpenCore manifest.
 - `backend/opencore/apple-account.py`: the existing reversible Apple
   Account kernel-string compatibility patch, limited to Darwin **25.4.0**.
   It does not change SIP or blindly extend the OS version bounds.
@@ -86,10 +149,18 @@ The authored configuration changes are kept as executable source:
 binary patch. Its complete source/build checks remain at the pinned Reims
 revision under `guest/metal-compat`. Existing VM configurations keep that
 plugin and its version bounds when rebuilt. The Windows engine job does
-**not** build or silently install this macOS-compiled guest plugin. A fresh
-VM therefore needs separately qualified guest bridge installation for the
-stock-browser WebGL fix. OS updates require testing the plugin against the
-new kernel before expanding its compatibility bounds.
+**not** build or silently install this macOS-compiled guest plugin. The
+manager's OpenCore page fetches and applies the separate [guest bridge
+addon](guest-bridge.md), built by its own macOS CI job from those exact
+sources. Its release does not rebuild or replace the Windows engine.
+Application is optional and requires a qualified generic implementation and
+runtime ABI validation. Source `700379ce` records native WebGL acceptance on
+Darwin 25.4.0 and 25.6.0 with engine 2. Family bounds are not a claim that
+every OS version was tested, and 60 FPS is not guaranteed. Fresh setup
+requires the qualified addon release and applies it automatically. Explicit
+enable/reapply migrates owned bridge/Lilu
+entries to the reviewed package range; ordinary rebuilds preserve bounds.
+Native guest and browser checks are required before release promotion.
 
 ## Build and publication
 

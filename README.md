@@ -37,6 +37,10 @@ between official OpenCore binaries and authored configuration patches.
   Clipboard contents and guest passwords are not stored in logs.
 - **OpenCore:** manage generated SMBIOS identity and supported Apple Account
   compatibility settings. Identity changes can require reauthentication.
+  The same page can fetch/apply or disable the separately built
+  [Metal/WebGL guest addon](docs/guest-bridge.md) for the reviewed Darwin 25
+  ABI range. Candidates remain disabled until the generic implementation is
+  qualified.
 
 USB transfer requires the appropriate Windows driver. Only selected devices
 are registered for reconnection. NAT is the default; bridging needs a TAP

@@ -14,6 +14,12 @@ param(
 . "$PSScriptRoot/engine-package.ps1"
 $script:ReimsEngine = Read-ReimsEngine $ProjectRoot
 
+function Get-ReimsSshKnownHostsOption([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match '["\r\n\x00]') { throw 'Invalid SSH known-hosts path.' }
+    # OpenSSH parses -o as configuration text, after Windows argv parsing.
+    return 'UserKnownHostsFile="' + $Path.Replace('\','/') + '"'
+}
+
 function Get-ReimsEnginePath([string]$Key, [string]$SourceFallback) {
     if ($script:ReimsEngine) { return Join-ReimsPackagePath $ProjectRoot $script:ReimsEngine.paths[$Key] }
     return Join-Path $ProjectRoot $SourceFallback
@@ -43,6 +49,9 @@ function Get-ReimsTool([string]$Name, [string]$ExplicitPath) {
     if ($env:REIMS_MANAGER_TOOLS_ROOT -and $Name -eq 'python.exe') {
         $python = Join-Path $env:REIMS_MANAGER_TOOLS_ROOT 'python/python.exe'
         if (Test-Path -LiteralPath $python -PathType Leaf) { return $python }
+    }
+    if ($script:ReimsEngine -and $Name -eq 'python.exe') {
+        throw 'Bundled Python is missing. Re-extract the complete Manager package and pass its runtimes directory.'
     }
     $built = Join-Path $ProjectRoot "build/qemu/$Name"
     if ($Name -like 'qemu-*' -and (Test-Path -LiteralPath $built -PathType Leaf)) { return $built }
@@ -281,7 +290,7 @@ $launch = [ordered]@{
     headless = [bool]$Headless; diagnostic_only = [bool]$DiagnosticTcg
 }
 if ($DryRun) {
-    Write-ReimsJson (Join-Path $ProjectRoot '.work/diagnostics/vm-launch.json') $launch
+    Write-ReimsJson (Join-Path $ReimsWorkRoot 'diagnostics/vm-launch.json') $launch
     $launch | ConvertTo-Json -Depth 10
     return
 }
