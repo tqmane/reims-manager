@@ -25,10 +25,28 @@ if(!$GslSource){$GslSource=Get-Source $pin.gsl 'gsl'}
 $NdisApiSource=[IO.Path]::GetFullPath($NdisApiSource).Replace('\','/')
 $GslSource=[IO.Path]::GetFullPath($GslSource).Replace('\','/')
 if(!$OutputDirectory){$OutputDirectory=Join-Path $work 'build'}
+function Select-ReimsVisualStudio($Instances,$Generators) {
+    foreach($instance in @($Instances | Sort-Object { [version]$_.installationVersion } -Descending)) {
+        $major=([version]$instance.installationVersion).Major
+        $matching=@($Generators | Where-Object { $_.name -match "^Visual Studio $major(?: |$)" })
+        if($matching.Count -eq 1) {
+            return @{generator=$matching[0].name;instance=$instance.installationPath.Replace('\','/')}
+        }
+    }
+    throw 'No installed Visual C++ instance matches a Visual Studio generator supported by this CMake.'
+}
+$vswhere="${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+if(!(Test-Path -LiteralPath $vswhere)){throw 'Visual Studio Installer vswhere is required to locate the installed C++ toolchain.'}
+$instances=@((& $vswhere -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json -utf8) -join "`n" | ConvertFrom-Json)
+if($LASTEXITCODE -ne 0 -or !$instances.Count){throw 'No installed Visual C++ toolchain was found.'}
 $cmake=(Get-Command cmake -ErrorAction SilentlyContinue).Source
-if(!$cmake){$cmake=(& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -find '**/cmake.exe' | Select-Object -First 1)}
+if(!$cmake){$cmake=(& $vswhere -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find '**/cmake.exe' | Select-Object -First 1)}
 if(!$cmake){throw 'Visual Studio C++ CMake tools are required to build the helper.'}
-& $cmake -S (Join-Path $repo 'native/wifi-macnat') -B $OutputDirectory -G 'Visual Studio 17 2022' -A x64 -T host=x64 `
+$capabilities=(& $cmake -E capabilities) -join "`n" | ConvertFrom-Json
+if($LASTEXITCODE -ne 0){throw 'Cannot read supported CMake generators.'}
+$visualStudio=Select-ReimsVisualStudio $instances $capabilities.generators
+& $cmake -S (Join-Path $repo 'native/wifi-macnat') -B $OutputDirectory -G $visualStudio.generator -A x64 -T host=x64 `
+    "-DCMAKE_GENERATOR_INSTANCE=$($visualStudio.instance)" `
     '-DCMAKE_TRY_COMPILE_CONFIGURATION=Release' "-DNDISAPI_SOURCE=$NdisApiSource" "-DGSL_SOURCE=$GslSource"
 if($LASTEXITCODE){throw 'Native helper configuration failed.'}
 & $cmake --build $OutputDirectory --config Release --parallel 1
