@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 $repoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $sourceCommit=(& git -C $repoRoot rev-parse --verify HEAD) -join ''
 if($LASTEXITCODE -ne 0){throw 'Commit the source before creating a release package.'}
-$sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend tools .github docs README.md NOTICE.md LICENSES) -join ''
+$sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend native tools .github docs README.md NOTICE.md LICENSES) -join ''
 if($LASTEXITCODE -ne 0 -or $sourceChanges){throw 'Review and commit source changes before packaging.'}
 $work=Join-Path $repoRoot '.work'
 $output=Join-Path $work ('package-'+[guid]::NewGuid().ToString('N'))
@@ -23,6 +23,13 @@ $env:MSBUILDDISABLENODEREUSE='1'
     '-p:UseSharedCompilation=false' "-p:PathMap=$repoRoot=/_/reims-manager"
 if($LASTEXITCODE -ne 0){throw 'Manager build failed.'}
 & (Join-Path $PSScriptRoot 'bundle-runtimes.ps1') -OutputDirectory $output -ArchiveDirectory (Join-Path $work 'downloads')
+& (Join-Path $PSScriptRoot 'build-wifi-macnat.ps1')
+$native=Join-Path $output 'runtimes/wifi-macnat'
+[void][IO.Directory]::CreateDirectory($native)
+Copy-Item -LiteralPath (Join-Path $work 'wifi-macnat/build/Release/reims-wifi-macnat.exe') -Destination $native
+Copy-Item -LiteralPath (Join-Path $work 'wifi-macnat/ndisapi-417b8734e844083a10236387fba705d94a2d6bc9/LICENSE') -Destination (Join-Path $native 'LICENSE-ndisapi.txt')
+Copy-Item -LiteralPath (Join-Path $work 'wifi-macnat/gsl-2828399820ef4928cc89b65605dca5dc68efca6e/LICENSE') -Destination (Join-Path $native 'LICENSE-GSL.txt')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'backend/wifi-macnat-lock.json') -Destination $native
 $env:REIMS_MANAGER_HOME=Join-Path $checks 'settings'
 $test=Start-Process -FilePath (Join-Path $output 'ReimsManager.exe') -ArgumentList '--self-test',('"'+$checks+'"') -WindowStyle Hidden -PassThru -Wait
 if($test.ExitCode -ne 0){throw "Manager checks failed; see $checks"}
@@ -37,7 +44,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'docs') -Destination $output -Recurs
 Copy-Item -LiteralPath (Join-Path $checks 'result.json') -Destination (Join-Path $repoRoot 'artifacts/self-test.json') -Force
 @{publish=$output;checks=$checks} | ConvertTo-Json | Set-Content (Join-Path $work 'last-build.json') -Encoding utf8NoBOM
 $finalCommit=(& git -C $repoRoot rev-parse HEAD) -join ''
-$sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend tools .github docs README.md NOTICE.md LICENSES) -join ''
+$sourceChanges=(& git -C $repoRoot status --porcelain --untracked-files=all -- src backend native tools .github docs README.md NOTICE.md LICENSES) -join ''
 if($LASTEXITCODE -ne 0 -or $finalCommit -ne $sourceCommit -or $sourceChanges){throw 'Source changed during the package build.'}
 @{schema=1;revision=$sourceCommit;self_checks='passed';built_utc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content (Join-Path $output 'build-manifest.json') -Encoding utf8NoBOM
 $zip=Join-Path $artifacts 'ReimsManager-win-x64.zip'

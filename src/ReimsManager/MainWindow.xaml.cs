@@ -89,7 +89,7 @@ public partial class MainWindow : Window
             if (action == "SnapshotRestore") hardwareDirty = identityDirty = false;
         } catch (Exception error) { AppendLog(error.Message + "\n"); ShowError(error.Message); }
         finally {
-            if (action == "RemoveBridge") loadedHardware = false;
+            if (action is "RemoveBridge" or "PrepareWifi" or "DisableWifi") loadedHardware = false;
             busy = false; currentState = "unknown"; Tabs.IsEnabled = true;
             OperationProgress.Visibility = Visibility.Collapsed; UpdatePowerControls();
         }
@@ -132,7 +132,8 @@ public partial class MainWindow : Window
                 var token = statusCancellation.Token;
                 try {
                     JsonElement response;
-                    if (!loadDetails) {
+                    bool pollForwarder = hardwareForwarder == WifiForwarderState.MacNat || wifiForwarder?.Kind == WifiForwarderState.MacNat;
+                    if (!loadDetails && !pollForwarder) {
                         var live = await LiveVmStatus.Read(requestedVm, token);
                         if (version != contextVersion || busy || closing) continue;
                         if (cached.GetProperty("prepared").GetBoolean() == (live.State == "unprepared")) {
@@ -148,6 +149,7 @@ public partial class MainWindow : Window
                     }
                     if (version != contextVersion || busy || closing) continue;
                     latest = response;
+                    ReadWifiStatus();
                     currentState = latest.GetProperty("state").GetString() ?? "unknown";
                     State.Text = VmActionPolicy.StateLabel(currentState);
                     StatusDetail.Text = currentState switch {
@@ -196,6 +198,7 @@ public partial class MainWindow : Window
         Iso.Text=HardwareIsoPath.Text=latest.GetProperty("iso").GetString()??"";
         ConnectIso.IsChecked=HardwareIso.IsChecked=latest.GetProperty("with_installer").GetBoolean();
         Nat.IsChecked=latest.GetProperty("network").GetString()=="nat"; Bridge.IsChecked=!Nat.IsChecked;
+        hardwareForwarder=wifiForwarder?.Kind ?? "";
         string adapter = latest.GetProperty("network_adapter").GetString() ?? "";
         if (adapter.Length > 0 && !Tap.Items.Cast<string>().Contains(adapter)) Fill(Tap, Tap.Items.Cast<string>().Append(adapter));
         Tap.SelectedItem=adapter; GuestHost.Text=latest.GetProperty("guest_host").GetString()??"";
@@ -366,7 +369,8 @@ public partial class MainWindow : Window
     }
     private async void ApplyResolution(object sender,RoutedEventArgs e) => await Operate("ApplyResolution",["-Resolution",Selected(Resolution)]);
     private void OpenBridgeTab(object sender,RoutedEventArgs e) {
-        Physical.SelectedValue=SelectedUplink; BridgeTap.SelectedItem=Tap.SelectedItem;
+        if (SelectedUplink.Length>0) Physical.SelectedValue=SelectedUplink;
+        BridgeTap.SelectedItem=Tap.SelectedItem;
         Tabs.SelectedIndex=7;
     }
     private async void InstallTap(object sender,RoutedEventArgs e) {

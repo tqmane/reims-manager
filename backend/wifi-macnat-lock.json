@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "sdk": {"repository": "https://github.com/wiresock/ndisapi", "commit": "417b8734e844083a10236387fba705d94a2d6bc9"},
+  "gsl": {"repository": "https://github.com/microsoft/GSL", "commit": "2828399820ef4928cc89b65605dca5dc68efca6e", "version": "4.2.0"},
+  "driver": {
+    "version": "3.6.2.1",
+    "url": "https://github.com/wiresock/ndisapi/releases/download/v3.6.2/Windows.Packet.Filter.3.6.2.1.x64.msi",
+    "terms_id": "winpkfilter-3.6.2.1-personal-evaluation",
+    "terms_url": "https://www.ntkernel.com/windows-packet-filter/download/",
+    "license_url": "https://www.ntkernel.com/windows-packet-filter/licensing/"
+  }
+}

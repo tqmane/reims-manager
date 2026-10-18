@@ -22,6 +22,7 @@ public partial class MainWindow
         RemoveBridgeButton.BringIntoView();await ArrangeCheck();
         RequireInside(RemoveBridgeButton,BridgeScroll,"Owned bridge removal");
         SaveImage(Path.Combine(folder,"network-remove-bridge-compact.png"));
+        await CheckWifiCard(folder);
         File.WriteAllText(Path.Combine(folder,"network-page-result.json"),"{\"physical_guid_draft\":true,\"missing_uplink_retained\":true,\"cancel_restores_nat\":true,\"remove_stopped_only\":true,\"remove_control_reachable\":true,\"no_host_network_calls\":true}");
     }
 
@@ -89,7 +90,7 @@ public partial class MainWindow
         ApplyNetworkChoices(NetworkInventory.Parse(OnboardingChecks.Network));
         await ArrangeCheck(); SaveImage(Path.Combine(folder, "network-friendly-uplinks.png"));
         if (!RestoreSettingsDrafts() || SelectedUplink.Length != 0 || Nat.IsChecked != true) throw new Exception("Cancel lost the saved network selection.");
-        Physical.SelectedValue = id; Tabs.SelectedIndex = 7; await ArrangeCheck();
+        Physical.SelectedValue = "bbbbbbbb-2222-4222-8222-222222222222"; Tabs.SelectedIndex = 7; await ArrangeCheck();
         RemoveBridgeButton.BringIntoView();await ArrangeCheck();
         RequireInside(RemoveBridgeButton,BridgeScroll,"Owned bridge removal");
         SaveImage(Path.Combine(folder, "network-bridge-preparation.png"));

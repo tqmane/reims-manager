@@ -16,3 +16,11 @@ Official URLs and pinned SHA256 values are in `tools/runtimes.json` and
 copied into each package. Source control contains no runtime binaries.
 Reims/QEMU engines are separate and retain their own license and source
 requirements.
+
+Optional Wi-Fi IPv4 compatibility includes an authored helper statically
+linked to the MIT-licensed [ndisapi SDK](https://github.com/wiresock/ndisapi)
+and [Microsoft GSL](https://github.com/microsoft/GSL). Exact source pins and
+both license texts accompany the helper. The separately licensed Windows
+Packet Filter driver is not bundled or committed; optional installation
+downloads the official vendor package after explicit terms acceptance.
+See [delivery and licensing](docs/wifi-macnat-contract.md).

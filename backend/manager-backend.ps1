@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -22,9 +22,25 @@ param(
     [ValidateSet('none','dsound')][string]$Audio = 'none',
     [switch]$Microphone,
     [ValidateSet('winusb','usbdk')][string]$UsbBackend = 'winusb',
-    [switch]$WithInstaller
+    [switch]$WithInstaller,
+    [Alias('AcceptDriverTerms')][switch]$AcceptPacketFilterTerms
 )
 $ErrorActionPreference='Stop'
+if ($ToolsRoot) { $env:REIMS_MANAGER_TOOLS_ROOT = [IO.Path]::GetFullPath($ToolsRoot) }
+if ($Action -eq 'GetWifiMacNat' -and !$VmDirectory) {
+    . "$PSScriptRoot/wifi-macnat.ps1"
+    Get-ReimsWifiStatus '' | ConvertTo-Json -Depth 6 -Compress
+    return
+}
+if ($Action -eq 'InstallWifiDriver' -and !$VmDirectory) {
+    function Assert-Administrator {
+        if(!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Administrator required.'}
+    }
+    . "$PSScriptRoot/wifi-macnat.ps1"
+    . "$PSScriptRoot/wifi-driver.ps1"
+    Install-ReimsWifiDriver $Root ([bool]$AcceptPacketFilterTerms) | ConvertTo-Json -Depth 5 -Compress
+    return
+}
 if ($Action -eq 'GetNetworkUplinks') {
     . "$PSScriptRoot/network-uplinks.ps1"
     Get-ReimsNetworkInventory | ConvertTo-Json -Depth 5 -Compress
@@ -138,10 +154,26 @@ if ($Action -eq 'Status') {
         network_uplink_id=$(if ($config -and $config.PSObject.Properties['network'] -and $config.network.PSObject.Properties['physical_adapter_id']) {$config.network.physical_adapter_id} else {''});
         resolution=$(if ($config) {$config.resolution} else {'1920x1080'});
         network=$(if ($config) {Get-ReimsNetworkMode $config} else {'nat'});
-        iso=$(if ($config) {$config.iso} else {''})} | ConvertTo-Json -Depth 5 -Compress
+        network_forwarder=(Get-ReimsWifiStatus $VmRoot);
+        iso=$(if ($config) {$config.iso} else {''})} | ConvertTo-Json -Depth 6 -Compress
     return
 }
 switch ($Action) {
+    GetWifiMacNat { Get-ReimsWifiStatus $VmRoot | ConvertTo-Json -Depth 6 -Compress }
+    InstallWifiDriver {
+        Assert-ReimsVmStopped
+        . "$PSScriptRoot/wifi-driver.ps1"
+        $result=Install-ReimsWifiDriver $Root ([bool]$AcceptPacketFilterTerms)
+        Write-ReimsJson (Join-Path $VmRoot 'state/wifi-driver-install-result.json') $result
+        $result | ConvertTo-Json -Depth 5 -Compress
+    }
+    PrepareWifi {
+        . "$PSScriptRoot/wifi-driver.ps1"
+        $result=Prepare-ReimsWifi $Root $Adapter $PhysicalAdapter $GuestHost ([bool]$AcceptPacketFilterTerms)
+        Write-ReimsJson (Join-Path $VmRoot 'state/wifi-prepare-result.json') $result
+        $result | ConvertTo-Json -Depth 6 -Compress
+    }
+    DisableWifi { Disable-ReimsWifiMacNat | ConvertTo-Json -Depth 6 -Compress }
     ImportDisk {
         Assert-ReimsVmStopped
         if (Test-Path (Join-Path $VmRoot 'state/config.json')) { throw '既存の VM に上書きせず、新しい VM を作成してください。' }
