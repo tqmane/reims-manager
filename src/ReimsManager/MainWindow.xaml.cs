@@ -369,10 +369,25 @@ public partial class MainWindow : Window
         Physical.SelectedValue=SelectedUplink; BridgeTap.SelectedItem=Tap.SelectedItem;
         Tabs.SelectedIndex=7;
     }
-    private void TapDownload(object sender,RoutedEventArgs e) => Process.Start(new ProcessStartInfo("https://build.openvpn.net/downloads/releases/") { UseShellExecute=true });
     private async void InstallTap(object sender,RoutedEventArgs e) {
-        var dialog=new OpenFileDialog {Filter="TAP-Windows インストーラー|tap-windows*.exe"};
-        if (dialog.ShowDialog(this)==true) await Operate("InstallTap",["-Installer",dialog.FileName],true);
+        if (!RequireAction("InstallTap") || !Confirm("Reims 専用の TAP ドライバーを管理者権限で準備します。公式ファイルを取得し、署名を確認して導入します。ブリッジ作成と Windows の再起動は別に行います。続けますか？")) return;
+        var entry=selectedEntry;string resultFile=Path.Combine(VmDirectory,"state","tap-install-result.json");
+        DateTime started=DateTime.UtcNow;
+        if (!await Operate("InstallTap",[],true)) {
+            ShowError(ErrorNotice.Text+"\nドライバーが追加済みの場合があります。接続先と導入ログを確認してから再試行してください。");return;
+        }
+        if (entry != selectedEntry || closing) return;
+        try {
+            var result=TapInstallResult.Read(resultFile,started);
+            if (result.RestartRequired) {
+                StatusDetail.Text="TAP の準備に Windows の再起動が必要です。作業を保存して再起動し、導入を再実行してください。";
+                MessageBox.Show(this,StatusDetail.Text,"TAP ドライバー",MessageBoxButton.OK,MessageBoxImage.Information);
+            } else {
+                if (result.Owned && result.AdapterName is { } name && BridgeTap.Items.Contains(name)) BridgeTap.SelectedItem=name;
+                StatusDetail.Text="TAP の準備ができました。接続先と専用 TAP を選び、必要な場合にブリッジを作成してください。";
+            }
+            UpdatePowerControls();
+        } catch (Exception error) { ShowError("TAP の導入結果を確認できません。ドライバーが追加済みの場合があります。\n"+error.Message); }
     }
     private async void CreateBridge(object sender,RoutedEventArgs e) {
         if (!RequireAction("CreateBridge")) return;

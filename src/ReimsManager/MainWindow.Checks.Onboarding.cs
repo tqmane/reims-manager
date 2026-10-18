@@ -16,7 +16,10 @@ public partial class MainWindow
         State.Text="完全停止";StatusDetail.Text="";Feedback.Visibility=Visibility.Collapsed;
         await CheckNetworkChoices(folder);
         Width=MinWidth;Height=MinHeight;Tabs.SelectedIndex=7;currentState="stopped";UpdatePowerControls();
-        await ArrangeCheck();RemoveBridgeButton.BringIntoView();await ArrangeCheck();
+        await ArrangeCheck();InstallTapButton.BringIntoView();await ArrangeCheck();
+        RequireInside(InstallTapButton,BridgeScroll,"Dedicated TAP preparation");
+        SaveImage(Path.Combine(folder,"network-auto-tap-compact.png"));
+        RemoveBridgeButton.BringIntoView();await ArrangeCheck();
         RequireInside(RemoveBridgeButton,BridgeScroll,"Owned bridge removal");
         SaveImage(Path.Combine(folder,"network-remove-bridge-compact.png"));
         File.WriteAllText(Path.Combine(folder,"network-page-result.json"),"{\"physical_guid_draft\":true,\"missing_uplink_retained\":true,\"cancel_restores_nat\":true,\"remove_stopped_only\":true,\"remove_control_reachable\":true,\"no_host_network_calls\":true}");
@@ -92,7 +95,7 @@ public partial class MainWindow
         SaveImage(Path.Combine(folder, "network-bridge-preparation.png"));
         foreach (string state in new[] { "running", "shutdown", "paused", "unknown", "unprepared", "stopped" }) {
             currentState=state;UpdatePowerControls();
-            if (RemoveBridgeButton.IsEnabled != (state == "stopped")) throw new Exception("Bridge removal is enabled outside a fully stopped VM.");
+            if (RemoveBridgeButton.IsEnabled != (state == "stopped") || InstallTapButton.IsEnabled != (state == "stopped")) throw new Exception("Host network changes are enabled outside a fully stopped VM.");
         }
         Tabs.SelectedIndex = 0; hardwareDirty = identityDirty = false; UpdatePowerControls();
     }

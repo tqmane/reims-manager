@@ -869,11 +869,9 @@
                   <ComboBox x:Name="Physical" DisplayMemberPath="DisplayName" SelectedValuePath="Id" ToolTip="{Binding SelectedItem.Description, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="ブリッジする物理接続先"/>
                   <Button Content="接続先を更新" Click="ReloadNetworkChoices" HorizontalAlignment="Left" Margin="0,12,0,0"/>
                   <TextBlock Text="Wi-Fi の対応は未確認です。作成すると Windows の通信が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>
-                  <Expander Header="詳細: 専用 TAP の準備" Margin="0,16,0,0"><StackPanel>
-                  <WrapPanel Margin="0,20,0,0">
-                    <Button Content="TAP をダウンロード" Click="TapDownload"/>
-                    <Button Content="署名済み TAP を導入…" Click="InstallTap"/>
-                  </WrapPanel>
+                  <Button x:Name="InstallTapButton" Content="専用 TAP ドライバーを自動導入…" Click="InstallTap" Tag="InstallTap" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+                  <TextBlock Text="署名を確認した公式ドライバーを取得します。ブリッジの作成は別の操作です。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                  <Expander Header="詳細: 既存の専用 TAP を選択" Margin="0,16,0,0"><StackPanel>
                   <TextBlock Text="TAP アダプター" Style="{StaticResource FieldLabel}"/>
                   <ComboBox x:Name="BridgeTap"/>
                   <TextBlock Text="他の VPN の TAP を選ばず、Reims 専用のものを明示して選択してください。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
