@@ -122,7 +122,7 @@ public partial class NewVmWindow : Window
         var dialog = new OpenFolderDialog { Title = "VM を保存する親フォルダー" };
         if (dialog.ShowDialog(this) == true) ParentFolder.Text = dialog.FolderName;
     }
-    private void LocationChanged(object sender, RoutedEventArgs e)
+    private void VmLocationChanged(object sender, RoutedEventArgs e)
     {
         if (LocationPreview is null || ParentFolder is null || VmName is null) return;
         try { LocationPreview.Text = "VM の保存先: " + VmLibrary.PlanCreate(ParentFolder.Text, VmName.Text.Trim()).Directory; }
@@ -132,6 +132,7 @@ public partial class NewVmWindow : Window
 
     internal async Task<bool> TryCreateRequest()
     {
+        Request = null;
         if (checking || changingSystem || !ValidatePlan(out int cpus, out int memory)) return false;
         try {
             var entry = VmLibrary.PlanCreate(ParentFolder.Text, VmName.Text.Trim());

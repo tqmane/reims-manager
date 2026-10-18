@@ -121,13 +121,14 @@ public partial class MainWindow
     {
         if (!HasEngine) { ShowError("先に Reims エンジンを設定してください。VM ファイルはまだ作成していません。"); return null; }
         var dialog = new SaveFileDialog { Filter = "Reims 仮想マシン|*.reimsvm", DefaultExt = ".reimsvm", AddExtension = true,
-            FileName = "macOS.reimsvm", Title = "新しい VM の名前と保存先", OverwritePrompt = true };
+            FileName = "macOS.reimsvm", Title = "新しい VM の名前と保存先", OverwritePrompt = true,
+            InitialDirectory = Directory.Exists(VmLibrary.DefaultRoot) ? VmLibrary.DefaultRoot : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) };
         if (dialog.ShowDialog(this) != true || !DiscardPendingChanges()) return null;
         string directory = Path.Combine(Path.GetDirectoryName(dialog.FileName)!, Path.GetFileNameWithoutExtension(dialog.FileName) + ".data");
         try {
             var entry = VmLibrary.Create(dialog.FileName, directory);
             hardwareDirty = identityDirty = false;
-            AddVm(entry); return entry;
+            return AddVm(entry) ? entry : null;
         } catch (Exception error) { ShowError(error.Message); return null; }
     }
 
@@ -148,6 +149,8 @@ public partial class MainWindow
             var entry = VmLibrary.Create(request.Vm.File, request.Vm.Directory);
             hardwareDirty = identityDirty = false;
             if (!AddVm(entry)) return;
+            Iso.Text=request.Installer; NewDiskSize.Text=request.DiskGiB.ToString();
+            Cpus.Text=request.Cpus.ToString(); Memory.Text=request.MemoryMiB.ToString();
             await RefreshState();
             if (entry != selectedEntry) return;
             if (!await Operate("Setup", ["-Iso", request.Installer, "-DiskGiB", request.DiskGiB.ToString(),
@@ -174,8 +177,13 @@ public partial class MainWindow
 
     private async void ImportVm(object sender, RoutedEventArgs e)
     {
-        if (IsUiBusy) return;
-        if (!HasEngine) { ShowError("ディスクを取り込む前に Reims エンジンを設定してください。"); return; }
+        if (IsUiBusy || !DiscardPendingChanges()) return;
+        if (!HasEngine) {
+            busy=true; UpdatePowerControls();
+            try { if (!SelectSetupEngine()) return; }
+            catch (Exception error) { ShowError(error.Message); return; }
+            finally { busy=false; UpdatePowerControls(); }
+        }
         var disk = new OpenFileDialog { Filter = "仮想ディスク|*.vmdk;*.qcow2;*.img;*.raw", Title = "完全に停止した VM のディスクを選択（元データは保持）" };
         if (disk.ShowDialog(this) != true || CreateVm() is not { } entry) return;
         await RefreshState();

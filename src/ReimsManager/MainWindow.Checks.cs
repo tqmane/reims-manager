@@ -14,6 +14,7 @@ public partial class MainWindow
     {
         await CheckPresentationPolicy();
         await CheckSettingsDraftBehavior();
+        await CheckNetworkChoices(folder);
         double width = Width, height = Height;
         string title = VmTitle.Text;
         int count = machines.Count;

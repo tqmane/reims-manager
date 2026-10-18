@@ -29,9 +29,9 @@
     <StackPanel>
      <TextBlock Text="macOS インストーラー (ISO / IMG)" FontWeight="SemiBold" Margin="0,0,0,8"/>
      <DockPanel><Button Content="参照…" Click="BrowseInstaller" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="Installer" AutomationProperties.Name="インストーラー"/></DockPanel>
-     <TextBlock Text="仮想マシンの名前" Style="{StaticResource FieldLabel}"/><TextBox x:Name="VmName" Text="macOS Tahoe" TextChanged="LocationChanged" AutomationProperties.Name="仮想マシンの名前"/>
+     <TextBlock Text="仮想マシンの名前" Style="{StaticResource FieldLabel}"/><TextBox x:Name="VmName" Text="macOS Tahoe" TextChanged="VmLocationChanged" AutomationProperties.Name="仮想マシンの名前"/>
      <TextBlock Text="保存先の親フォルダー" Style="{StaticResource FieldLabel}"/>
-     <DockPanel><Button Content="参照…" Click="BrowseFolder" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="ParentFolder" TextChanged="LocationChanged" AutomationProperties.Name="VM の親フォルダー"/></DockPanel>
+     <DockPanel><Button Content="参照…" Click="BrowseFolder" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="ParentFolder" TextChanged="VmLocationChanged" AutomationProperties.Name="VM の親フォルダー"/></DockPanel>
      <TextBlock x:Name="LocationPreview" TextWrapping="Wrap" Margin="0,6,0,0" Opacity="0.75"/>
      <Grid Margin="0,20,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <StackPanel><TextBlock Text="ディスク (GiB)" Margin="0,0,0,8"/><TextBox x:Name="Capacity" Text="300" AutomationProperties.Name="仮想ディスク容量 GiB"/></StackPanel>
@@ -46,7 +46,7 @@
     </StackPanel>
    </ScrollViewer>
   </Grid>
-  <StackPanel Grid.Row="2" Margin="0,16,0,0"><ProgressBar x:Name="Progress" Height="3" IsIndeterminate="True" Visibility="Collapsed"/><TextBlock x:Name="Notice" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/></StackPanel>
+  <StackPanel Grid.Row="2" Margin="0,16,0,0"><ProgressBar x:Name="Progress" Height="3" IsIndeterminate="True" Visibility="Collapsed"/><ScrollViewer MaxHeight="110" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="Notice" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/></ScrollViewer></StackPanel>
   <Grid Grid.Row="3" Margin="0,20,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <Button x:Name="BackButton" Content="必要条件に戻る" Click="Back" HorizontalAlignment="Left" Visibility="Collapsed"/>
    <StackPanel Grid.Column="1" Orientation="Horizontal"><Button x:Name="CancelButton" Content="キャンセル" Click="Cancel" Margin="0,0,8,0"/>
