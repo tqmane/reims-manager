@@ -1,5 +1,48 @@
 # Console-first workspace and dedicated settings
 
+## Direct Manager control
+
+The running Manager exposes a same-user, same-Windows-session named pipe. Its
+CLI controls that selected VM through the existing Dispatcher, power policy,
+backend operations and native console methods, without simulated input:
+
+```powershell
+Get-Process ReimsManager | Select-Object Id
+Start-Process .\ReimsManager.exe -ArgumentList '--control','status','--pid','1234','--output','status.json' -Wait
+Get-Content .\status.json
+```
+
+Use the actual Manager PID. `--pid` may be omitted only when exactly one other
+Manager process exists in the session. Commands are `status`, `start`,
+`poweroff`, `restart`, `exit` (normal QEMU exit), `pause`, `resume`,
+`dock-console` and `popout-console`. No command force-kills a VM, changes the
+selected VM, sends guest keys, executes arbitrary code or accepts credentials.
+
+Each invocation emits one schema-1 JSON response to redirected stdout and,
+optionally, `--output`. Exit code zero means `ok=true`. Status includes
+`manager_pid`, `busy`, `selected_descriptor`, `state`, `consoleAttached`,
+`consoleDetached` and `runtime_pid`. Compare the selected descriptor before
+requesting a mutation. `status` can run while a power operation is busy;
+concurrent mutations, unavailable operations and unsaved settings are rejected
+with an `error` code. `start` completes after the backend operation and status
+refresh; poll `status` for `consoleAttached` when the display is still appearing.
+
+The transport is local only, with `PipeOptions.CurrentUserOnly`, a
+session/Manager-PID pipe name, and a server check of the client process session.
+Frames are a four-byte little-endian payload length followed by UTF-8 JSON,
+limited to 64 KiB. Requests contain only `schema:1` and a whitelisted `command`.
+Connection/read/write deadlines bound idle clients. A CLI timeout or disconnect
+does not cancel an already accepted operation: `operation_may_continue=true`
+in a client error means query `status` before retrying. Normal Manager shutdown
+closes its listener and detaches the display; it does not shut down the VM.
+
+The isolated native self-check starts actual CLI processes, verifies stdout and
+an output path containing spaces/Unicode, observes a pending Start, rejects a
+second mutation, dispatches every normal power action, docks/pops out an owned
+native child and completes an operation after its client disconnects. It also
+checks unsaved-setting/policy refusal and frame/command bounds. It does not boot
+macOS or replace real-guest acceptance.
+
 This follow-up is based on PR #1 (`67c85e4`). It preserves the engine/backend and
 VM descriptor/disk formats. It does not add VMware assets or claim VMware feature
 parity.

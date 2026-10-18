@@ -11,7 +11,7 @@ public partial class MainWindow
 
     // Runs only under --self-test against a newly created child of this executable.
     // This is not a QEMU/macOS, physical USB, GPU or guest-input acceptance test.
-    internal async Task CheckNativeConsoleLifecycle()
+    internal async Task CheckNativeConsoleLifecycle(string folder)
     {
         if (!selfTest) throw new InvalidOperationException("Fixture access only");
         var savedStatus = latest;
@@ -75,6 +75,7 @@ public partial class MainWindow
             if (!ConsoleView.Attached || FixtureGetParent(window) != host) throw new Exception("Polling did not recover the existing console");
             DockConsole(this, new RoutedEventArgs()); await ArrangeCheck();
             if (!ConsoleView.Attached || FixtureGetParent(window) != host) throw new Exception("Explicit re-docking failed");
+            await CheckControlApi(child, window, folder);
         } finally {
             // Detach first, so destroying a test host never destroys an owned guest window.
             ConsoleView.Detach(); useFixtureConsole = false; consoleDetached = false;
