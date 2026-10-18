@@ -112,7 +112,9 @@ function Set-ReimsWifiBinding([string]$Id,[string]$Component,[bool]$Enabled) {
 function Get-ReimsWifiRouterDiscovery([string]$Id) {
     $nic=Get-ReimsWifiNic $Id
     $result=@{}
-    foreach($store in @('ActiveStore','PersistentStore')){
+    # Set-NetIPInterface documents ActiveStore only. PersistentStore can return
+    # a row with no RouterDiscovery value; it is not an effective policy value.
+    foreach($store in @('ActiveStore')){
         $interfaces=@(Get-NetIPInterface -InterfaceIndex $nic.InterfaceIndex -AddressFamily IPv6 -PolicyStore $store -ErrorAction Stop)
         if($interfaces.Count -ne 1 -or $interfaces[0].InterfaceIndex -ne $nic.InterfaceIndex){throw 'Dedicated TAP IPv6 interface identity is unknown.'}
         $value=[string]$interfaces[0].RouterDiscovery
@@ -125,16 +127,18 @@ function Get-ReimsWifiRouterDiscovery([string]$Id) {
     return $result
 }
 function Set-ReimsWifiRouterDiscovery([string]$Id,[string]$Store,[string]$Value) {
-    if($Store -notin @('ActiveStore','PersistentStore') -or $Value -notin @('Disabled','Enabled','ControlledByDHCP')){throw 'Invalid RouterDiscovery restore setting.'}
+    if($Store -ne 'ActiveStore' -or $Value -notin @('Disabled','Enabled','ControlledByDHCP')){throw 'Invalid RouterDiscovery restore setting.'}
     $nic=Get-ReimsWifiNic $Id
     Set-NetIPInterface -InterfaceIndex $nic.InterfaceIndex -AddressFamily IPv6 -PolicyStore $Store -RouterDiscovery $Value -ErrorAction Stop | Out-Null
 }
-function Assert-ReimsWifiRouterDisabled($Record) {
+function Assert-ReimsWifiRouterDisabled($Record,[switch]$AllowOriginal) {
     if($Record['ipv6_enabled'] -isnot [bool] -or $Record['ipv6_enabled'] -ne $true -or !$Record.ContainsKey('router_discovery_before')){throw 'Reapply PrepareWifi to protect the dedicated TAP before enabling IPv6.'}
+    if($Record['router_discovery_store'] -ne 'ActiveStore'){throw 'Older dual-store RouterDiscovery receipt requires inspection; unknown persistent policy was not changed.'}
     [void](Assert-ReimsOwnedWifiTap $Record.tap_id $Record.pnp_instance_id)
     $live=Get-ReimsWifiRouterDiscovery $Record.tap_id
-    foreach($store in @('ActiveStore','PersistentStore')){
-        if($Record.router_discovery_before[$store] -notin @('Disabled','Enabled','ControlledByDHCP') -or $live[$store] -ne 'Disabled'){
+    foreach($store in @('ActiveStore')){
+        if($Record.router_discovery_before[$store] -notin @('Disabled','Enabled','ControlledByDHCP') -or
+            ($live[$store] -ne 'Disabled' -and !($AllowOriginal -and $live[$store] -eq $Record.router_discovery_before[$store]))){
             throw 'Dedicated TAP RouterDiscovery changed outside Manager; inspect before reapplying or starting IPv6.'
         }
     }
@@ -158,10 +162,10 @@ function Set-ReimsWifiEnabled([string]$TapId,[string]$UplinkId,[string]$GuestHos
     if($previous -and $previous.state -ne 'disabled'){
         if($previous.state -ne 'enabled' -or $previous.tap_id -ne $tap.adapter_id -or $previous.uplink_id -ne $uplink.id){throw 'Disable the previous Wi-Fi configuration before changing adapters.'}
         if($before.ms_tcpip -or !$before.ms_tcpip6){throw 'TAP bindings changed outside Manager; inspect before reapplying.'}
-        if($previous['ipv6_enabled'] -eq $true){Assert-ReimsWifiRouterDisabled $previous;$routerBefore=$previous.router_discovery_before}
+        if($previous['ipv6_enabled'] -eq $true){Assert-ReimsWifiRouterDisabled $previous -AllowOriginal;$routerBefore=$previous.router_discovery_before}
         $before=$previous.bindings_before
     }
-    $record=@{schema=1;state='prepared';tap_id=$tap.adapter_id;tap_name=$tap.adapter_name;pnp_instance_id=$tap.pnp_instance_id;uplink_id=$uplink.id;bindings_before=$before;error='';ipv6_enabled=$false}
+    $record=@{schema=1;state='prepared';tap_id=$tap.adapter_id;tap_name=$tap.adapter_name;pnp_instance_id=$tap.pnp_instance_id;uplink_id=$uplink.id;bindings_before=$before;error='';ipv6_enabled=$false;router_discovery_store='ActiveStore'}
     if($routerBefore){$record.router_discovery_before=$routerBefore}
     $config=Get-ReimsVmConfig
     Write-ReimsJson $path $record
@@ -171,9 +175,9 @@ function Set-ReimsWifiEnabled([string]$TapId,[string]$UplinkId,[string]$GuestHos
         Set-ReimsWifiBinding $tap.adapter_id ms_tcpip6 $true
         if(!$routerBefore){$routerBefore=Get-ReimsWifiRouterDiscovery $tap.adapter_id;$liveRouterBefore=$routerBefore;$record.router_discovery_before=$routerBefore}
         $record.ipv6_enabled=$true
-        # Persist the original setting before either store can be changed.
+        # Persist the original effective setting before it can be changed.
         Write-ReimsJson $path $record
-        foreach($store in @('ActiveStore','PersistentStore')){Set-ReimsWifiRouterDiscovery $tap.adapter_id $store 'Disabled'}
+        foreach($store in @('ActiveStore')){Set-ReimsWifiRouterDiscovery $tap.adapter_id $store 'Disabled'}
         Assert-ReimsWifiRouterDisabled $record
         $after=Get-ReimsWifiBindings $tap.adapter_id
         if($after.ms_tcpip -or !$after.ms_tcpip6){throw 'Dedicated TAP IP binding preparation failed.'}
@@ -186,7 +190,7 @@ function Set-ReimsWifiEnabled([string]$TapId,[string]$UplinkId,[string]$GuestHos
         try{[void](Assert-ReimsOwnedWifiTap $record.tap_id $record.pnp_instance_id)
             if($liveRouterBefore){
                 $live=Get-ReimsWifiRouterDiscovery $record.tap_id
-                foreach($store in @('ActiveStore','PersistentStore')){
+                foreach($store in @('ActiveStore')){
                     if($live[$store] -ne 'Disabled' -and $live[$store] -ne $liveRouterBefore[$store]){throw 'RouterDiscovery ownership changed during preparation.'}
                     Set-ReimsWifiRouterDiscovery $record.tap_id $store $liveRouterBefore[$store]
                 }
@@ -210,11 +214,11 @@ function Disable-ReimsWifiMacNat {
     foreach($key in @('ms_tcpip','ms_tcpip6')){if($record.bindings_before[$key] -isnot [bool]){throw 'Original binding state is invalid.'}}
     $routerCurrent=$null
     if($record['ipv6_enabled'] -eq $true){
+        if($record['router_discovery_store'] -ne 'ActiveStore'){throw 'Older dual-store RouterDiscovery receipt requires inspection; unknown persistent policy was not changed.'}
         $routerCurrent=Get-ReimsWifiRouterDiscovery $record.tap_id
-        foreach($store in @('ActiveStore','PersistentStore')){
+        foreach($store in @('ActiveStore')){
             if($record.router_discovery_before[$store] -notin @('Disabled','Enabled','ControlledByDHCP') -or
                 ($routerCurrent[$store] -ne 'Disabled' -and $routerCurrent[$store] -ne $record.router_discovery_before[$store])){throw 'RouterDiscovery ownership changed; refusing restore.'}
-            if($record.state -eq 'enabled' -and $routerCurrent[$store] -ne 'Disabled'){throw 'RouterDiscovery changed outside Manager; refusing restore.'}
         }
     }
     $config=Get-ReimsVmConfig
@@ -222,7 +226,7 @@ function Disable-ReimsWifiMacNat {
     try {
         # IPv6 remains enabled for link-local management; only host IPv4 is undone.
         Set-ReimsWifiBinding $record.tap_id ms_tcpip $record.bindings_before.ms_tcpip
-        if($routerCurrent){foreach($store in @('ActiveStore','PersistentStore')){Set-ReimsWifiRouterDiscovery $record.tap_id $store $record.router_discovery_before[$store]}}
+        if($routerCurrent){foreach($store in @('ActiveStore')){Set-ReimsWifiRouterDiscovery $record.tap_id $store $record.router_discovery_before[$store]}}
         $config | Add-Member -Force network @{mode='nat';adapter='';guest_host=''}
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         $savedNat=$true
@@ -231,7 +235,7 @@ function Disable-ReimsWifiMacNat {
         $failure=$_.Exception.Message
         if(!$savedNat){
             try{[void](Assert-ReimsOwnedWifiTap $record.tap_id $record.pnp_instance_id);Set-ReimsWifiBinding $record.tap_id ms_tcpip $current.ms_tcpip
-                if($routerCurrent){foreach($store in @('ActiveStore','PersistentStore')){Set-ReimsWifiRouterDiscovery $record.tap_id $store $routerCurrent[$store]}}}
+                if($routerCurrent){foreach($store in @('ActiveStore')){Set-ReimsWifiRouterDiscovery $record.tap_id $store $routerCurrent[$store]}}}
             catch{$failure+='; IPv4 rollback requires inspection: '+$_.Exception.Message}
         }
         $record.state='error';$record.error=$failure;Write-ReimsJson $path $record

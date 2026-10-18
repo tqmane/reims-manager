@@ -25,8 +25,8 @@ insufficient. It confirms capture readiness, not guest DHCP or Internet.
 
 New profiles use `network.mode=bridge, forwarder=macnat`; status kind is
 `macnat`. Typed `ipv6_enabled=true` means a matching enabled preparation
-receipt, a live Manager-owned TAP identity, and disabled RouterDiscovery
-in both policy stores. It is configuration readiness, not a claim that the
+receipt, a live Manager-owned TAP identity, and disabled effective
+RouterDiscovery in ActiveStore. It is configuration readiness, not a claim that the
 uplink has IPv6 Internet. `ipv4_only` is always its inverse. An unconfigured
 profile has both `configured=false` and `ipv6_enabled=false`.
 `enabled` also preserves prepared/error ownership receipts so stopped-VM
@@ -136,16 +136,35 @@ not success. SDK configuration operations are not atomic against arbitrary
 third-party driver clients; unknown state requires inspection.
 
 PrepareWifi changes only the owned TAP's IPv6 RouterDiscovery through
-Get/Set-NetIPInterface and the exact selected interface index. Original
-ActiveStore/PersistentStore values (`Enabled`, `Disabled`, or
-`ControlledByDHCP`, normalized from the documented 0/1/2 enum) are saved
-before disabling either store. Reapply keeps the original values and
-refuses external changes. Failure restores only proven owned state;
-Disable restores each recorded value exactly. IPv6 binding/LLA remain
+Get/Set-NetIPInterface, explicit `-PolicyStore ActiveStore` and the exact
+selected interface index. The original effective value (`Enabled`,
+`Disabled`, or `ControlledByDHCP`, normalized from the documented 0/1/2
+enum) is saved in `router_discovery_before.ActiveStore` with
+`router_discovery_store=ActiveStore`. It is written before disabling the
+effective setting. Reapply keeps that original. A value that has returned
+to the known original requires explicit stopped/admin PrepareWifi to
+disable it again; any other value refuses reapply. Start/status/native
+guards always require the current effective setting to be Disabled.
+Failure and Disable restore only the exact recorded effective value.
+IPv6 binding/LLA remain
 enabled. Physical IP bindings, DHCP configuration, routes and metrics are
 not edited. The native helper independently checks the selected TAP's
 RouterDiscoveryBehavior through GetIpInterfaceEntry before capture, during
 its loop and before forwarding an RA; unknown/enabled state ends the relay.
+
+The first dual-store implementation incorrectly required a readable
+RouterDiscovery enum from PersistentStore. A real provider can return a
+persistent interface row with NULL/default RouterDiscovery while ActiveStore
+reports Enabled. NULL is not mapped to Enabled, nor is ordinal 255 used as
+a default-reset command. The documented Set-NetIPInterface PolicyStore
+contract says to specify ActiveStore only. The current implementation does
+not read or write PersistentStore, so an unset/default or custom persistent
+policy is not replaced to manufacture a restoration value. If an effective
+setting changes after a restart or outside Manager, capture remains blocked
+until explicit safe preparation. Older dual-store IPv6 receipts without
+the new scope marker require inspection; unknown persistence is never
+overwritten. CPU cases cover NULL/default persistence, exact active undo,
+reapply, unknown/255 effective refusal and zero persistent mutations.
 
 ## Driver delivery and limits
 
