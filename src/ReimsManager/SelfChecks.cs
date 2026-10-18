@@ -11,6 +11,7 @@ internal static class SelfChecks
 {
     internal static async Task Run(string folder)
     {
+        await SshConfigChecks.Run(folder);
         CheckPolicy();
         await CheckBackend();
         CheckSafeCreation(folder);

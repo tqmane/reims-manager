@@ -44,6 +44,8 @@ jobs:
           if ($LASTEXITCODE) { throw 'Native timeout fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/manager-ports.ps1
           if ($LASTEXITCODE) { throw 'Manager port fixtures failed.' }
+          pwsh -NoProfile -File ./backend/tests/ssh-paths.ps1
+          if ($LASTEXITCODE) { throw 'SSH path fixtures failed.' }
           python ./tools/test_package_engine.py
           if ($LASTEXITCODE) { throw 'DLL closure fixtures failed.' }
           python ./backend/tests/opencore-patches.py
@@ -61,6 +63,7 @@ jobs:
           path: |
             .work/checks-*/*.png
             .work/checks-*/result.json
+            .work/checks-*/ssh-config.json
             .work/checks-*/error.txt
           include-hidden-files: true
           if-no-files-found: warn

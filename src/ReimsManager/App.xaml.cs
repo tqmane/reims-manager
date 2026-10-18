@@ -11,6 +11,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
         try {
+            if (e.Args.Length == 2 && e.Args[0] == "--ssh-config-check") {
+                await SshConfigChecks.Run(Path.GetFullPath(e.Args[1])); Shutdown(0); return;
+            }
             if (e.Args.Length == 3 && e.Args[0] == "--preferences-probe") {
                 await PreferencesChecks.Probe(Path.GetFullPath(e.Args[1]), e.Args[2]); Shutdown(0); return;
             }
@@ -82,7 +85,7 @@ public partial class App : Application
         } catch (Exception error) {
             if (e.Args.Length==3 && e.Args[0]=="--preferences-probe") {
                 File.WriteAllText(Path.Combine(Path.GetFullPath(e.Args[1]), "probe-error.txt"), error.ToString());
-            } else if (e.Args.Length==2 && e.Args[0]=="--self-test") {
+            } else if (e.Args.Length==2 && (e.Args[0]=="--self-test" || e.Args[0]=="--ssh-config-check")) {
                 string folder=Path.GetFullPath(e.Args[1]); Directory.CreateDirectory(folder);
                 File.WriteAllText(Path.Combine(folder, "error.txt"), error.ToString());
             } else { MessageBox.Show(error.Message,"Reims Manager"); }

@@ -14,6 +14,12 @@ param(
 . "$PSScriptRoot/engine-package.ps1"
 $script:ReimsEngine = Read-ReimsEngine $ProjectRoot
 
+function Get-ReimsSshKnownHostsOption([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match '["\r\n\x00]') { throw 'Invalid SSH known-hosts path.' }
+    # OpenSSH parses -o as configuration text, after Windows argv parsing.
+    return 'UserKnownHostsFile="' + $Path.Replace('\','/') + '"'
+}
+
 function Get-ReimsEnginePath([string]$Key, [string]$SourceFallback) {
     if ($script:ReimsEngine) { return Join-ReimsPackagePath $ProjectRoot $script:ReimsEngine.paths[$Key] }
     return Join-Path $ProjectRoot $SourceFallback

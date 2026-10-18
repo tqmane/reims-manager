@@ -157,3 +157,19 @@ enable/disable as separate, fully-stopped-only operations. The legacy Tahoe 26.4
 Apple Account patch remains labelled separately. Installing a bridge is not a
 qualification result for an OS version; missing backend status is shown as
 unconfirmed. These UI checks do not install a bridge or assert Tahoe compatibility.
+
+## SSH paths after moving a VM
+
+OpenSSH parses `-o` values as SSH configuration text after Windows has parsed
+the process arguments. Passing `UserKnownHostsFile=path with spaces` as one argv
+entry still selects multiple files. PowerShell guest controls and benchmarks use
+`Get-ReimsSshKnownHostsOption`; clipboard sharing uses `GuestClipboard.KnownHostsOption`.
+Both quote the filename inside the option and normalize Windows separators.
+Strict host-key checking and paired host aliases stay unchanged.
+
+`backend/tests/ssh-paths.ps1` and the CPU-only application mode
+`ReimsManager.exe --ssh-config-check <output-folder>` exercise the installed
+Windows `ssh.exe -G -F NUL` parser. They preserve spaced Japanese paths, reproduce
+the old split/comment parsing as negative controls, and reject malformed paths.
+They do not connect to a guest or create/change host-key files. The native self-check
+also includes this parser check; it needs no running VM.
