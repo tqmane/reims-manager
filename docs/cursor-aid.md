@@ -61,9 +61,11 @@ helper's pinned source revision; manifest schema 1 is unchanged.
 Position and glyph refreshes have separate schedules: position targets
 60 Hz, while the image is checked at 10 Hz. The helper copies the selected
 Core Graphics image provider's data and compares its format and color space;
-it does not repeatedly encode all cursor representations into TIFF. It only
-redraws when position, size or image content changes. A missing or unsupported
-image is hidden rather than replaced with a synthetic arrow.
+it does not repeatedly encode all cursor representations into TIFF. For a
+translation, it repositions the existing window without requesting content
+drawing. It requests content drawing on first show, size changes or image
+changes. A missing or unsupported image is hidden rather than replaced with
+a synthetic arrow.
 
 The main thread drains up to 64 of its own AppKit events per position tick,
 dispatches them normally and updates its windows. It does not use an event
@@ -71,7 +73,10 @@ tap, a global input monitor, `finishLaunching` or an activation request.
 
 The schedules are targets, not latency guarantees. WindowServer calls, guest
 load and the sharing application's encoding and transport can delay visible
-updates. Guest-side rendering, the destination's displayed pointer and CPU
+updates. Position and glyph queries still run on the same main thread; a
+blocked system cursor query or window operation can stall both schedules.
+Avoiding content drawing for translations does not remove that limitation.
+Guest-side rendering, the destination's displayed pointer and CPU
 cost during idle and motion require separate runtime checks.
 
 ## Build

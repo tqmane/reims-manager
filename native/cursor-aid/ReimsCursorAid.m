@@ -57,6 +57,10 @@ static NSRect CursorFrame(NSPoint mouse, NSSize size, NSPoint hotSpot) {
     return NSMakeRect(mouse.x - hotSpot.x, mouse.y - size.height + hotSpot.y, size.width, size.height);
 }
 
+static BOOL NeedsContentDisplay(BOOL glyphChanged, BOOL shown, NSRect previous, NSRect frame) {
+    return glyphChanged || !shown || !NSEqualSizes(previous.size, frame.size);
+}
+
 static BOOL DisplayCenter(CGRect bounds, CGPoint *point) {
     if (!isfinite(bounds.origin.x) || !isfinite(bounds.origin.y) ||
         !isfinite(bounds.size.width) || !isfinite(bounds.size.height) ||
@@ -214,6 +218,11 @@ static int SelfTest(void) {
     CHECK(NSEqualRects(CursorFrame(NSMakePoint(-100,-20), NSMakeSize(28,40), NSMakePoint(5,5)), NSMakeRect(-105,-55,28,40)), "negative screen coordinates");
     CHECK(!ValidSize(NSMakeSize(INFINITY, 1)) && !ValidSize(NSZeroSize), "invalid image size");
     CHECK(!ValidPoint(NSMakePoint(NAN, 0)), "invalid point");
+    NSRect previousFrame = NSMakeRect(95,65,28,40), movedFrame = NSMakeRect(-105,-55,28,40);
+    CHECK(!NeedsContentDisplay(NO, YES, previousFrame, movedFrame), "translation keeps drawn content");
+    CHECK(NeedsContentDisplay(YES, YES, previousFrame, previousFrame), "changed glyph redraws");
+    CHECK(NeedsContentDisplay(NO, NO, previousFrame, previousFrame), "first show redraws");
+    CHECK(NeedsContentDisplay(NO, YES, previousFrame, NSMakeRect(95,65,56,80)), "changed size redraws");
     CHECK(BoundedData(28,40,112,4480), "bounded provider");
     CHECK(!BoundedData(28,0,112,4480), "empty raster");
     CHECK(!BoundedData(28,40,SIZE_MAX,4480), "stride overflow");
@@ -301,9 +310,9 @@ static int RunAid(double duration) {
                     NSPoint mouse = NSEvent.mouseLocation;
                     if (ValidPoint(mouse)) {
                         NSRect frame = CursorFrame(mouse, cache.size, cache.hotSpot);
-                        BOOL dirty = dirtyGlyph;
-                        if (!NSEqualRects(previous, frame)) { [panel setFrame:frame display:YES]; previous = frame; dirty = YES; }
-                        if (!shown) { [panel orderFrontRegardless]; shown = YES; dirty = YES; }
+                        BOOL dirty = NeedsContentDisplay(dirtyGlyph, shown, previous, frame);
+                        if (!NSEqualRects(previous, frame)) { [panel setFrame:frame display:NO]; previous = frame; }
+                        if (!shown) { [panel orderFrontRegardless]; shown = YES; }
                         if (dirty) [panel displayIfNeeded];
                         dirtyGlyph = NO;
                     }
