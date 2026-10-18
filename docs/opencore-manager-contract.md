@@ -43,11 +43,62 @@ For readiness text, the distributed `scripts/guest-bridge-lock.json` carries
 working generic support. The backend itself rejects enable/publication
 until qualified global Metal routing and runtime ABI checks are recorded,
 and rejects a mismatched host engine. `generic-metal` means all clients,
-with no process-name or suffix policy. The current global `ac60717c`
-candidate has no qualified kernels. Its proposed family bounds are not
-applicable until the common implementation and matching host are qualified.
+with no process-name or suffix policy. The reviewed global `700379ce` pin
+records native 22-stage WebGL acceptance on 25.4.0 and 25.6.0 with engine 2.
+It discloses variable frame pacing and does not promise 60 FPS.
 No bridge readiness fields have been added to `Status`; absent metadata
 must remain unconfirmed in the UI, not inferred from an enabled EFI entry.
+
+## New-VM onboarding
+
+`GetPrerequisites` accepts `Root`, `ToolsRoot`, `Cpus` and `MemoryMiB` without
+`VmDirectory`. It runs before VM environment initialization, writes no
+files, executes no GPU workloads, and returns JSON:
+
+```json
+{"ready":true,"restart_required":false,"checks":[{"id":"usb","label":"USB passthrough (optional)","required":false,"ready":false,"message":"Install UsbDk if needed","action":"InstallUsbDk"}],"plan":{"cpus":4,"memory_mib":4096,"available_memory_mib":2048,"start_ready":false}}
+```
+
+Example numbers are synthetic. Checks use IDs `whpx`, `vulkan`, `openssh`,
+`engine`, `runtimes`, `guest_addon`, `usb`, `capacity`; a host query failure
+returns `host` instead. Missing `required` means required. Only `EnableWhpx`
+and `InstallUsbDk` are action hints. Both require explicit elevation; neither
+restarts Windows. OpenSSH and GPU driver failures provide guided messages.
+Vulkan readiness means an ICD registration/file exists, not GPU execution
+or performance acceptance. Addon readiness queries its exact public release;
+unpublished/offline/unqualified assets block `ready` and never claim success.
+No tokens are requested. Cache/download writes happen only in actual setup.
+Engine readiness runs the complete immutable file/hash inventory check;
+it does not accept only the presence of QEMU or its top-level manifest.
+Release pins resolve to the fixed public tag/asset URL without any GitHub
+API call, credentials or additional ZIP SHA requirement. Addon availability
+uses a read-only HEAD request. Optional `bytes` checks detect truncated
+downloads before extraction; fixed source/package validation still applies.
+Unpublished assets/network failures remain explicit errors, with no other
+tag or generic-engine fallback. Existing offline sidecar checks are unchanged.
+
+`plan.start_ready` additionally requires current free RAM to cover the
+requested guest allocation plus 1024 MiB for the host, no CPU oversubscription
+and no reported restart requirement. Low capacity is optional: VM creation
+may continue while automatic start must wait. These checks are a snapshot;
+refresh immediately before starting. No host process is stopped to free RAM.
+
+The UI installs/selects the immutable engine with the existing installer
+first, saves its preferences before a required reboot, then calls `Setup`
+with ISO, VM directory, DiskGiB, Cpus and MemoryMiB. Setup honors that hardware
+plan and completes official OpenCore/firmware, identity, disks, ReimsTools/
+SSH bundle and the qualified Lilu/bridge. It does not install macOS or start
+a VM. Those remain the next UI/user step. Preparing guest tools does not
+silently grant guest privileges; the guest's setup.command/pairing remains
+explicit after macOS installation.
+
+Only after all configuration succeeds does Setup write
+`state/setup-preparation.json` with `schema=1`, `complete=true`, engine/addon
+IDs, `macos_installation="user"` and `prepared_utc`. Existing selected config,
+OpenCore manifest and previous completion marker are saved in
+`backups/setup-*` and restored if setup fails. Fresh disks/EFI/identity are
+retained for retry, but incomplete active config/completion markers are
+removed. Existing identities and writable NVRAM are not regenerated.
 
 ## Persistent VM data
 

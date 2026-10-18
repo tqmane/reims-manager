@@ -5,14 +5,19 @@ Darwin 25 ABI family used by macOS Tahoe 26.x. The kext must validate its
 runtime ABI before enabling translation. The manager does not select apps
 or browsers, and it does not treat a successful OS boot as WebGL proof.
 
-**The current source pin is a candidate, not a generic release.** It points
-to the global Metal implementation at `ac60717c` while the common host
-runtime fix and guest ABI path are qualified in the Reims repository.
-`release_ready=false` prevents publication and application. Candidate CI
-artifacts can be built for review, but cannot be applied through the manager.
-Its proposed Darwin 25 family bounds are candidate metadata only: there
-are no recorded qualified kernels, so those bounds cannot be applied.
-No claim that all 26.x versions work is made by this candidate.
+The reviewed source is `700379ce`, paired with
+`engine-b8b4486c-7100064d-2`. Native Safari and Chrome passed all 22 WebGL
+acceptance stages on Darwin 25.4.0 (macOS 26.4) and 25.6.0 (macOS 26.7.1);
+Edge also passed on 25.6.0. These measured kernels are recorded in the
+package. Darwin 25.0.0 through 25.99.99 describes the generic translation
+family, not a claim that every 26.x release was tested. Unknown layouts
+are rejected by the runtime request checks.
+
+**Frame pacing remains limited.** Later visible Safari runs showed fewer
+animation callbacks despite successful pixels and no context loss. This
+release does not promise 60 FPS or consistent animation timing.
+`release_ready=true` permits publication/application of this reviewed pin;
+setup still fails explicitly until its matching public asset is available.
 
 The addon is independent of the published Windows core engine. Its build
 and release do not rebuild or replace `engine-d8b9c2af-7100064d-1`.
@@ -22,7 +27,7 @@ and release do not rebuild or replace `engine-d8b9c2af-7100064d-1`.
 `backend/guest-bridge-lock.json` records source commits, ABI range, routing
 scope, runtime-validation status and actually qualified kernels:
 
-- Reims: `ac60717cc18c1f3069e043ba7f7cb384de0631de` (global candidate).
+- Reims: `700379ce32942b474dbbbb0f8c18f6736b10c863` (global Metal path).
 - Lilu 1.7.2 headers/plugin startup: `e4748cc081bf060302c7d3c44a643ce1d11b7e1d`.
 - MacKernelSDK: `3f750085caa17ec3a7880f11c11bf4f48cd6a164`.
 
@@ -65,10 +70,11 @@ does not itself trigger any Windows rebuild.
 
 ## Application and recovery
 
-The manager's OpenCore page fetches the reviewed addon for a fully stopped
-VM. Nothing is enabled automatically during new-VM setup. The live release
-asset digest, payload hashes, source manifest, kext identities and pin data
-are checked. Offline CLI use accepts `prepare-guest-bridge.ps1 -Mode Enable
+New-VM setup fetches and enables the reviewed addon before the first boot.
+Existing VMs can explicitly reapply/disable it from the OpenCore page while
+fully stopped. Online acquisition uses its fixed public tag/asset URL without
+the GitHub API or a ZIP SHA requirement. Payload hashes, source manifest,
+kext identities and pin data are checked. Offline CLI use accepts `prepare-guest-bridge.ps1 -Mode Enable
 -Archive <zip>` with its matching `.zip.sha256` sidecar or explicit digest.
 Qualification checks apply equally to online and offline packages.
 
@@ -102,3 +108,21 @@ kext or touching a live VM:
 
 A macOS compilation pass and these fixtures do not qualify a newly compiled
 kext on a guest. Cold boot and actual Metal/WebGL acceptance remain required.
+
+## Installer boundary
+
+The fresh OpenCore profile includes APFS and HFS scanning (`0x301`), shows
+auxiliary installer entries, and loads OpenHfsPlus/OpenPartitionDxe. Addon
+application adds Lilu, ReimsMetalCompat and `-reimsmetal`; it preserves those
+boot settings, identity and SIP. No installer-only kernel-version switch is
+introduced. Activation selects `AppleParavirtGPUMetalIOGPUFamily` after the
+Reims accelerator interceptor and completion routing are installed; it does
+not first check that this user-space plugin exists in installer media.
+
+The available preparation code inspects SystemVersion.plist, boot.efi,
+architecture and media headers. It does not establish installer plugin
+availability. Existing installed-system browser results therefore do not
+prove that a fresh installer UI works with the addon enabled. Current-media
+first boot remains a separate acceptance check; no additional OS versions
+are required or claimed here. The unmodified EFI copy/backups are retained
+so the addon can be disabled without regenerating identity or NVRAM.

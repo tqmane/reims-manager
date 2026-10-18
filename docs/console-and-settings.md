@@ -58,6 +58,20 @@ clipboard and snapshot pages are immediate operations; the footer states that
 Cancel does not undo them. Unknown state and guest-only shutdown are not treated
 as permission to write offline configuration.
 
+## Launcher completion
+
+Windows can leave a detached QEMU holding inherited stdout/stderr pipe handles
+after the PowerShell launcher exits. Pipe EOF is not launcher completion. The
+manager waits for the launcher, then drains its buffered output for at most two
+seconds. It retains captured output and exit diagnostics without waiting for the
+VM to exit. Mutating commands remain non-cancellable while their launcher runs;
+read-only cancellation never terminates descendants after that launcher exits.
+The CPU-only `--backend-check <folder>` verifies this with owned detached helpers.
+
+Start selects the embedded console. An unsuccessful attach is retried by normal
+status polling; only an explicit pop-out suppresses attachment. Reopening the
+manager can attach the already running VM without starting a second QEMU.
+
 ## Native console lifetime
 
 The HwndHost remains in one stable visual-tree position. Showing settings hides
