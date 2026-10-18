@@ -11,11 +11,11 @@ public partial class MainWindow
     private IdentityDraft? committedIdentity;
 
     private sealed record HardwareDraft(string Memory, string Cpus, string Iso, string Host, string Resolution,
-        object? Tap, int UsbBackend, bool Installer, bool Nat, bool Sound, bool Microphone);
+        object? Tap, string Uplink, int UsbBackend, bool Installer, bool Nat, bool Sound, bool Microphone);
     private sealed record IdentityDraft(string Model, string Serial, string Mlb, string Uuid, string Rom);
 
     private HardwareDraft CaptureHardwareDraft() => new(Memory.Text, Cpus.Text, HardwareIsoPath.Text, GuestHost.Text,
-        Selected(Resolution), Tap.SelectedItem, UsbBackend.SelectedIndex, HardwareIso.IsChecked == true,
+        Selected(Resolution), Tap.SelectedItem, SelectedUplink, UsbBackend.SelectedIndex, HardwareIso.IsChecked == true,
         Nat.IsChecked == true, Sound.IsChecked == true, Microphone.IsChecked == true);
     private IdentityDraft CaptureIdentityDraft() => new(IdentityModel.Text, IdentitySerial.Text, IdentityMlb.Text, IdentityUuid.Text, IdentityRom.Text);
     private void RememberHardwareDraft() => committedHardware = CaptureHardwareDraft();
@@ -65,7 +65,7 @@ public partial class MainWindow
             if (hardwareDirty && committedHardware is { } h) {
                 Memory.Text = h.Memory; Cpus.Text = h.Cpus; HardwareIsoPath.Text = h.Iso; GuestHost.Text = h.Host;
                 Resolution.SelectedItem = Resolution.Items.Cast<ComboBoxItem>().FirstOrDefault(x => x.Content?.ToString() == h.Resolution);
-                Tap.SelectedItem = h.Tap; UsbBackend.SelectedIndex = h.UsbBackend;
+                Tap.SelectedItem = h.Tap; SelectSavedUplink(h.Uplink); UsbBackend.SelectedIndex = h.UsbBackend;
                 HardwareIso.IsChecked = h.Installer; Nat.IsChecked = h.Nat; Bridge.IsChecked = !h.Nat;
                 Sound.IsChecked = h.Sound; Microphone.IsChecked = h.Microphone;
             }

@@ -43,7 +43,7 @@ function New-ReimsHostBridge([string]$TapName,[string]$PhysicalSelection) {
     $created=@()
     $createSucceeded=$false
     try {
-        [void](Invoke-ReimsNetworkCommand @('bridge','create',$taps[0].id,$uplink.id))
+        [void](Invoke-ReimsNetworkCommand @('bridge','create',([guid]$taps[0].id).ToString('B'),([guid]$uplink.id).ToString('B')))
         $createSucceeded=$true
         $created=@(Get-ReimsHostBridgeIds | Where-Object { $_ -notin $before })
         if ($created.Count -ne 1) { throw 'Cannot uniquely identify the new bridge; no unknown bridge will be deleted.' }
@@ -55,7 +55,7 @@ function New-ReimsHostBridge([string]$TapName,[string]$PhysicalSelection) {
         $failure=$_
         if ($createSucceeded -and !$created.Count) { $created=@(Get-ReimsHostBridgeIds | Where-Object { $_ -notin $before }) }
         if ($created.Count -eq 1) {
-            try { [void](Invoke-ReimsNetworkCommand @('bridge','destroy',$created[0])) }
+            try { [void](Invoke-ReimsNetworkCommand @('bridge','destroy',([guid]$created[0]).ToString('B'))) }
             catch { throw "Bridge setup failed and rollback failed. Inspect Windows network settings. Setup: $($failure.Exception.Message); rollback: $($_.Exception.Message)" }
         }
         throw $failure

@@ -22,7 +22,7 @@ function Invoke-ReimsNetworkCommand($Arguments) {
             if ($fixture.createFailure) { if($fixture.unrelatedOnFailure){$fixture.bridges=@('66666666-6666-4666-8666-666666666666')}; throw 'Native create fixture failure' }
             $fixture.bridges=@($bridge);return 'Created fixture bridge'
         }
-        destroy { $fixture.bridges=@($fixture.bridges | Where-Object { $_ -ne $Arguments[2] }); return 'Removed fixture bridge' }
+        destroy { $fixture.bridges=@($fixture.bridges | Where-Object { $_ -ne ([guid]$Arguments[2]).ToString('D') }); return 'Removed fixture bridge' }
         default { throw 'Unexpected native operation' }
     }
 }
@@ -45,13 +45,13 @@ try {
     Reject { Get-ReimsSavedNetwork $config 'bridge' 'Internal TAP' '' $wired } 'Run CreateBridge'
     $record=New-ReimsHostBridge 'Internal TAP' $wired
     if ($record.connectivity -ne 'unverified' -or $record.physical_adapter_id -ne $wired -or $record.tap_id -ne $tap) { throw 'Bridge selection record wrong' }
-    if ($fixture.commands -notcontains "bridge create $tap $wired") { throw 'Native bridge did not use selected interface GUIDs' }
+    if ($fixture.commands -notcontains "bridge create {$tap} {$wired}") { throw 'Native bridge did not use braced interface GUIDs' }
     $saved=Get-ReimsSavedNetwork $config 'bridge' 'Internal TAP' 'guest.invalid' $wired
     if ($saved.adapter -ne 'Internal TAP' -or $saved.physical_adapter_id -ne $wired) { throw 'Physical name incorrectly became QEMU TAP ifname' }
     Reject { New-ReimsHostBridge 'Internal TAP' $wired } 'Existing Windows bridges'
     $fixture.bridges=@();$fixture.writeFailure=$true
     Reject { New-ReimsHostBridge 'Internal TAP' $wired } 'Record write fixture'
-    if ($fixture.bridges.Count -or $fixture.commands -notcontains "bridge destroy $bridge") { throw 'Owned bridge rollback failed' }
+    if ($fixture.bridges.Count -or $fixture.commands -notcontains "bridge destroy {$bridge}") { throw 'Owned bridge rollback failed' }
     $fixture.writeFailure=$false;$fixture.createFailure=$true;$fixture.unrelatedOnFailure=$true
     $before=@($fixture.commands).Count
     Reject { New-ReimsHostBridge 'Internal TAP' $wired } 'Native create fixture'

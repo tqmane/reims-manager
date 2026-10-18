@@ -23,7 +23,7 @@ public partial class MainWindow
         foreach (TextBox field in new[] { Memory, Cpus, HardwareIsoPath, GuestHost })
             field.TextChanged += (_, _) => MarkHardwareDirty();
         Memory.TextChanged += MemoryTextChanged;
-        foreach (ComboBox field in new[] { Resolution, Tap, UsbBackend })
+        foreach (ComboBox field in new[] { Resolution, Tap, Uplink, UsbBackend })
             field.SelectionChanged += (_, _) => MarkHardwareDirty();
         foreach (System.Windows.Controls.Primitives.ToggleButton field in new System.Windows.Controls.Primitives.ToggleButton[] { HardwareIso, Nat, Bridge, Sound, Microphone }) {
             field.Checked += (_, _) => MarkHardwareDirty();
@@ -132,10 +132,11 @@ public partial class MainWindow
         loadingIdentity = loadingHardware = true;
         try {
             foreach (TextBox field in new[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityRom, IdentityUuid, Iso, HardwareIsoPath, GuestHost, GuestUser, Fingerprint }) field.Clear();
-            Memory.Text = "8192"; Cpus.Text = "8"; DiskSize.Text = "128"; DiskInfo.Text = "構成を読み込んでいます。";
+            Memory.Text = "4096"; Cpus.Text = Math.Min(4, Environment.ProcessorCount).ToString(); DiskSize.Text = "300"; DiskInfo.Text = "構成を読み込んでいます。";
             Sound.IsChecked = Microphone.IsChecked = HardwareIso.IsChecked = ConnectIso.IsChecked = false;
             Nat.IsChecked = true; UsbBackend.SelectedIndex = 0; Resolution.SelectedIndex = 1;
-            Tap.ItemsSource = BridgeTap.ItemsSource = Physical.ItemsSource = Snapshots.ItemsSource = null;
+            Tap.ItemsSource = BridgeTap.ItemsSource = Physical.ItemsSource = Uplink.ItemsSource = Snapshots.ItemsSource = null;
+            NetworkNotice.Text = "";
             UsbDevices.ItemsSource = null;
         } finally { loadingIdentity = loadingHardware = false; }
         RememberHardwareDraft(); RememberIdentityDraft();
@@ -229,7 +230,12 @@ public partial class MainWindow
         if (!ManagerValidation.Resolution(Selected(Resolution))) return InvalidField(Resolution, "対応する起動時の解像度を選び直してください。");
         if (HardwareIso.IsChecked == true && !File.Exists(HardwareIsoPath.Text.Trim())) return InvalidField(HardwareIsoPath, "インストーラーを接続するには、存在する ISO / IMG を選択してください。");
         if (!string.IsNullOrWhiteSpace(HardwareIsoPath.Text) && !File.Exists(HardwareIsoPath.Text.Trim())) return InvalidField(HardwareIsoPath, "ISO が見つかりません。選び直すか、接続をオフにしてパスを空にしてください。");
-        if (Bridge.IsChecked == true && string.IsNullOrWhiteSpace(Selected(Tap))) return InvalidField(Tap, "ブリッジ接続に使用する TAP アダプターを選択してください。");
+        if (Bridge.IsChecked == true) {
+            bool legacy = latest.ValueKind == System.Text.Json.JsonValueKind.Object && latest.TryGetProperty("network", out var mode) && mode.GetString() == "bridge" &&
+                (!latest.TryGetProperty("network_uplink_id", out var saved) || string.IsNullOrEmpty(saved.GetString()));
+            if (SelectedUplink.Length == 0 && !legacy) return InvalidField(Uplink, "ホストの Wi-Fi・有線 LAN を選び、「ブリッジの準備」から接続を準備してください。");
+            if (string.IsNullOrWhiteSpace(Selected(Tap))) { NetworkTapDetails.IsExpanded = true; return InvalidField(Tap, "ブリッジの準備で選択した Reims 専用 TAP を指定してください。"); }
+        }
         if (!ManagerValidation.Host(GuestHost.Text.Trim())) return InvalidField(GuestHost, "macOS の IP アドレスまたはホスト名を確認してください。");
         if (Microphone.IsChecked == true && Sound.IsChecked != true) return InvalidField(Microphone, "マイクを使用するには、スピーカー共有も有効にしてください。");
         return true;

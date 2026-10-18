@@ -1,5 +1,36 @@
 # Portable Windows engine
 
+## First launch
+
+From an empty library, choose **macOS をセットアップ**. The guided flow installs
+or validates an existing pinned engine, checks Windows prerequisites, then asks
+for an ISO/IMG, a VM name and a destination. It prepares OpenCore, matched OVMF,
+the GPU ROM, persistent identity, disks, guest tools and the qualified addon;
+macOS installation and first-run account setup remain in the VM console.
+
+The engine defaults to the current user's local application-data directory
+under `Reims/Engines/<pinned-id>`. VMs default to Documents under
+`Reims/Virtual Machines`, each with its descriptor and data in one VM folder.
+Both locations have folder pickers and accept absolute paths on other writable
+drives. A developer checkout or working directory is not a product default.
+The disk defaults to a sparse 300 GiB image, memory to 4096 MiB, and CPU to at
+most four of the host's logical processors.
+
+Engine selection is saved before a prerequisite can request administrator
+elevation or a Windows restart. The Manager never restarts Windows. Relaunch
+and choose setup again to resume the prerequisite/ISO flow with the saved
+engine; an installed engine is reused without downloading again. Reuse checks
+the engine's complete immutable inventory before accepting it.
+
+Required failures remain visible and block preparation. USB is optional and
+TAP is unnecessary for the default NAT network. Current available RAM and the
+requested CPU/memory plan are displayed separately from required features.
+Insufficient RAM permits creating the VM while disabling automatic start;
+capacity is checked again after preparation immediately before automatic boot.
+No other application or VM is stopped to make room. Setup errors retain the
+descriptor for retry while the backend restores/removes incomplete active
+configuration rather than reporting a ready VM.
+
 In Reims Manager choose **Set up engine**, choose a new directory on any
 writable drive, then start setup. A VM can live in a different directory.
 No developer checkout, MSYS2 installation, Rust, system Python or separate
@@ -34,9 +65,10 @@ download generic QEMU as a substitute: it lacks the Reims device.
 Reims `b8b4486c`, QEMU `7100064d` and metal2vulkan `ea5d6b87`, rather than
 following moving `windows-native-tahoe` branches. The latter runtime is the
 pin in Reims's Cargo manifest; later runtime development commits are not
-silently substituted. Engine `engine-b8b4486c-7100064d-2` is the next build
-candidate for the common Metal path; native qualification remains pending.
-Guest bridge source is independently pinned in `guest-bridge-lock.json`.
+silently substituted. Engine `engine-b8b4486c-7100064d-2` is paired with the
+common Metal path. Guest bridge source, recorded qualification and limits are
+independently pinned in `guest-bridge-lock.json`; setup checks release readiness
+rather than assuming that any available engine/addon combination is qualified.
 
 The engine package contains:
 
@@ -85,7 +117,8 @@ checks for WHPX **support in the executable**, not host hypervisor readiness;
 it never boots a VM. A native probe exceeding its 30-second deadline has
 only its owned process tree terminated, with a bounded wait before disposal.
 Failed setup removes only its own staging directory.
-Existing destination folders are never replaced. Retrying uses a new one.
+Existing destination folders are never replaced. Use the explicit reuse option
+for a complete installed engine; an incomplete destination needs another folder.
 Windows may briefly keep an executable image locked after a probe exits;
 the final directory rename retries for at most five seconds before failing.
 
