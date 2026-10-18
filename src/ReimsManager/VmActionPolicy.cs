@@ -23,7 +23,7 @@ internal static class VmActionPolicy
             "ForceExit" => state is "running" or "paused" or "prelaunch" or "suspended" or "shutdown" or "io-error" or "internal-error" or "guest-panicked" or "watchdog",
             "Console" => state is "running" or "paused" or "prelaunch" or "suspended",
             "GetIdentity" => state is "stopped" or "running" or "paused" or "shutdown" or "prelaunch" or "suspended",
-            "SetHardware" or "ExpandDisk" or "OptimizeDisk" or "SnapshotCreate" or "SnapshotRestore" or "SetIdentity" or "GenerateIdentity" or "EnableAppleAccount" or "DisableAppleAccount" or "ApplyBootProfile" or "EnableGuestBridge" or "DisableGuestBridge" or "PrepareUpdates" or "BuildEngine" or "SetResolution" or "SetNetwork" or "RemoveBridge" or "InstallTap" or "PrepareWifi" or "DisableWifi" => state == "stopped",
+            "SetHardware" or "ExpandDisk" or "OptimizeDisk" or "SnapshotCreate" or "SnapshotRestore" or "SetIdentity" or "GenerateIdentity" or "ApplyBootProfile" or "EnableGuestBridge" or "DisableGuestBridge" or "PrepareUpdates" or "BuildEngine" or "SetResolution" or "SetNetwork" or "RemoveBridge" or "InstallTap" or "PrepareWifi" or "DisableWifi" => state == "stopped",
             _ => false
         };
     }

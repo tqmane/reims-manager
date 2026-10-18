@@ -69,6 +69,8 @@ internal static class SelfChecks
             }
             foreach (string action in new[] { "SetHardware", "SnapshotRestore", "SetIdentity", "ExpandDisk", "ApplyBootProfile", "EnableGuestBridge", "DisableGuestBridge", "RemoveBridge", "InstallTap", "PrepareWifi", "DisableWifi" })
                 if (VmActionPolicy.CanRun(action, state, true, true) != (state == "stopped")) throw new Exception("An offline operation is enabled for " + state);
+            foreach (string action in new[] { "EnableAppleAccount", "DisableAppleAccount" })
+                if (VmActionPolicy.CanRun(action, state, true, true)) throw new Exception("A retired version-specific account patch remains a UI action.");
         }
         if (VmActionPolicy.CanRun("PowerOff", "paused", true, true) || VmActionPolicy.CanRun("Restart", "paused", true, true) ||
             VmActionPolicy.CanRun("ForceExit", "unknown", true, true) || !VmActionPolicy.CanRun("Resume", "paused", true, true))
