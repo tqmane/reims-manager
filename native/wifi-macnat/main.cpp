@@ -2,6 +2,7 @@
 // Reims lifecycle, bounds checks and packet translation are authored here.
 #include <winsock2.h>
 #include <ws2ipdef.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <tchar.h>
 #include <wintrust.h>
@@ -26,6 +27,7 @@
 #include <optional>
 #include <cwctype>
 #include <cstring>
+#include <iostream>
 
 namespace fs=std::filesystem;
 struct handle {
@@ -45,6 +47,15 @@ static std::wstring guid(std::wstring v){
     require(v!=L"{00000000-0000-0000-0000-000000000000}","Empty GUID");return v;
 }
 static std::string ascii(const std::wstring& v){std::string out;for(auto c:v){require(c<=127,"ASCII identity required");out+=static_cast<char>(c);}return out;}
+static MIB_IF_ROW2 interface_details(const std::wstring& identity){
+    GUID id{};MIB_IF_ROW2 row{};
+    require(CLSIDFromString(identity.c_str(),&id)==S_OK && ConvertInterfaceGuidToLuid(&id,&row.InterfaceLuid)==NO_ERROR &&
+        GetIfEntry2(&row)==NO_ERROR,"Cannot read selected interface medium metadata");
+    return row;
+}
+static bool native_wifi_medium(unsigned sdk_medium,const MIB_IF_ROW2& row){
+    return sdk_medium==NdisMediumNative802_11 || row.MediaType==NdisMediumNative802_11 || row.PhysicalMediumType==NdisPhysicalMediumNative802_11;
+}
 static void require_router_discovery_disabled(const NET_LUID& tap){
     MIB_IPINTERFACE_ROW row{};row.Family=AF_INET6;row.InterfaceLuid=tap;
     require(GetIpInterfaceEntry(&row)==NO_ERROR && row.RouterDiscoveryBehavior==RouterDiscoveryDisabled,
@@ -71,14 +82,14 @@ static std::string escaped(const std::string& v){
     std::string out;for(unsigned char c:v){if(c=='"'||c=='\\')out+='\\';out+=c<32?' ':char(c);}return out;
 }
 static void status(const fs::path& folder,const std::string& session,const char* state,
-    unsigned long pid,unsigned long long start,const std::string& error="",bool cleanup=false,const std::string& filters="null"){
+    unsigned long pid,unsigned long long start,const std::string& error="",bool cleanup=false,const std::string& filters="null",const std::string& receive="null"){
     const auto temp=folder/L"status.json.new",target=folder/L"status.json";
     {std::ofstream f(temp,std::ios::binary|std::ios::trunc);require(bool(f),"Cannot write forwarder state");
     f<<"{\"schema\":1,\"session\":\""<<session<<"\",\"state\":\""<<state
      <<"\",\"qemu_pid\":"<<pid<<",\"qemu_start_ticks\":"<<start
      <<",\"helper_pid\":"<<GetCurrentProcessId()<<",\"cleanup_confirmed\":"<<(cleanup?"true":"false")
      <<",\"ipv6_enabled\":"<<(std::string(state)=="ready"?"true":"false")
-     <<",\"hardware_filters\":"<<filters<<",\"error\":\""<<escaped(error)<<"\"}";
+     <<",\"hardware_filters\":"<<filters<<",\"receive\":"<<receive<<",\"error\":\""<<escaped(error)<<"\"}";
     f.flush();require(bool(f),"Cannot flush forwarder state");}
     require(MoveFileExW(temp.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0,"Cannot commit forwarder state");
 }
@@ -116,10 +127,10 @@ struct capture {
         require(mutex.value && !existing,"Selected adapter already reserved by another helper");
         require(event.value!=nullptr,"Cannot create capture event");
     }
-    void start(DWORD additional_filter=0){
+    void start(DWORD additional_filter=0,bool observe_only=false){
         ADAPTER_MODE mode{adapter,0};
         require(api.GetAdapterMode(&mode)!=0 && mode.dwFlags==0,"Unknown or active foreign NDIS mode; refusing capture");
-        if(additional_filter){
+        if(additional_filter || observe_only){
             require(api.GetHwPacketFilter(adapter,&previous_filter)!=0,"Cannot record selected hardware filter");
             filter_before_read=true;
             our_filter=previous_filter|additional_filter;
@@ -129,7 +140,7 @@ struct capture {
             DWORD confirmed{};
             require(api.GetHwPacketFilter(adapter,&confirmed)!=0,"Cannot read back selected hardware filter");
             readback_filter=confirmed;filter_read=true;
-            if(confirmed!=our_filter){
+            if(!observe_only && confirmed!=our_filter){
                 if(confirmed==previous_filter)filter_owned=false;
                 throw std::runtime_error("Required selected hardware filter was not confirmed; relay not ready");
             }
@@ -161,11 +172,15 @@ struct capture {
         cleanup_confirmed=ok && cleanup_confirmed;return ok;
     }
     ~capture(){cleanup_confirmed=stop() && cleanup_confirmed;if(receipt)*receipt=filter_receipt();}
+    void observe_filter(){
+        require(api.GetHwPacketFilter(adapter,&readback_filter)!=0,"Cannot observe selected native Wi-Fi packet filter");filter_read=true;
+    }
     std::string filter_receipt()const{
-        return "{\"before\":"+(filter_before_read?std::to_string(previous_filter):"null")+",\"requested\":"+(filter_before_read?std::to_string(our_filter):"null")+
+        return "{\"before\":"+(filter_before_read?std::to_string(previous_filter):"null")+",\"requested\":"+(filter_before_read && our_filter!=previous_filter?std::to_string(our_filter):"null")+
             ",\"read_back\":"+(filter_read?std::to_string(readback_filter):"null")+",\"restore_confirmed\":"+(filter_restored?"true":"false")+"}";
     }
 };
+#include "multicast.hpp"
 static size_t find_adapter(const TCP_AdapterList& list,const std::wstring& id){
     std::optional<size_t> found;
     for(size_t i=0;i<list.m_nAdapterCount;++i){
@@ -180,9 +195,23 @@ static size_t find_adapter(const TCP_AdapterList& list,const std::wstring& id){
     require(bool(found),"Selected adapter is missing from packet-filter inventory");return *found;
 }
 int wmain(int argc,wchar_t** argv){
-    fs::path folder;std::string session,filters="null",tap_filters="null",wifi_filters="null";unsigned long pid{};unsigned long long start{};bool cleanup_confirmed=true;
+    fs::path folder;std::string session,filters="null",tap_filters="null",wifi_filters="null",receive_info="null",socket_receipt="null",receive="null";unsigned long pid{};unsigned long long start{};bool cleanup_confirmed=true;
     try{
         if(argc==4 && std::wstring(argv[1])==L"--verify-catalog")return verify_catalog(argv[2],argv[3])?0:1;
+        if(argc==4 && std::wstring(argv[1])==L"--inspect"){
+            const auto tap=guid(argv[2]),wifi=guid(argv[3]);require(tap!=wifi,"Two distinct adapters required");
+            CNdisApi api;TCP_AdapterList list{};require(api.IsDriverLoaded() && api.GetTcpipBoundAdaptersInfo(&list) && list.m_nAdapterCount<=ADAPTER_LIST_SIZE,"Adapter inventory unavailable");
+            std::cout<<"{\"schema\":1,\"adapters\":[";bool first=true;
+            for(const auto& id:{tap,wifi}){
+                const auto index=find_adapter(list,id);const auto row=interface_details(id);DWORD filter{};ADAPTER_MODE mode{list.m_nAdapterHandle[index],0};
+                require(api.GetHwPacketFilter(mode.hAdapterHandle,&filter) && api.GetAdapterMode(&mode),"Selected metadata query failed");
+                if(!first)std::cout<<',';
+                std::cout<<"{\"role\":\""<<(first?"tap":"wifi")<<"\",\"sdk_medium\":"<<list.m_nAdapterMediumList[index]
+                    <<",\"system_medium\":"<<unsigned(row.MediaType)<<",\"physical_medium\":"<<unsigned(row.PhysicalMediumType)
+                    <<",\"interface_index\":"<<row.InterfaceIndex<<",\"packet_filter\":"<<filter<<",\"ndis_mode\":"<<mode.dwFlags<<'}';first=false;
+            }
+            std::cout<<"]}\n";return 0;
+        }
         if(argc==4 && std::wstring(argv[1])==L"--check"){
             const auto tap=guid(argv[2]),wifi=guid(argv[3]);require(tap!=wifi,"Two distinct adapters required");
             CNdisApi api;require(api.IsDriverLoaded()!=0,"Driver unavailable");TCP_AdapterList list{};
@@ -193,6 +222,13 @@ int wmain(int argc,wchar_t** argv){
         }
         if(argc==2 && std::wstring(argv[1])==L"--self-test"){
             require(guid(L"{ABCDEFAB-1234-4234-8234-123456789ABC}")==L"{abcdefab-1234-4234-8234-123456789abc}","GUID check failed");
+            MIB_IF_ROW2 metadata{};metadata.MediaType=NdisMedium802_3;metadata.PhysicalMediumType=NdisPhysicalMedium802_3;
+            require(!native_wifi_medium(0,metadata),"Ethernet incorrectly selected Native80211");
+            metadata.PhysicalMediumType=NdisPhysicalMediumNative802_11;
+            require(native_wifi_medium(0,metadata),"Native80211 physical medium not recognized");
+            metadata.PhysicalMediumType=NdisPhysicalMediumUnspecified;
+            require(native_wifi_medium(NdisMediumNative802_11,metadata),"Native80211 SDK medium not recognized");
+            metadata.MediaType=NdisMediumNative802_11;require(native_wifi_medium(0,metadata),"Native80211 system medium not recognized");
             parse_mac(L"52:54:00:11:22:33");return 0;
         }
         require(argc==8,"Usage: reims-wifi-macnat TAP-GUID WiFi-GUID guest-MAC QEMU-PID QEMU-start-ticks state-directory session-GUID");
@@ -211,15 +247,24 @@ int wmain(int argc,wchar_t** argv){
         const auto ti=find_adapter(list,tap),wi=find_adapter(list,wifi);
         require((list.m_nAdapterMediumList[ti]==0 || list.m_nAdapterMediumList[ti]==16) &&
                 (list.m_nAdapterMediumList[wi]==0 || list.m_nAdapterMediumList[wi]==16),"Unsupported adapter medium");
+        const auto wifi_row=interface_details(wifi);
+        const bool native_wifi=native_wifi_medium(list.m_nAdapterMediumList[wi],wifi_row);
+        receive_info="{\"strategy\":\""+std::string(native_wifi?"native80211-socket-memberships":"ethernet-all-multicast")+
+            "\",\"multicast_delivery\":\"requires-functional-validation\",\"sdk_medium\":"+std::to_string(list.m_nAdapterMediumList[wi])+
+            ",\"system_medium\":"+std::to_string(unsigned(wifi_row.MediaType))+",\"physical_medium\":"+std::to_string(unsigned(wifi_row.PhysicalMediumType))+
+            ",\"interface_index\":"+std::to_string(wifi_row.InterfaceIndex);
         capture tap_capture(api,list.m_nAdapterHandle[ti],tap,cleanup_confirmed,&tap_filters),wifi_capture(api,list.m_nAdapterHandle[wi],wifi,cleanup_confirmed,&wifi_filters);
         tap_capture.start(NDIS_PACKET_TYPE_PROMISCUOUS);
-        // Receive solicited-node multicast for guest addresses, not just groups
-        // joined by the host's own IPv6 stack. Restore this filter on cleanup.
-        wifi_capture.start(NDIS_PACKET_TYPE_ALL_MULTICAST);
+        // ALL_MULTICAST is not a mandatory Native80211 filter. Use normal IPv6
+        // memberships on that medium, not a guessed raw/promiscuous mask.
+        wifi_capture.start(native_wifi?0:NDIS_PACKET_TYPE_ALL_MULTICAST,native_wifi);
+        multicast_memberships memberships(cleanup_confirmed,socket_receipt);
+        if(native_wifi){memberships.start(wifi_row.InterfaceIndex);wifi_capture.observe_filter();}
+        receive=receive_info+",\"memberships\":"+memberships.receipt()+"}";
         filters="{\"tap\":"+tap_capture.filter_receipt()+",\"wifi\":"+wifi_capture.filter_receipt()+"}";
         reims::mac wifi_mac{};std::copy_n(list.m_czCurrentAddress[wi],6,wifi_mac.begin());
         reims::translator translator(wifi_mac,guest);
-        status(folder,session,"ready",pid,start,"",false,filters);
+        status(folder,session,"ready",pid,start,"",false,filters,receive);
         const HANDLE events[]{qemu.value,tap_capture.event.value,wifi_capture.event.value};
         auto packet=std::make_unique<INTERMEDIATE_BUFFER>();
         while(WaitForSingleObject(qemu.value,0)==WAIT_TIMEOUT && !fs::exists(folder/L"stop")){
@@ -234,6 +279,14 @@ int wmain(int argc,wchar_t** argv){
                 // Bounded batches ensure stop/QEMU-exit checks cannot starve under traffic.
                 for(unsigned count=0;count<256 && api.ReadPacket(&request);++count){
                     if(packet->m_dwDeviceFlags!=PACKET_FLAG_ON_RECEIVE || packet->m_Length>sizeof(packet->m_IBuffer))continue;
+                    if(native_wifi && side==0){
+                        bool added=false;
+                        for(const auto& group:reims::guest_multicast_interests(reims::bytes(packet->m_IBuffer,packet->m_Length),guest))added=memberships.join(group)||added;
+                        if(added){
+                            receive=receive_info+",\"memberships\":"+memberships.receipt()+"}";
+                            status(folder,session,"ready",pid,start,"",false,filters,receive);
+                        }
+                    }
                     if(packet->m_Length>=14 && reims::be16(reims::bytes(packet->m_IBuffer,packet->m_Length),12)==0x86dd){
                         reims::layout6 layout;
                         if(reims::inspect6(reims::bytes(packet->m_IBuffer,packet->m_Length),layout) && layout.nd==134)
@@ -249,13 +302,16 @@ int wmain(int argc,wchar_t** argv){
                 if(remaining)SetEvent(input.event.value);
             }
         }
-        const bool cleaned_wifi=wifi_capture.stop(),cleaned_tap=tap_capture.stop();
-        require(cleaned_wifi && cleaned_tap,"Owned capture cleanup failed; inspect driver state before retrying");
+        const bool cleaned_memberships=memberships.close(),cleaned_wifi=wifi_capture.stop(),cleaned_tap=tap_capture.stop();
+        require(cleaned_memberships && cleaned_wifi && cleaned_tap,"Owned capture/membership cleanup failed; inspect driver state before retrying");
+        if(native_wifi)wifi_capture.observe_filter();
+        receive=receive_info+",\"memberships\":"+memberships.receipt()+"}";
         filters="{\"tap\":"+tap_capture.filter_receipt()+",\"wifi\":"+wifi_capture.filter_receipt()+"}";
-        status(folder,session,"stopped",pid,start,"",true,filters);return 0;
+        status(folder,session,"stopped",pid,start,"",true,filters,receive);return 0;
     }catch(const std::exception& error){
         filters="{\"tap\":"+tap_filters+",\"wifi\":"+wifi_filters+"}";
-        if(!folder.empty() && !session.empty())try{status(folder,session,"error",pid,start,error.what(),cleanup_confirmed,filters);}catch(...){}
+        if(receive_info!="null")receive=receive_info+",\"memberships\":"+socket_receipt+"}";
+        if(!folder.empty() && !session.empty())try{status(folder,session,"error",pid,start,error.what(),cleanup_confirmed,filters,receive);}catch(...){}
         return 1;
     }
 }

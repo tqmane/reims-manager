@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 // Included after packet primitives. RFC 8200 / RFC 4861 wire fields only.
 namespace reims {
 using ip6 = std::array<uint8_t,16>;
@@ -83,6 +84,21 @@ inline bool inspect6(bytes b,layout6& l){
         at+=length;
     }
     return !unspecified(source) || type==133 || type==135;
+}
+inline ip6 solicited_group(const ip6& address){
+    ip6 group{0xff,2,0,0,0,0,0,0,0,0,0,1,0xff,0,0,0};
+    std::copy(address.begin()+13,address.end(),group.begin()+13);return group;
+}
+// Socket interests are separate from assigned-address learning. In particular,
+// subscribe to a validated DAD target before forwarding its NS, without
+// claiming that tentative address in the translator's unicast cache.
+inline std::vector<ip6> guest_multicast_interests(bytes b,const mac& guest){
+    layout6 l;std::vector<ip6> groups;
+    if(!inspect6(b,l) || read_mac(b,6)!=guest)return groups;
+    const auto source=read_ip6(b,22);
+    if(unicast6(source))groups.push_back(solicited_group(source));
+    if((l.nd==135 && unspecified(source)) || l.nd==136)groups.push_back(solicited_group(read_ip6(b,l.upper+8)));
+    return groups;
 }
 class translator6 {
     mac wifi_,guest_;
