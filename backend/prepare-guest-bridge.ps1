@@ -6,7 +6,7 @@ param([ValidateSet('Enable','Disable')][string]$Mode='Enable', [string]$Archive,
 Assert-ReimsVmStopped
 [void](Get-ReimsVmConfig)
 $pinPath=Join-Path $PSScriptRoot 'guest-bridge-lock.json'
-$pin=Get-Content -Raw -LiteralPath $pinPath | ConvertFrom-Json
+$pin=Get-Content -Raw -LiteralPath $pinPath | ConvertFrom-Json -AsHashtable
 $statePath=Join-Path $VmRoot 'state/config.json'
 $ocPath=Join-Path $VmRoot 'state/opencore.json'
 $stateHash=(Get-FileHash -LiteralPath $statePath).Hash; $ocHash=(Get-FileHash -LiteralPath $ocPath).Hash
@@ -32,6 +32,7 @@ if ($Mode -eq 'Enable') {
 $work=Join-Path $ReimsSupportRoot ('tmp/guest-bridge-'+[guid]::NewGuid().ToString('N'))
 $slot=Join-Path $VmRoot ('firmware/guest-bridge-'+[guid]::NewGuid().ToString('N'))
 $keepSlot=$false; $archiveLock=$null
+$localArchive=[bool]$Archive
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
     $package=Join-Path $work 'package'
@@ -40,14 +41,13 @@ try {
         else {
             Write-Output 'WebGL 互換ドライバーの対応版を取得しています…'
             $release=Get-ReimsGuestBridgeRelease $pin
-            $Sha256=$release.sha256; $url=$release.url
             $downloads=Join-Path $ReimsSupportRoot 'downloads'
             New-Item -ItemType Directory -Force -Path $downloads | Out-Null
             $Archive=Join-Path $downloads "$($pin.id).zip"
-            Get-ReimsPinnedDownload $url $Sha256 $Archive
+            Receive-ReimsReleaseAsset $release $Archive
         }
         $archiveLock=[IO.File]::Open($Archive,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-        if ((Get-FileHash -LiteralPath $Archive).Hash -ne $Sha256) { throw 'Guest bridge archive SHA256 mismatch.' }
+        if ($localArchive -and (Get-FileHash -LiteralPath $Archive).Hash -ne $Sha256) { throw 'Guest bridge archive SHA256 mismatch.' }
         Expand-ReimsPackage $Archive $package
         $archiveLock.Dispose(); $archiveLock=$null
         Invoke-ReimsTool $python @('-X','utf8',$patch,'verify',$package,$pinPath)

@@ -70,6 +70,12 @@ unpublished/offline/unqualified assets block `ready` and never claim success.
 No tokens are requested. Cache/download writes happen only in actual setup.
 Engine readiness runs the complete immutable file/hash inventory check;
 it does not accept only the presence of QEMU or its top-level manifest.
+Release pins resolve to the fixed public tag/asset URL without any GitHub
+API call, credentials or additional ZIP SHA requirement. Addon availability
+uses a read-only HEAD request. Optional `bytes` checks detect truncated
+downloads before extraction; fixed source/package validation still applies.
+Unpublished assets/network failures remain explicit errors, with no other
+tag or generic-engine fallback. Existing offline sidecar checks are unchanged.
 
 `plan.start_ready` additionally requires current free RAM to cover the
 requested guest allocation plus 1024 MiB for the host, no CPU oversubscription

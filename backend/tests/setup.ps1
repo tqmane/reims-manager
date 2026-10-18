@@ -3,15 +3,14 @@ $ErrorActionPreference='Stop'
 $root=Join-Path ([IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")) ('setup-'+[guid]::NewGuid().ToString('N'))
 $scripts=Join-Path $root 'backend'
 New-Item -ItemType Directory -Force -Path $scripts | Out-Null
-Copy-Item "$PSScriptRoot/../setup.ps1","$PSScriptRoot/../guest-bridge-release.ps1","$PSScriptRoot/../guest-bridge-lock.json" $scripts
+Copy-Item "$PSScriptRoot/../setup.ps1","$PSScriptRoot/../guest-bridge-release.ps1","$PSScriptRoot/../guest-bridge-lock.json","$PSScriptRoot/../release-asset.ps1" $scripts
 function Write-ReimsJson($Path,$Value) { New-Item -ItemType Directory -Force (Split-Path $Path) | Out-Null; $Value | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM }
 function Get-ReimsVmConfig { Get-Content "$VmRoot/state/config.json" -Raw | ConvertFrom-Json }
 function Assert-ReimsVmStopped {}
 function Get-NewVmPorts { @(4444,2222) }
-function Invoke-RestMethod {
+function Invoke-WebRequest {
     if ($script:unavailable) { throw 'Unpublished fixture' }
-    $pin=Get-ReimsQualifiedGuestBridgeLock
-    @{draft=$false;prerelease=$false;tag_name=$pin.id;assets=@(@{name=$pin.asset;digest=('sha256:'+('a'*64));browser_download_url="https://github.com/$($pin.release_repository)/releases/download/$($pin.id)/$($pin.asset)"})}
+    @{StatusCode=200}
 }
 try {
     $oc=@'

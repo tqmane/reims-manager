@@ -8,10 +8,9 @@ function Read-ReimsEngine($Directory,[switch]$VerifyFiles) {
     if (!$VerifyFiles) { throw 'Engine integrity verification was skipped' }
     return @{files=@{'bin/vulkan-1.dll'=('0'*64)}}
 }
-function Invoke-RestMethod {
+function Invoke-WebRequest {
     if ($script:unavailable) { throw 'Fixture offline' }
-    $pin=Get-ReimsQualifiedGuestBridgeLock
-    return @{draft=$false;prerelease=$false;tag_name=$pin.id;assets=@(@{name=$pin.asset;digest=('sha256:'+('a'*64));browser_download_url="https://github.com/$($pin.release_repository)/releases/download/$($pin.id)/$($pin.asset)"})}
+    return @{StatusCode=200}
 }
 try {
     [IO.File]::WriteAllText("$root/engine/bin/vulkan-1.dll",'authored fixture')

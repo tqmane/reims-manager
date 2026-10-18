@@ -6,7 +6,14 @@ No developer checkout, MSYS2 installation, Rust, system Python or separate
 PowerShell installation is required by the delivered application.
 
 Setup looks up the engine release paired with this manager in
-`tqmane/reims-manager`. If the first engine release has not been published,
+`tqmane/reims-manager`. Its published ZIP size and tag/asset are pinned in
+`engine-lock.json`: installation downloads that public HTTPS URL directly,
+without GitHub API access, authentication or a ZIP SHA requirement.
+Anonymous API rate limits therefore do not block this engine download.
+Missing assets/network errors and size mismatches remain errors. Extracted
+package inventory/source pins and native probes still apply before atomic
+installation. No different tag or generic QEMU is substituted on failure.
+If the engine release has not been published,
 download the ZIP inside the **Windows engine package** Actions artifact and
 choose **Use downloaded engine ZIP**. The corresponding `.zip.sha256` file
 from that same release or CI artifact must be beside the ZIP. No checksum

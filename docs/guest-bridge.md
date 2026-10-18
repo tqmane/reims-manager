@@ -72,9 +72,9 @@ does not itself trigger any Windows rebuild.
 
 New-VM setup fetches and enables the reviewed addon before the first boot.
 Existing VMs can explicitly reapply/disable it from the OpenCore page while
-fully stopped. The live release
-asset digest, payload hashes, source manifest, kext identities and pin data
-are checked. Offline CLI use accepts `prepare-guest-bridge.ps1 -Mode Enable
+fully stopped. Online acquisition uses its fixed public tag/asset URL without
+the GitHub API or a ZIP SHA requirement. Payload hashes, source manifest,
+kext identities and pin data are checked. Offline CLI use accepts `prepare-guest-bridge.ps1 -Mode Enable
 -Archive <zip>` with its matching `.zip.sha256` sidecar or explicit digest.
 Qualification checks apply equally to online and offline packages.
 
