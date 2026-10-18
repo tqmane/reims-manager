@@ -37,6 +37,8 @@ internal static class WifiUiChecks
             !WifiForwarderState.IsMacNat(legacy.Kind) || !WifiForwarderState.IsMacNat(ready.Kind) || WifiForwarderState.IsMacNat("unrecognized"))
             throw new Exception("Legacy IPv4 configuration was dropped or silently upgraded to IPv6.");
         Reject(()=>WifiForwarderState.Read(Snapshot(ready:true)));
+        Reject(()=>WifiForwarderState.Read(Snapshot(running:true,ready:true,pid:1234,configured:false)));
+        Reject(()=>WifiForwarderState.Read(Snapshot(running:true,ready:true)));
         Reject(()=>WifiForwarderState.Read(Snapshot(ipv6Enabled:false)));
         Reject(()=>WifiForwarderState.Read(Snapshot(kind:WifiForwarderState.LegacyMacNat,configured:false,ipv6Enabled:true)));
         foreach(string json in new[]{Snapshot().GetRawText().Replace("\"ready\":false","\"ready\":\"false\""),
