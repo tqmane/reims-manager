@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param()
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
+. "$PSScriptRoot/opencore-backup.ps1"
 Assert-ReimsVmStopped
 $manifest = Get-Content -Raw (Join-Path $VmRoot 'state/opencore.json') | ConvertFrom-Json
 [void](Assert-ReimsArtifactPath $manifest.config)
@@ -27,8 +28,7 @@ foreach ($package in $packages) {
     New-Item -ItemType Directory -Force -Path $destination | Out-Null
     Copy-Item -LiteralPath $kext.FullName -Destination $destination -Recurse -Force
 }
-$backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-updates-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
-Copy-Item -LiteralPath $manifest.config -Destination $backup
+$backup = Backup-ReimsOpenCoreConfig $VmRoot $manifest.config 'updates'
 $candidate = "$backup.candidate"
 $patch = @'
 import pathlib, plistlib, sys

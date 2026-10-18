@@ -95,6 +95,10 @@ assert c['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['csr-active-con
     & "$scripts/prepare-opencore.ps1" -Rebuild | Out-Null
     $rebuilt=Get-Content $ocPath -Raw | ConvertFrom-Json
     if($rebuilt.image -ne $disabled.image -or (& $python -X utf8 -c $identityCode $rebuilt.config) -ne $identity){throw 'Rebuild discarded active EFI or identity'}
+    $beforeProfile=(Get-FileHash $rebuilt.config).Hash
+    & "$scripts/prepare-opencore.ps1" -Rebuild -ApplyBootProfile | Out-Null
+    $profileBackups=@(Get-ChildItem -LiteralPath (Join-Path $fixture 'backups/opencore') -Filter 'before-boot-profile-*.plist')
+    if($profileBackups.Count -ne 1 -or (Get-FileHash $profileBackups[0].FullName).Hash -ne $beforeProfile){throw 'Profile backup was not retained with the VM data'}
     # Deny metadata replacement to exercise switch rollback without touching a real VM.
     $oldConfig=(Get-FileHash $statePath).Hash; $oldOc=(Get-FileHash $ocPath).Hash
     $lock=[IO.File]::Open($statePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)

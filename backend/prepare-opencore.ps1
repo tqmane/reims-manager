@@ -12,6 +12,7 @@ param(
 )
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
 . "$PSScriptRoot/firmware.ps1"
+. "$PSScriptRoot/opencore-backup.ps1"
 Assert-ReimsVmStopped
 if ($GenerateIdentity -and !$Rebuild) { throw 'Use -GenerateIdentity with -Rebuild.' }
 if ($IdentityFile -and (!$Rebuild -or $GenerateIdentity)) { throw 'Use -IdentityFile with -Rebuild, without -GenerateIdentity.' }
@@ -88,8 +89,7 @@ if ($GenerateIdentity) {
         model = $model; serial = $match.Groups[1].Value
         mlb = $match.Groups[2].Value; mac = $vmConfig.mac
     }
-    $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-identity-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
-    Copy-Item -LiteralPath $plist -Destination $backup
+    $backup = Backup-ReimsOpenCoreConfig $VmRoot $plist 'identity'
     $script = @'
 import json, pathlib, plistlib, sys, uuid
 p, manifest = map(pathlib.Path, sys.argv[1:])
@@ -112,8 +112,7 @@ manifest.write_text(json.dumps(i, indent=2) + '\n', encoding='utf-8')
 }
 $validate = Join-Path $package 'Utilities/ocvalidate/ocvalidate.exe'
 if ($ApplyBootProfile) {
-    $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-boot-profile-' + [guid]::NewGuid().ToString('N') + '.plist')
-    Copy-Item -LiteralPath $plist -Destination $backup
+    $backup = Backup-ReimsOpenCoreConfig $VmRoot $plist 'boot-profile'
     $candidate = "$backup.candidate"
     & $python -X utf8 "$PSScriptRoot/opencore/boot-policy.py" $plist $candidate
     if ($LASTEXITCODE -ne 0) { throw 'Boot profile update failed; the original config is unchanged.' }
@@ -123,8 +122,7 @@ if ($ApplyBootProfile) {
 }
 if ($IdentityFile) {
     [void](Assert-ReimsArtifactPath $IdentityFile)
-    $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-edit-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
-    Copy-Item -LiteralPath $plist -Destination $backup
+    $backup = Backup-ReimsOpenCoreConfig $VmRoot $plist 'edit'
     $candidate = "$backup.candidate"
     $identityEdit = @'
 import json, pathlib, plistlib, re, sys, uuid
@@ -157,8 +155,7 @@ i.update(uuid=str(u).upper(),rom=rom.hex()); identity.write_text(json.dumps(i),e
     "識別情報を保存しました。変更前の設定: $backup"
 }
 if ($AppleAccountCompatibility -ne 'Keep') {
-    $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-account-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
-    Copy-Item -LiteralPath $plist -Destination $backup
+    $backup = Backup-ReimsOpenCoreConfig $VmRoot $plist 'account'
     $candidate = "$backup.candidate"
     & $python -X utf8 "$PSScriptRoot/opencore/apple-account.py" $plist $candidate $AppleAccountCompatibility
     if ($LASTEXITCODE -ne 0) { throw 'Apple Account compatibility update failed; the original config is unchanged.' }

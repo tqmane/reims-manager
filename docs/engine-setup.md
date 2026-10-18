@@ -59,6 +59,9 @@ the EFI image. A newer engine's OVMF is selected only for new VMs. An
 explicit `-FirmwareDirectory` is checked against the existing pair: differing
 code or template is refused with a firmware/NVRAM migration explanation.
 Configuration and kext rebuilds do not migrate OVMF or regenerate identity.
+OpenCore edit backups live under the selected VM's `backups/opencore`, not
+the engine's build/scratch directories. See the [UI/backend contract](opencore-manager-contract.md)
+for persistent paths and the OpenCore/guest bridge action arguments.
 
 Downloads and the file manifest are checked automatically. ZIP traversal,
 duplicates, links, excessive extraction size, unknown source revisions and
