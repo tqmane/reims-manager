@@ -46,6 +46,8 @@ jobs:
           if ($LASTEXITCODE) { throw 'Host onboarding fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/network-uplinks.ps1
           if ($LASTEXITCODE) { throw 'Network uplink fixtures failed.' }
+          pwsh -NoProfile -File ./backend/tests/tap-installer.ps1
+          if ($LASTEXITCODE) { throw 'Optional signed TAP installer fixtures failed.' }
           pwsh -NoProfile -File ./backend/tests/setup.ps1
           if ($LASTEXITCODE) { throw 'Turnkey setup fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/native-probe.ps1
