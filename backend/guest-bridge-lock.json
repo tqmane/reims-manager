@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "guest-bridge-ac60717c-candidate-1",
+  "id": "guest-bridge-700379ce-candidate-1",
   "release_repository": "tqmane/reims-manager",
   "asset": "ReimsGuestBridge.zip",
   "required_engine_id": "engine-b8b4486c-7100064d-2",
@@ -13,7 +13,7 @@
   "release_ready": false,
   "qualified_kernels": [],
   "sources": {
-    "reims": { "repository": "https://github.com/tqmane/reims-vgpu", "commit": "ac60717cc18c1f3069e043ba7f7cb384de0631de" },
+    "reims": { "repository": "https://github.com/tqmane/reims-vgpu", "commit": "700379ce32942b474dbbbb0f8c18f6736b10c863" },
     "lilu": { "repository": "https://github.com/acidanthera/Lilu", "commit": "e4748cc081bf060302c7d3c44a643ce1d11b7e1d" },
     "kernel_sdk": { "repository": "https://github.com/acidanthera/MacKernelSDK", "commit": "3f750085caa17ec3a7880f11c11bf4f48cd6a164" }
   },
