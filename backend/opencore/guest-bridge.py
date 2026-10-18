@@ -11,7 +11,8 @@ APPLE = '7C436110-AB2A-4BBB-A880-FE41995C9F82'
 BRIDGE = 'ReimsMetalCompat.kext'
 LILU = 'Lilu.kext'
 PACKAGE_FIELDS = ('schema', 'id', 'required_engine_id', 'min_kernel', 'max_kernel', 'sources', 'lilu_release',
-                  'abi_family', 'scope', 'runtime_validation', 'release_ready', 'qualified_kernels')
+                  'abi_family', 'scope', 'runtime_validation', 'release_ready', 'qualified_kernels',
+                  'qualification', 'limitations')
 
 
 def require_qualified(pin):

@@ -114,9 +114,11 @@ manager's OpenCore page fetches and applies the separate [guest bridge
 addon](guest-bridge.md), built by its own macOS CI job from those exact
 sources. Its release does not rebuild or replace the Windows engine.
 Application is optional and requires a qualified generic implementation and
-runtime ABI validation. The global `ac60717c` candidate records proposed
-Darwin 25 family bounds but has no qualified kernels and cannot be applied.
-After qualification, explicit enable/reapply migrates owned bridge/Lilu
+runtime ABI validation. Source `700379ce` records native WebGL acceptance on
+Darwin 25.4.0 and 25.6.0 with engine 2. Family bounds are not a claim that
+every OS version was tested, and 60 FPS is not guaranteed. Fresh setup
+requires the qualified addon release and applies it automatically. Explicit
+enable/reapply migrates owned bridge/Lilu
 entries to the reviewed package range; ordinary rebuilds preserve bounds.
 Native guest and browser checks are required before release promotion.
 

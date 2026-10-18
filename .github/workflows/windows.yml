@@ -40,6 +40,10 @@ jobs:
           if ($LASTEXITCODE) { throw 'VM-owned OpenCore backup fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/portable-support.ps1
           if ($LASTEXITCODE) { throw 'Immutable engine support fixture failed.' }
+          pwsh -NoProfile -File ./backend/tests/host-prerequisites.ps1
+          if ($LASTEXITCODE) { throw 'Host onboarding fixture failed.' }
+          pwsh -NoProfile -File ./backend/tests/setup.ps1
+          if ($LASTEXITCODE) { throw 'Turnkey setup fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/native-probe.ps1
           if ($LASTEXITCODE) { throw 'Native timeout fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/manager-ports.ps1
