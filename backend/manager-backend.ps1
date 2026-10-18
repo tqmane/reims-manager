@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','EnableCursorAid','DisableCursorAid','LightenExtendedDisplay','RestoreExtendedDisplay','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','EnableCursorAid','DisableCursorAid','MoveCursorToMainDisplay','MoveCursorToExtendedDisplay','LightenExtendedDisplay','RestoreExtendedDisplay','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -170,6 +170,14 @@ switch ($Action) {
     RestoreExtendedDisplay {
         . "$PSScriptRoot/display-optimization.ps1"
         Invoke-ReimsDisplayOptimization 'restore'
+    }
+    MoveCursorToMainDisplay {
+        . "$PSScriptRoot/cursor-aid.ps1"
+        Invoke-ReimsCursorAid 'move-main'
+    }
+    MoveCursorToExtendedDisplay {
+        . "$PSScriptRoot/cursor-aid.ps1"
+        Invoke-ReimsCursorAid 'move-extended'
     }
     EnableCursorAid {
         . "$PSScriptRoot/cursor-aid.ps1"

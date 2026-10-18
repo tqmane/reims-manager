@@ -28,10 +28,22 @@ class Launchctl:
         self.gui = True
         self.foreign = False
         self.fail_bootstrap = 0
+        self.move_reply = None
+        self.move_code = 0
+        self.move_calls = []
         self.calls = []
 
     def __call__(self, args, **kwargs):
         self.calls.append(args)
+        if args[0] == str(self.executable):
+            self.move_calls.append(args)
+            assert args[1] == '--move-to-display' and args[2] in ('main', 'extended')
+            assert len(args) == 3 and kwargs['timeout'] == 10
+            value = dict(schema=1, action='move-to-display', target=args[2], ok=True,
+                         cgError=0, displayID=22, boundsCG=dict(x=1600, y=-10, width=1000, height=800),
+                         positionCG=dict(x=2100, y=390), candidateCount=1, error=None)
+            return subprocess.CompletedProcess(args, self.move_code,
+                                               self.move_reply if self.move_reply is not None else json.dumps(value), '')
         assert args[0] == '/bin/launchctl'
         assert kwargs['timeout'] == 10
         verb = args[1]
@@ -92,6 +104,47 @@ class CursorAid(unittest.TestCase):
         self.apply(dict(schema=1, operation='disable'))
         self.assertFalse(self.directory.exists())
         self.assertFalse(any(args[1] == 'bootout' for args in self.control.calls))
+
+    def test_move_verifies_enables_then_runs_only_fixed_target(self):
+        for target in ('main', 'extended'):
+            result = self.apply(dict(request(), operation='move-' + target))
+            self.assertTrue(result['enabled'])
+            self.assertTrue(result['move']['ok'])
+            self.assertEqual(result['move']['target'], target)
+            self.assertEqual(self.control.move_calls[-1], [str(self.control.executable), '--move-to-display', target])
+            self.assertTrue(json.loads(self.receipt.read_bytes())['enabled'])
+        self.assertEqual(sum(args[1] == 'bootstrap' for args in self.control.calls), 1)
+
+    def test_failed_move_keeps_enabled_installation(self):
+        refused = dict(schema=1, action='move-to-display', target='extended', ok=False,
+                       cgError=None, displayID=None, boundsCG=None, positionCG=None,
+                       candidateCount=2, error='synthetic-refusal')
+        self.control.move_reply, self.control.move_code = json.dumps(refused), 1
+        with self.assertRaisesRegex(RuntimeError, 'remains enabled.*movement was refused'):
+            self.apply(dict(request(), operation='move-extended'))
+        self.assertTrue(self.control.live)
+        self.assertTrue(json.loads(self.receipt.read_bytes())['enabled'])
+        self.assertTrue(self.control.agent.exists())
+        self.assertEqual(sum(args[1] == 'bootout' for args in self.control.calls), 0)
+
+    def test_old_native_cli_and_malformed_result_keep_enabled(self):
+        for code, output in ((2, ''), (0, 'not JSON')):
+            self.control.move_code, self.control.move_reply = code, output
+            with self.assertRaisesRegex(RuntimeError, 'remains enabled'):
+                self.apply(dict(request(), operation='move-main'))
+            self.assertTrue(self.control.live)
+            self.assertTrue(json.loads(self.receipt.read_bytes())['enabled'])
+
+    def test_move_protocol_rejects_bad_success_fields(self):
+        value = dict(schema=1, action='move-to-display', target='extended', ok=True,
+                     cgError=0, displayID=22, boundsCG=dict(x=1600, y=-10, width=1000, height=800),
+                     positionCG=dict(x=2100, y=390), candidateCount=1, error=None)
+        for field, bad in [('schema', True), ('ok', 'true'), ('cgError', True), ('cgError', 1),
+                           ('displayID', -1), ('candidateCount', 2), ('candidateCount', True),
+                           ('boundsCG', dict(x=0, y=0, width=0, height=1)),
+                           ('positionCG', dict(x=float('nan'), y=0)), ('error', 'unexpected')]:
+            with self.subTest(field=field, bad=bad), self.assertRaises((ValueError, RuntimeError)):
+                aid.move_result(subprocess.CompletedProcess([], 0, json.dumps(dict(value, **{field: bad})), ''), 'extended')
 
     def test_repeated_enable_reuses_verified_running_service(self):
         self.apply(request())
