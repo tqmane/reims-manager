@@ -43,6 +43,7 @@ public partial class MainWindow : Window
 
     private async Task<string> Execute(string action, string[] arguments, bool elevate = false, string? input = null, CancellationToken cancellation = default)
     {
+        if (selfTest && controlFixtureBackend is not null) return await controlFixtureBackend(action);
         if (!HasEngine) throw new InvalidOperationException("先に Reims エンジンを選択してください。");
         if (!HasVm && action is not ("GetPrerequisites" or "EnableWhpx" or "InstallUsbDk" or "InstallTap" or "CreateBridge"))
             throw new InvalidOperationException("操作する仮想マシンを選択してください。");
@@ -116,7 +117,7 @@ public partial class MainWindow : Window
         try {
             while (refreshPending && !busy && !closing) {
                 refreshPending = false;
-                bool loadDetails = refreshFull || !loadedHardware || latest.ValueKind != JsonValueKind.Object;
+                bool loadDetails = refreshFull || !loadedHardware || latest.ValueKind != JsonValueKind.Object || selfTest && controlFixtureBackend is not null;
                 refreshFull = false;
                 if (!HasVm || !HasEngine) {
                     currentState = "unprepared";

@@ -11,6 +11,16 @@ public partial class App : Application
     {
         base.OnStartup(e);
         try {
+            if (e.Args.Length == 2 && e.Args[0] == "--control-target-check") {
+                await ManagerControlChecks.Run(Path.GetFullPath(e.Args[1])); Shutdown(0); return;
+            }
+            if (e.Args.Length == 2 && e.Args[0] == "--control-target-hold") {
+                File.WriteAllText(e.Args[1], Environment.ProcessPath);
+                await Task.Delay(TimeSpan.FromSeconds(30)); Shutdown(0); return;
+            }
+            if (e.Args.Length > 0 && e.Args[0] == "--control") {
+                Shutdown(await ManagerControl.RunClient(e.Args)); return;
+            }
             if (e.Args.Length == 2 && e.Args[0] == "--backend-check") {
                 string folder = Path.GetFullPath(e.Args[1]); Directory.CreateDirectory(folder);
                 await SelfChecks.CheckBackend(); await BackendPipeChecks.Run(folder); Shutdown(0); return;
@@ -77,7 +87,7 @@ public partial class App : Application
                 await PreferencesChecks.Run(folder);
                 await window.RenderChecks(folder);
                 await window.CheckThemeRendering(folder);
-                await window.CheckNativeConsoleLifecycle();
+                await window.CheckNativeConsoleLifecycle(folder);
                 string fixture=Path.Combine(folder,"fixture.reimsvm");
                 if (File.Exists(fixture)) File.Delete(fixture);
                 var entry=VmLibrary.Create(fixture,Path.Combine(folder,"fixture.data"));
@@ -86,10 +96,12 @@ public partial class App : Application
                 window.Close(); Shutdown(0); return;
             }
             window.Show();
+            var control = new ManagerControlServer(window.Control);
+            window.Closed += (_, _) => control.Dispose();
         } catch (Exception error) {
             if (e.Args.Length==3 && e.Args[0]=="--preferences-probe") {
                 File.WriteAllText(Path.Combine(Path.GetFullPath(e.Args[1]), "probe-error.txt"), error.ToString());
-            } else if (e.Args.Length==2 && (e.Args[0]=="--self-test" || e.Args[0]=="--ssh-config-check" || e.Args[0]=="--backend-check")) {
+            } else if (e.Args.Length==2 && (e.Args[0]=="--self-test" || e.Args[0]=="--ssh-config-check" || e.Args[0]=="--backend-check" || e.Args[0]=="--control-target-check")) {
                 string folder=Path.GetFullPath(e.Args[1]); Directory.CreateDirectory(folder);
                 File.WriteAllText(Path.Combine(folder, "error.txt"), error.ToString());
             } else { MessageBox.Show(error.Message,"Reims Manager"); }
