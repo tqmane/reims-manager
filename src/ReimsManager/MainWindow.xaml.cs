@@ -44,7 +44,7 @@ public partial class MainWindow : Window
     private async Task<string> Execute(string action, string[] arguments, bool elevate = false, string? input = null, CancellationToken cancellation = default)
     {
         if (!HasEngine) throw new InvalidOperationException("先に Reims エンジンを選択してください。");
-        if (!HasVm && action is not ("EnableWhpx" or "InstallUsbDk" or "InstallTap" or "CreateBridge"))
+        if (!HasVm && action is not ("GetPrerequisites" or "EnableWhpx" or "InstallUsbDk" or "InstallTap" or "CreateBridge"))
             throw new InvalidOperationException("操作する仮想マシンを選択してください。");
         string root = Path.GetFullPath(Root.Text);
         string backend = Path.Combine(AppContext.BaseDirectory,"scripts/manager-backend.ps1");
@@ -55,13 +55,13 @@ public partial class MainWindow : Window
         if (!File.Exists(pwsh)) throw new Exception("PowerShell 7 をインストールしてください。");
         var info = new ProcessStartInfo(pwsh) { UseShellExecute=elevate, CreateNoWindow=true, WorkingDirectory=root };
         foreach (string arg in new[] {"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",backend,"-Root",root,"-Action",action}.Concat(arguments)) info.ArgumentList.Add(arg);
-        info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory);
+        if (HasVm && action != "GetPrerequisites") { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
         info.ArgumentList.Add("-Qemu"); info.ArgumentList.Add(settings.QemuExecutable);
         info.ArgumentList.Add("-ToolsRoot"); info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"runtimes"));
         if (input is not null) info.RedirectStandardInput=true;
         if (elevate) { info.Verb="runas"; info.WindowStyle=ProcessWindowStyle.Hidden; }
         else { info.RedirectStandardOutput=true; info.RedirectStandardError=true; info.StandardOutputEncoding=Encoding.UTF8; info.StandardErrorEncoding=Encoding.UTF8; }
-        bool readOnly = action is "Status" or "GetIdentity" or "ListUsb";
+        bool readOnly = action is "Status" or "GetIdentity" or "ListUsb" or "GetPrerequisites";
         return await BackendCommand.Run(info, input, readOnly, readOnly ? cancellation : CancellationToken.None);
     }
 
@@ -232,7 +232,15 @@ public partial class MainWindow : Window
         qemu=string.IsNullOrWhiteSpace(qemu) ? Path.Combine(root,File.Exists(Path.Combine(root,"reims-engine.json")) ? "bin/qemu-system-x86_64.exe" : "build/qemu/qemu-system-x86_64.exe") : Path.GetFullPath(qemu);
         if (!File.Exists(qemu)) throw new FileNotFoundException("Reims 対応 QEMU が見つかりません。エンジンのフォルダーを確認してください。");
         Root.Text=root; settings.EngineRoot=root; settings.QemuExecutable=qemu;
-        SavePreferences(); ResetVmContext(); UpdatePowerControls();
+        if (!SavePreferences()) throw new IOException("エンジンの保存先を記録できませんでした。アプリ設定の保存先を確認して再試行してください。");
+        ResetVmContext(); UpdatePowerControls();
+    }
+
+    private bool SelectSetupEngine(bool continueToVm = false)
+    {
+        var dialog = new EngineSetupWindow(continueToVm) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.InstalledDirectory is not { } folder) return false;
+        ConfigureEngine(folder); return true;
     }
 
     private async void SetupEngine(object sender, RoutedEventArgs e)
@@ -240,8 +248,7 @@ public partial class MainWindow : Window
         if (IsUiBusy || !DiscardPendingChanges()) return;
         busy=true; UpdatePowerControls();
         try {
-            var dialog=new EngineSetupWindow { Owner=this };
-            if (dialog.ShowDialog()==true && dialog.InstalledDirectory is { } folder) ConfigureEngine(folder);
+            SelectSetupEngine();
         } catch (Exception error) { ErrorNotice.Text=error.Message; Feedback.Visibility=Visibility.Visible; }
         finally { busy=false; UpdatePowerControls(); }
         await RefreshState();
@@ -279,6 +286,7 @@ public partial class MainWindow : Window
         foreach (var item in PowerMoreButton.ContextMenu.Items.OfType<MenuItem>()) item.IsEnabled = CanOperate(item.Tag?.ToString() ?? "");
         EngineNotice.Visibility = HasEngine ? Visibility.Collapsed : Visibility.Visible;
         EngineSummary.Text = HasEngine ? "エンジン設定済み" : "未設定";
+        NewVmWelcomeDescription.Text = HasEngine ? "Windows の準備を確認して ISO を選ぶ" : "エンジンの準備から始める";
         RefreshButton.IsEnabled = HasVm && HasEngine && !busy && !refreshing;
         RevealButton.IsEnabled = selectedEntry is not null;
         foreach (var button in LogicalChildren<Button>(Tabs)) {
