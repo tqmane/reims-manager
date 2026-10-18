@@ -45,6 +45,10 @@ if ($Action -eq 'InstallUsbDk' -and !$VmDirectory) {
     & "$PSScriptRoot/install-usbdk.ps1" -CacheDirectory $cache
     return
 }
+if ($Action -eq 'InstallTap' -and !$VmDirectory) {
+    & "$PSScriptRoot/install-tap.ps1" -Installer $Installer -Adapter $Adapter
+    return
+}
 if ($Action -eq 'Setup') {
     . "$PSScriptRoot/engine-package.ps1"
     if (!(Read-ReimsEngine $Root)) { throw '先に Manager から対応エンジンをセットアップしてください。' }
@@ -317,13 +321,8 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         "Windows bridge created: $($bridge.bridge_id). Guest DHCP/LAN connectivity remains unverified; Wi-Fi depends on its driver and access point."
     }
     InstallTap {
-        Assert-Administrator
-        $file = Get-Item -LiteralPath $Installer
-        if ($file.Extension -ne '.exe') { throw '公式 TAP-Windows インストーラー (.exe) を選択してください。' }
-        $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
-        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'OpenVPN') { throw '有効な OpenVPN 署名のないインストーラーは実行しません。' }
-        $process = Start-Process -FilePath $file.FullName -ArgumentList '/S' -WindowStyle Hidden -PassThru -Wait
-        if ($process.ExitCode -ne 0) { throw "TAP installer failed ($($process.ExitCode))." }
+        Assert-ReimsVmStopped
+        & "$PSScriptRoot/install-tap.ps1" -Installer $Installer -Adapter $Adapter
     }
     Pair {
         if (!$User -or $Fingerprint -notmatch '^SHA256:[A-Za-z0-9+/]{43}$') { throw 'macOS のユーザー名と setup.command が表示した SHA256 指紋を入力してください。' }
