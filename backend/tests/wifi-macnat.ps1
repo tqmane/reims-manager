@@ -44,10 +44,11 @@ function Set-ReimsWifiBinding($Id,$Component,$Enabled){
     if($Id -ne $tapId){throw 'Physical/foreign binding mutation attempted'}
     $fixture.bindings[$Component]=$Enabled;$fixture.changes+=,$Component
 }
-function Get-ReimsWifiRouterDiscovery($Id){if($Id -ne $fixture.ownedTap){throw 'Unrelated RouterDiscovery read'};return $fixture.router.Clone()}
+function Get-ReimsWifiRouterDiscovery($Id){if($Id -ne $fixture.ownedTap){throw 'Unrelated RouterDiscovery read'};return @{ActiveStore=$fixture.router.ActiveStore}}
 function Set-ReimsWifiRouterDiscovery($Id,$Store,$Value){
     if($Id -ne $fixture.ownedTap){throw 'Physical/foreign RouterDiscovery mutation attempted'}
-    if($fixture.routerFailOnce -and $Store -eq 'PersistentStore'){$fixture.routerFailOnce=$false;throw 'Fixture RouterDiscovery write failure'}
+    if($Store -ne 'ActiveStore'){throw 'Persistent policy must remain untouched'}
+    if($fixture.routerFailOnce){$fixture.routerFailOnce=$false;$fixture.router[$Store]=$Value;throw 'Fixture RouterDiscovery write failure'}
     $fixture.router[$Store]=$Value;$fixture.routerWrites+=,@($Store,$Value)
 }
 function Get-ReimsVmConfig {Get-Content -Raw -LiteralPath $configPath | ConvertFrom-Json}
@@ -63,17 +64,17 @@ try{
     Check (!$fixture.bindings.ms_tcpip -and $fixture.bindings.ms_tcpip6) 'TAP IPv4/IPv6 policy wrong'
     Check ($receipt.bindings_before.ms_tcpip -and !$receipt.bindings_before.ms_tcpip6) 'Previous IP bindings lost'
     Check ((Get-ReimsVmConfig).network.mode -eq 'bridge' -and (Get-ReimsVmConfig).network.forwarder -eq 'macnat') 'Mode not saved'
-    Check ($receipt.ipv6_enabled -and $fixture.router.ActiveStore -eq 'Disabled' -and $fixture.router.PersistentStore -eq 'Disabled') 'IPv6 router protection missing'
-    Check ($receipt.router_discovery_before.ActiveStore -eq 'Enabled' -and $receipt.router_discovery_before.PersistentStore -eq 'ControlledByDHCP') 'Original RouterDiscovery lost'
+    Check ($receipt.ipv6_enabled -and $fixture.router.ActiveStore -eq 'Disabled' -and $fixture.router.PersistentStore -eq 'ControlledByDHCP') 'IPv6 protection changed persistent policy'
+    Check ($receipt.router_discovery_store -eq 'ActiveStore' -and $receipt.router_discovery_before.ActiveStore -eq 'Enabled' -and !$receipt.router_discovery_before.ContainsKey('PersistentStore')) 'Effective RouterDiscovery scope/original lost'
     $receipt=Set-ReimsWifiEnabled $tapId $uplinkId 'guest.local';$fixture.cases++
-    Check ($receipt.router_discovery_before.ActiveStore -eq 'Enabled' -and $receipt.router_discovery_before.PersistentStore -eq 'ControlledByDHCP') 'Reapply overwrote original RouterDiscovery'
+    Check ($receipt.router_discovery_before.ActiveStore -eq 'Enabled' -and !$receipt.router_discovery_before.ContainsKey('PersistentStore')) 'Reapply overwrote original RouterDiscovery'
     $saved=Get-ReimsSavedNetwork (Get-ReimsVmConfig) 'bridge' $tapId 'guest.local' $uplinkId
     Check ($saved.mode -eq 'bridge' -and $saved.tap_id -eq $tapId) 'Hardware save loses Wi-Fi mode'
     Reject {Get-ReimsSavedNetwork (Get-ReimsVmConfig) 'nat' '' '' ''} 'Disable Wi-Fi'
     Reject {Get-ReimsWifiSavedNetwork (Get-ReimsVmConfig) $tapId '33333333-3333-4333-8333-333333333333' ''} 'before saving'
     [void](Disable-ReimsWifiMacNat);$fixture.cases++
     Check ($fixture.bindings.ms_tcpip -and $fixture.bindings.ms_tcpip6) 'Disable did not restore exact original bindings'
-    Check ($fixture.router.ActiveStore -eq 'Enabled' -and $fixture.router.PersistentStore -eq 'ControlledByDHCP') 'Disable did not restore distinct exact policy stores'
+    Check ($fixture.router.ActiveStore -eq 'Enabled' -and $fixture.router.PersistentStore -eq 'ControlledByDHCP') 'Disable did not restore effective policy/preserve persistence'
     Check ((Get-ReimsVmConfig).network.mode -eq 'nat') 'Disable did not restore NAT'
     foreach($case in @('running','foreign','captureBusy')){
         Reset;$fixture[$case]=$true
@@ -101,6 +102,21 @@ try{
     Reject {Set-ReimsWifiEnabled $tapId $uplinkId ''} 'outside Manager'
     Reject {Disable-ReimsWifiMacNat} 'ownership changed|outside Manager'
     Check ($fixture.routerWrites.Count -eq $beforeWrites) 'Foreign RouterDiscovery was overwritten'
+    Reset;$fixture.router.PersistentStore=$null
+    $nullPersistent=Set-ReimsWifiEnabled $tapId $uplinkId '';$fixture.cases++
+    Check ($nullPersistent.ipv6_enabled -and $fixture.router.ActiveStore -eq 'Disabled' -and $null -eq $fixture.router.PersistentStore) 'Persistent NULL/default was guessed or overwritten'
+    $fixture.router.ActiveStore='Enabled'
+    Reject {Assert-ReimsWifiRouterDisabled $nullPersistent} 'outside Manager'
+    $reapplied=Set-ReimsWifiEnabled $tapId $uplinkId '';$fixture.cases++
+    Check ($fixture.router.ActiveStore -eq 'Disabled' -and $reapplied.router_discovery_before.ActiveStore -eq 'Enabled') 'Explicit reapply did not preserve known original effective policy'
+    [void](Disable-ReimsWifiMacNat);$fixture.cases++
+    Check ($fixture.router.ActiveStore -eq 'Enabled' -and $null -eq $fixture.router.PersistentStore) 'NULL/default persistence changed on Disable'
+    Reset;$oldDual=Set-ReimsWifiEnabled $tapId $uplinkId '';[void]$oldDual.Remove('router_discovery_store')
+    Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder.json') $oldDual
+    $beforeWrites=$fixture.routerWrites.Count
+    Reject {Set-ReimsWifiEnabled $tapId $uplinkId ''} 'Older dual-store'
+    Reject {Disable-ReimsWifiMacNat} 'Older dual-store'
+    Check ($fixture.routerWrites.Count -eq $beforeWrites) 'Unknown older dual-store receipt was changed'
     Reset;[void](Set-ReimsWifiEnabled $tapId $uplinkId '')
     $legacy=Read-ReimsWifiJson (Join-Path $VmRoot 'state/wifi-forwarder.json');$legacy.Remove('ipv6_enabled');$legacy.Remove('router_discovery_before')
     Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder.json') $legacy
@@ -113,7 +129,7 @@ try{
     Reset;[void](Set-ReimsWifiEnabled $tapId $uplinkId '');$fixture.badWrite=$true
     Reject {Disable-ReimsWifiMacNat} 'config write failure'
     Check (!$fixture.bindings.ms_tcpip) 'Failed Disable lost IPv4 rollback'
-    Check ($fixture.router.ActiveStore -eq 'Disabled' -and $fixture.router.PersistentStore -eq 'Disabled') 'Failed Disable lost RA protection'
+    Check ($fixture.router.ActiveStore -eq 'Disabled' -and $fixture.router.PersistentStore -eq 'ControlledByDHCP') 'Failed Disable lost RA protection or changed persistence'
     $fixture.badWrite=$false;[void](Disable-ReimsWifiMacNat)
     Check ($fixture.bindings.ms_tcpip) 'Disable retry did not restore original IPv4'
     # One action prepares missing prerequisites; reboot paths never claim configured.
@@ -147,14 +163,14 @@ try{
     # Load the real runtime/status functions again, replacing process identity provider only.
     . "$PSScriptRoot/../wifi-macnat.ps1"
     function Assert-ReimsOwnedWifiTap($Id,$PnpId){if($Id -ne $fixture.ownedTap -or $PnpId -ne 'ROOT\NET\0001'){throw 'Unowned policy status'};@{adapter_id=$Id}}
-    function Get-ReimsWifiRouterDiscovery { @{ActiveStore='Disabled';PersistentStore='Disabled'} }
+    function Get-ReimsWifiRouterDiscovery { @{ActiveStore='Disabled'} }
     function Get-ReimsWifiDriverState {'running'}
     function Get-ReimsWifiHelper {$PSHOME+'/pwsh.exe'}
     $fixture.live=$true;$fixture.identityWrong=$false
     function Get-ReimsVmProcess($Runtime){if($fixture.identityWrong){throw 'Fixture PID reused'};if($fixture.live){[pscustomobject]@{Id=$Runtime.pid}}}
     function Get-ReimsRuntime {[pscustomobject]@{pid=77;start_ticks=12345}}
     $session='{33333333-3333-4333-8333-333333333333}'
-    Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder.json') @{schema=1;state='enabled';tap_id=$tapId;pnp_instance_id='ROOT\NET\0001';uplink_id=$uplinkId;error='';ipv6_enabled=$true;router_discovery_before=@{ActiveStore='Enabled';PersistentStore='ControlledByDHCP'}}
+    Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder.json') @{schema=1;state='enabled';tap_id=$tapId;pnp_instance_id='ROOT\NET\0001';uplink_id=$uplinkId;error='';ipv6_enabled=$true;router_discovery_store='ActiveStore';router_discovery_before=@{ActiveStore='Enabled'}}
     Write-ReimsJson $configPath @{schema=1;network=@{mode='bridge';forwarder='macnat';tap_id=$tapId;physical_adapter_id=$uplinkId}}
     Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder/runtime.json') @{schema=1;pid=88;start_ticks=54321;executable='fixture';session=$session;qemu_pid=77;qemu_start_ticks=12345}
     Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder/status.json') @{schema=1;state='ready';session=$session;helper_pid=88;qemu_pid=77;qemu_start_ticks=12345;error='';ipv6_enabled=$true}
@@ -203,24 +219,28 @@ try{
     Set-ReimsWifiBinding $tapId ms_tcpip $false
     Check ($fixture.bindingWrites.Count -eq 1 -and $fixture.bindingWrites[0][0] -eq 'Owned') 'Binding setter used an unrelated adapter';$fixture.cases++
     Reject {Set-ReimsWifiBinding '55555555-5555-4555-8555-555555555555' ms_tcpip $false} 'missing or ambiguous'
-    $fixture.sourcePolicy=@{ActiveStore=1;PersistentStore=2};$fixture.policyCalls=@()
+    $fixture.sourcePolicy=@{ActiveStore=1;PersistentStore=$null};$fixture.policyCalls=@();$fixture.policyReads=@()
     function Get-NetIPInterface($InterfaceIndex,$AddressFamily,$PolicyStore){
         if($InterfaceIndex -ne 43 -or $AddressFamily -ne 'IPv6'){throw 'Foreign/family policy read'}
+        $fixture.policyReads+=,$PolicyStore
         [pscustomobject]@{InterfaceIndex=43;RouterDiscovery=$fixture.sourcePolicy[$PolicyStore]}
     }
     function Set-NetIPInterface($InterfaceIndex,$AddressFamily,$PolicyStore,$RouterDiscovery){
-        if($InterfaceIndex -ne 43 -or $AddressFamily -ne 'IPv6'){throw 'Foreign/family policy mutation'}
+        if($InterfaceIndex -ne 43 -or $AddressFamily -ne 'IPv6' -or $PolicyStore -ne 'ActiveStore'){throw 'Foreign/family/persistent policy mutation'}
         $fixture.policyCalls+=,@($PolicyStore,$RouterDiscovery)
     }
     $policy=& $routerReaderScript $tapId
-    Check ($policy.ActiveStore -eq 'Enabled' -and $policy.PersistentStore -eq 'ControlledByDHCP') 'CIM RouterDiscovery ordinals were not normalized';$fixture.cases++
+    Check ($policy.ActiveStore -eq 'Enabled' -and !$policy.ContainsKey('PersistentStore') -and $fixture.policyReads -notcontains 'PersistentStore') 'Effective CIM ordinal not normalized or Persistent NULL read/guessed';$fixture.cases++
     $fixture.sourcePolicy.ActiveStore='Disabled';$policy=& $routerReaderScript $tapId
     Check ($policy.ActiveStore -eq 'Disabled') 'Typed RouterDiscovery enum rejected';$fixture.cases++
     $fixture.sourcePolicy.ActiveStore=9
     Reject {& $routerReaderScript $tapId} 'Unknown TAP IPv6'
+    $fixture.sourcePolicy.ActiveStore=255
+    Reject {& $routerReaderScript $tapId} 'Unknown TAP IPv6'
     Set-ReimsWifiRouterDiscovery $tapId ActiveStore Disabled
     Check ($fixture.policyCalls.Count -eq 1 -and $fixture.policyCalls[0][1] -eq 'Disabled') 'Selected-only RouterDiscovery write contract wrong';$fixture.cases++
     Reject {Set-ReimsWifiRouterDiscovery $tapId ActiveStore 'unknown'} 'Invalid RouterDiscovery'
+    Reject {Set-ReimsWifiRouterDiscovery $tapId PersistentStore 'Disabled'} 'Invalid RouterDiscovery'
     # Signature/catalog-member failures must precede any netcfg install.
     $payload=Join-Path $VmRoot 'payload';[void][IO.Directory]::CreateDirectory($payload)
     [IO.File]::WriteAllText((Join-Path $payload 'ndisrd_lwf.inf'),"CatalogFile = ndisrd.cat`nDriverVer = 05/17/2025,3.6.2.1`n%ndisrd_Desc%=Install, nt_ndisrd`n")
