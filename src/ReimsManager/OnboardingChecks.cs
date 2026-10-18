@@ -27,9 +27,11 @@ internal static class OnboardingChecks
     internal static void Run(string folder)
     {
         Directory.CreateDirectory(folder);
+        TapInstallChecks.Run(Path.Combine(folder,"tap-result-checks"));
         foreach (string state in new[] { "unknown", "running", "shutdown", "paused", "suspended", "prelaunch", "unprepared", "stopped" })
-            if (VmActionPolicy.CanRun("RemoveBridge",state,true,true) != (state == "stopped") ||
-                VmActionPolicy.CanRun("RemoveBridge",state,false,true) || VmActionPolicy.CanRun("RemoveBridge",state,true,false))
+            foreach(string action in new[]{"RemoveBridge","InstallTap"})
+            if (VmActionPolicy.CanRun(action,state,true,true) != (state == "stopped") ||
+                VmActionPolicy.CanRun(action,state,false,true) || VmActionPolicy.CanRun(action,state,true,false))
                 throw new Exception("Bridge removal bypassed its fully stopped VM/engine policy.");
         var ready = SetupRequirements.Parse(Requirements());
         if (!ready.Ready || !ready.StartReady || ready.Checks.Single(value => value.Id == "usb").Required)

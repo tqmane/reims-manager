@@ -45,6 +45,17 @@ compatibility with QEMU's Windows ANSI TAP-name lookup. An explicitly reused
 adapter or another VPN's names are not changed. GUID/PnP identity remains
 the persistent key; Windows display-language names are not identity.
 
+When `VmDirectory` is supplied, the backend parses the successful installer
+JSON, requires schema 1, and writes the fixed VM-local
+`state/tap-install-result.json` with the existing atomic JSON writer before
+echoing the original JSON. Parsing/schema/write failures are operation
+failures (nonzero process exit); the UI must read the file only after its
+operation reports success, so a prior result cannot masquerade as a new one.
+The UI bounds reads to 64 KiB and treats missing/invalid schema as unconfirmed.
+This handoff supports elevated runas launches, whose stdout cannot be
+redirected. No extra result-path argument is accepted. Without a VM, the
+CLI's stdout-only behavior is unchanged.
+
 Machine-wide private state is under the standard CommonApplicationData
 directory, `ReimsManager/Drivers/tap-windows-9.27.0`: `tap-adapter.json`
 records only an identified newly created PnP device, plus its interface GUID

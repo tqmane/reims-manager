@@ -101,6 +101,32 @@ try {
     [IO.File]::WriteAllText("$stub/install-tap.ps1",'param($Installer,$Adapter) if ($Installer) {throw "Unexpected file dialog argument"}; ''{"schema":1,"created":false,"reused":true,"owned":false,"restart_required":false,"bridge_created":false}''')
     $json=& "$stub/manager-backend.ps1" -Root "$root/nonexistent-engine" -Action InstallTap
     if (!($json | ConvertFrom-Json).reused -or (Test-Path "$root/nonexistent-engine")) {throw 'Automatic InstallTap required a VM or engine writes'}
+    # Elevated UI calls cannot capture stdout. The selected-VM action persists its
+    # successful result before echoing JSON, and write errors must fail the process.
+    Copy-Item "$PSScriptRoot/../manager-ports.ps1","$PSScriptRoot/../network-uplinks.ps1" $stub
+    [IO.File]::WriteAllText("$stub/start.ps1",@'
+param([switch]$FunctionsOnly)
+$VmRoot=$env:REIMS_VM_ROOT_OVERRIDE
+function Assert-ReimsVmStopped {}
+function Write-ReimsJson($Path,$Value) {
+    if (Test-Path (Join-Path $VmRoot 'state/fail-result-write')) { throw 'Fixture result write denied' }
+    New-Item -ItemType Directory -Force (Split-Path $Path) | Out-Null
+    $Value | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
+}
+'@)
+    $selectedVm=Join-Path $root 'selected VM'
+    $selectedJson=& "$stub/manager-backend.ps1" -Root "$root/nonexistent-engine" -VmDirectory $selectedVm -Action InstallTap
+    $resultPath=Join-Path $selectedVm 'state/tap-install-result.json'
+    $saved=Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+    if ($selectedJson -ne $json -or $saved.schema -ne 1 -or !$saved.reused) {throw 'Selected-VM result was not saved/echoed faithfully'}
+    $previous=[IO.File]::ReadAllText($resultPath)
+    [IO.File]::WriteAllText((Join-Path $selectedVm 'state/fail-result-write'),'authored denied-write fixture')
+    $childOutput=@(& (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File "$stub/manager-backend.ps1" -Root "$root/nonexistent-engine" -VmDirectory $selectedVm -Action InstallTap 2>&1)
+    if ($LASTEXITCODE -eq 0 -or [IO.File]::ReadAllText($resultPath) -ne $previous) {throw 'Result write failure returned success or changed prior result'}
+    Remove-Item -LiteralPath (Join-Path $selectedVm 'state/fail-result-write')
+    [IO.File]::WriteAllText("$stub/install-tap.ps1",'param($Installer,$Adapter) ''{"reused":true}''')
+    Reject { & "$stub/manager-backend.ps1" -Root "$root/nonexistent-engine" -VmDirectory $selectedVm -Action InstallTap } 'Unexpected TAP result schema'
+    if ([IO.File]::ReadAllText($resultPath) -ne $previous) {throw 'Schema failure replaced a previously confirmed result'}
     'PASS: pinned ZIP/signature/tool trust, VPN preservation, created-only ASCII naming, reuse, appearance race, exact-PnP rollback, reboot reporting, global no-VM action; no driver installed'
 } finally {
     $allowed=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")+[IO.Path]::DirectorySeparatorChar
