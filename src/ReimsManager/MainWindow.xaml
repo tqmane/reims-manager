@@ -782,8 +782,8 @@
                     <Button Content="現在の設定を読み込む" Click="LoadIdentityClick" Tag="GetIdentity"/>
                     <Button Content="新しく生成…" Click="GenerateIdentity" Tag="GenerateIdentity"/>
                   </WrapPanel>
-                  <TextBlock Text="OpenCore の起動設定" Style="{StaticResource SectionHeading}"/>
-                  <TextBlock Text="起動プロファイルを再適用します。VM の完全終了後に操作してください。" Style="{StaticResource MutedText}"/>
+                  <TextBlock Text="OpenCore の起動設定（macOS 26.x）" Style="{StaticResource SectionHeading}"/>
+                  <TextBlock Text="APFS / HFS の起動ディスクを検索する設定を再適用します。SMBIOS・保存済みの識別情報は保持します。VM の完全終了後に操作してください。" Style="{StaticResource MutedText}"/>
                   <Button x:Name="ApplyBootProfileButton" Content="起動プロファイルを再適用" Tag="ApplyBootProfile" Click="ActionClick" HorizontalAlignment="Left" Margin="0,16,0,0"/>
                   <TextBlock Text="GPU 互換ブリッジ" Style="{StaticResource SectionHeading}"/>
                   <TextBlock Text="macOS 26.x の共通 ABI に対応する GPU 互換ブリッジを適用・解除します。未対応の ABI や不明なレイアウトは安全に拒否します。" Style="{StaticResource MutedText}"/>
@@ -792,13 +792,7 @@
                     <Button x:Name="EnableGuestBridgeButton" Content="GPU 互換ブリッジを適用" Tag="EnableGuestBridge" Click="ActionClick"/>
                     <Button x:Name="DisableGuestBridgeButton" Content="GPU 互換ブリッジを解除" Tag="DisableGuestBridge" Click="ActionClick"/>
                   </WrapPanel>
-                  <TextBlock Text="26.4 向け Apple Account 設定（従来）" Style="{StaticResource SectionHeading}"/>
-                  <TextBlock Text="Tahoe 26.4 のサインイン互換設定を適用・解除できます。操作前に VM を完全終了してください。" Style="{StaticResource MutedText}"/>
-                  <WrapPanel Margin="0,16,0,0">
-                    <Button Content="26.4 用の設定を適用" Tag="EnableAppleAccount" Click="ActionClick"/>
-                    <Button Content="26.4 用の設定を解除" Tag="DisableAppleAccount" Click="ActionClick"/>
-                  </WrapPanel>
-                  <TextBlock Text="休止状態は使用しないでください。macOS 更新後は対応確認が必要です。" Style="{StaticResource MutedText}"/>
+                  <TextBlock Text="休止状態は使用しないでください。GPU 互換ブリッジは共通 ABI を実行時に検証し、不明なレイアウトは拒否します。" Style="{StaticResource MutedText}"/>
                   <Button Content="macOS の更新検出を修復" Tag="PrepareUpdates" Click="ActionClick" HorizontalAlignment="Left" Margin="0,18,0,0"/>
                 </StackPanel>
               </ScrollViewer>
