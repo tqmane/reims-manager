@@ -16,6 +16,7 @@ public partial class MainWindow
         await CheckSettingsDraftBehavior();
         await CheckNetworkChoices(folder);
         await CheckWifiCard(folder);
+        await CheckCursorAidCard(folder);
         double width = Width, height = Height;
         string title = VmTitle.Text;
         int count = machines.Count;
@@ -124,6 +125,31 @@ public partial class MainWindow
         }
     }
 #pragma warning restore WPF0001
+
+    private async Task CheckCursorAidCard(string folder)
+    {
+        if (!selfTest) throw new InvalidOperationException("Cursor aid fixture access only.");
+        string oldState=currentState, oldStateText=State.Text;
+        int tab=Tabs.SelectedIndex, device=Devices.SelectedIndex;
+        double width=Width, height=Height;
+        try {
+            Tabs.SelectedIndex=1;Devices.SelectedIndex=7;Width=MinWidth;Height=MinHeight;
+            if (EnableCursorAidButton.Tag?.ToString()!="EnableCursorAid" || DisableCursorAidButton.Tag?.ToString()!="DisableCursorAid")
+                throw new Exception("Cursor aid controls do not use the paired backend actions.");
+            foreach (string state in new[] { "unknown", "unprepared", "stopped", "shutdown", "paused", "running" }) {
+                currentState=state;State.Text=VmActionPolicy.StateLabel(state);UpdatePowerControls();
+                if (EnableCursorAidButton.IsEnabled!=(state=="running") || DisableCursorAidButton.IsEnabled!=(state=="running"))
+                    throw new Exception("Cursor aid controls are enabled outside a running VM.");
+            }
+            await ArrangeCheck();CursorAidCard.BringIntoView();await ArrangeCheck();
+            RequireInside(EnableCursorAidButton,HardwareScroll,"Cursor compatibility enable");
+            RequireInside(DisableCursorAidButton,HardwareScroll,"Cursor compatibility disable");
+            SaveImage(Path.Combine(folder,"cursor-aid-running-compact.png"));
+            File.WriteAllText(Path.Combine(folder,"cursor-aid-page-result.json"),"{\"existing_display_page\":true,\"explicit_on_off_actions\":true,\"running_only\":true,\"compact_actions_reachable\":true,\"no_guest_calls\":true}");
+        } finally {
+            currentState=oldState;State.Text=oldStateText;Tabs.SelectedIndex=tab;Devices.SelectedIndex=device;Width=width;Height=height;UpdatePowerControls();
+        }
+    }
 
     private async Task CheckDuplicateVmPaths(string folder)
     {

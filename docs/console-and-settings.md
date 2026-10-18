@@ -103,6 +103,23 @@ clipboard and snapshot pages are immediate operations; the footer states that
 Cancel does not undo them. Unknown state and guest-only shutdown are not treated
 as permission to write offline configuration.
 
+## Cursor compatibility display
+
+The display settings page offers explicit `カーソル互換表示` On/Off actions for
+screen mirroring. The guest helper draws the actual macOS cursor as ordinary
+Mac window content. Enabling is opt-in; its per-user LaunchAgent remains enabled
+across logins until explicitly disabled. It does not detect mirroring processes
+or sessions automatically; the helper can remain alive and idle. Turn it off
+when it is no longer needed.
+
+`EnableCursorAid` and `DisableCursorAid` use the existing selected-VM backend
+operation path without elevation or additional arguments. Both require a running
+VM, a configured engine and paired SSH. Failures use the normal operation error
+and log feedback. No new status field or inferred enabled-state indicator is used.
+The isolated display-page fixture checks button routing, policy and compact
+visibility without invoking a guest helper. It does not qualify real cursor
+appearance, screen mirroring, Dock behavior or latency.
+
 ## OpenCore controls
 
 The macOS 26.x boot profile controls APFS/HFS disk scanning. It rebuilds the

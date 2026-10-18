@@ -16,7 +16,7 @@ internal static class VmActionPolicy
             "Status" or "CollectLogs" => true,
             "Setup" or "ImportDisk" => state == "unprepared",
             "Start" => state is "stopped" or "shutdown",
-            "Clipboard" or "PowerOff" or "Restart" or "Pause" or "Pair" or "ApplyResolution" or "AttachUsb" => state == "running",
+            "Clipboard" or "PowerOff" or "Restart" or "Pause" or "Pair" or "ApplyResolution" or "AttachUsb" or "EnableCursorAid" or "DisableCursorAid" => state == "running",
             "ListUsb" or "DetachUsb" => state is "running" or "stopped",
             "Resume" => state is "paused" or "prelaunch" or "suspended",
             "Exit" => state is "running" or "shutdown",
@@ -48,6 +48,7 @@ internal static class VmActionPolicy
         "RemoveBridge" => "ブリッジを解除して NAT に復帰",
         "InstallTap" => "専用 TAP ドライバーを準備",
         "PrepareWifi" => "Wi-Fi 互換接続を準備", "DisableWifi" => "Wi-Fi 互換接続を解除",
+        "EnableCursorAid" => "カーソル互換表示を有効化", "DisableCursorAid" => "カーソル互換表示を無効化",
         "ApplyResolution" => "ゲストの解像度を変更", _ => action
     };
 }

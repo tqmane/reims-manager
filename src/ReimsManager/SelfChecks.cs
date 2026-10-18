@@ -58,7 +58,7 @@ internal static class SelfChecks
     private static void CheckPolicy()
     {
         foreach (string state in new[] { "unknown", "future-state", "paused", "prelaunch", "suspended", "shutdown", "running", "stopped", "unprepared" }) {
-            foreach (string action in new[] { "Start", "ForceExit", "SetHardware", "SnapshotRestore", "Setup", "ListUsb", "DetachUsb", "AttachUsb" }) {
+            foreach (string action in new[] { "Start", "ForceExit", "SetHardware", "SnapshotRestore", "Setup", "ListUsb", "DetachUsb", "AttachUsb", "EnableCursorAid", "DisableCursorAid" }) {
                 if (VmActionPolicy.CanRun(action, state, true, false) || VmActionPolicy.CanRun(action, state, false, true))
                     throw new Exception("An operation bypassed its engine/VM prerequisite");
             }
@@ -69,6 +69,8 @@ internal static class SelfChecks
             }
             foreach (string action in new[] { "SetHardware", "SnapshotRestore", "SetIdentity", "ExpandDisk", "ApplyBootProfile", "EnableGuestBridge", "DisableGuestBridge", "RemoveBridge", "InstallTap", "PrepareWifi", "DisableWifi" })
                 if (VmActionPolicy.CanRun(action, state, true, true) != (state == "stopped")) throw new Exception("An offline operation is enabled for " + state);
+            foreach (string action in new[] { "EnableCursorAid", "DisableCursorAid" })
+                if (VmActionPolicy.CanRun(action, state, true, true) != (state == "running")) throw new Exception("Cursor compatibility bypassed its running VM policy.");
             foreach (string action in new[] { "EnableAppleAccount", "DisableAppleAccount" })
                 if (VmActionPolicy.CanRun(action, state, true, true)) throw new Exception("A retired version-specific account patch remains a UI action.");
         }
