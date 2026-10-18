@@ -54,10 +54,15 @@ internal static class SelfChecks
 
     private static void CheckPolicy()
     {
-        foreach (string state in new[] { "unknown", "future-state", "paused", "shutdown", "running", "stopped", "unprepared" }) {
-            foreach (string action in new[] { "Start", "ForceExit", "SetHardware", "SnapshotRestore", "Setup" }) {
+        foreach (string state in new[] { "unknown", "future-state", "paused", "prelaunch", "suspended", "shutdown", "running", "stopped", "unprepared" }) {
+            foreach (string action in new[] { "Start", "ForceExit", "SetHardware", "SnapshotRestore", "Setup", "ListUsb", "DetachUsb", "AttachUsb" }) {
                 if (VmActionPolicy.CanRun(action, state, true, false) || VmActionPolicy.CanRun(action, state, false, true))
                     throw new Exception("An operation bypassed its engine/VM prerequisite");
+            }
+            foreach (string action in new[] { "ListUsb", "DetachUsb", "AttachUsb" }) {
+                bool expected = state == "running" || state == "stopped" && action != "AttachUsb";
+                if (VmActionPolicy.CanRun(action, state, true, true) != expected)
+                    throw new Exception("USB listing/removal/attachment policy failed: " + action + " in " + state);
             }
             foreach (string action in new[] { "SetHardware", "SnapshotRestore", "SetIdentity", "ExpandDisk", "ApplyBootProfile", "EnableGuestBridge", "DisableGuestBridge" })
                 if (VmActionPolicy.CanRun(action, state, true, true) != (state == "stopped")) throw new Exception("An offline operation is enabled for " + state);
