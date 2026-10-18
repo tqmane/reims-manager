@@ -7,6 +7,7 @@ param(
     [switch]$GenerateIdentity,
     [string]$IdentityFile,
     [ValidateSet('Keep','Enable','Disable')][string]$AppleAccountCompatibility = 'Keep',
+    [switch]$ApplyBootProfile,
     [switch]$Rebuild
 )
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
@@ -14,6 +15,7 @@ Assert-ReimsVmStopped
 if ($GenerateIdentity -and !$Rebuild) { throw 'Use -GenerateIdentity with -Rebuild.' }
 if ($IdentityFile -and (!$Rebuild -or $GenerateIdentity)) { throw 'Use -IdentityFile with -Rebuild, without -GenerateIdentity.' }
 if ($AppleAccountCompatibility -ne 'Keep' -and !$Rebuild) { throw 'Use -AppleAccountCompatibility with -Rebuild.' }
+if ($ApplyBootProfile -and !$Rebuild) { throw 'Use -ApplyBootProfile with -Rebuild.' }
 $downloads = Join-Path $ProjectRoot '.work/downloads'
 $pin = (Get-ReimsEngineLock).opencore
 if ($Version -ne $pin.version) { throw 'Use the OpenCore version qualified with this manager.' }
@@ -32,6 +34,17 @@ $QemuImg = Get-ReimsTool 'qemu-img.exe' $QemuImg
 $python = Get-ReimsTool 'python.exe'
 $destination = Join-Path $VmRoot "firmware/opencore-$Version"
 $efiRoot = Join-Path $destination 'root'
+$image = Join-Path $destination 'OpenCore.img'
+$manifestPath = Join-Path $VmRoot 'state/opencore.json'
+if (Test-Path -LiteralPath $manifestPath) {
+    $active = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+    if ($active.version -ne $Version) { throw 'Keep the installed OpenCore version when rebuilding an existing VM.' }
+    $activeConfig = Assert-ReimsArtifactPath $active.config
+    $efiRoot = Split-Path (Split-Path (Split-Path $activeConfig))
+    if ([IO.Path]::GetFullPath((Join-Path $efiRoot 'EFI/OC/config.plist')) -ne $activeConfig) { throw 'Unexpected active OpenCore configuration layout.' }
+    $destination = Split-Path $efiRoot
+    $image = Assert-ReimsArtifactPath $active.image
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $efiRoot 'EFI/BOOT'), (Join-Path $efiRoot 'EFI/OC/Drivers') | Out-Null
 foreach ($relative in @('BOOT/BOOTx64.efi', 'OC/OpenCore.efi', 'OC/Drivers/OpenRuntime.efi', 'OC/Drivers/OpenPartitionDxe.efi', 'OC/Drivers/OpenHfsPlus.efi')) {
     Copy-Item -LiteralPath (Join-Path $package "X64/EFI/$relative") -Destination (Join-Path $efiRoot "EFI/$relative") -Force
@@ -76,6 +89,16 @@ manifest.write_text(json.dumps(i, indent=2) + '\n', encoding='utf-8')
     "Generated a VM-specific identity; preserved SystemUUID. Backup: $backup"
 }
 $validate = Join-Path $package 'Utilities/ocvalidate/ocvalidate.exe'
+if ($ApplyBootProfile) {
+    $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-boot-profile-' + [guid]::NewGuid().ToString('N') + '.plist')
+    Copy-Item -LiteralPath $plist -Destination $backup
+    $candidate = "$backup.candidate"
+    & $python -X utf8 "$PSScriptRoot/opencore/boot-policy.py" $plist $candidate
+    if ($LASTEXITCODE -ne 0) { throw 'Boot profile update failed; the original config is unchanged.' }
+    Invoke-ReimsTool $validate @($candidate) | Out-Null
+    Move-Item -LiteralPath $candidate -Destination $plist -Force
+    "起動項目を APFS / HFS に限定しました。変更前の設定: $backup"
+}
 if ($IdentityFile) {
     [void](Assert-ReimsArtifactPath $IdentityFile)
     $backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-edit-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
@@ -123,9 +146,7 @@ if ($AppleAccountCompatibility -ne 'Keep') {
 }
 $validation = Invoke-ReimsTool $validate @($plist)
 $validation | Set-Content -LiteralPath (Join-Path $destination 'ocvalidate.log') -Encoding utf8NoBOM
-$image = Join-Path $destination 'OpenCore.img'
 $configHash = (Get-FileHash -LiteralPath $plist).Hash
-$manifestPath = Join-Path $VmRoot 'state/opencore.json'
 if (!$Rebuild -and (Test-Path -LiteralPath $image) -and (Test-Path -LiteralPath $manifestPath)) {
     $previous = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     if ($previous.image -eq $image -and ($previous.config_sha256 -ne $configHash -or

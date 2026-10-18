@@ -74,6 +74,13 @@ The authored configuration changes are kept as executable source:
 
 - `backend/opencore/base.py`: derives a fresh VM configuration from the
   official `Docs/Sample.plist`, with iMac20,1, firmware quirks and drivers.
+  Its `ScanPolicy=0x301` combines filesystem lock (bit 0), APFS (bit 8),
+  and HFS (bit 9); FAT/ESP entries cannot recursively start OpenCore itself.
+  Auxiliary entries remain visible for installers. Existing VMs keep their
+  custom scan policy on ordinary rebuilds. **Repair boot entries** explicitly
+  applies this scan profile, preserving identity and auxiliary visibility;
+  the previous configuration is backed up first. Rebuilds follow the active
+  configuration/image recorded in the VM's OpenCore manifest.
 - `backend/opencore/apple-account.py`: the existing reversible Apple
   Account kernel-string compatibility patch, limited to Darwin **25.4.0**.
   It does not change SIP or blindly extend the OS version bounds.
