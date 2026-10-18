@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using Microsoft.Win32;
 
@@ -11,17 +12,31 @@ public partial class EngineSetupWindow : Window
     private bool installing;
     public string? InstalledDirectory { get; private set; }
 
-    public EngineSetupWindow()
+    internal static string DefaultDestination {
+        get {
+            using var pin = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "scripts/engine-lock.json")));
+            string id = pin.RootElement.GetProperty("id").GetString() ?? "";
+            if (!System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-z0-9][a-z0-9-]{0,127}$")) throw new InvalidDataException("エンジンの固定版情報を読み込めません。");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reims", "Engines", id);
+        }
+    }
+
+    public EngineSetupWindow(bool continueToVm = false)
     {
         InitializeComponent();
-        Destination.Text=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Reims","Engines","ReimsEngine");
+        Destination.Text=DefaultDestination;
+        if (continueToVm) {
+            Title="1 / 3  エンジンの準備";
+            InstallButton.Content="ダウンロードして続ける";
+            Status.Text="必要な部品を固定版から取得します。導入後、そのまま VM の作成に進みます。";
+        }
         Closing += (_,e) => { if (installing) e.Cancel=true; };
     }
 
     private void BrowseDestination(object sender, RoutedEventArgs e)
     {
         var dialog=new OpenFolderDialog { Title="エンジンの親フォルダーを選択" };
-        if (dialog.ShowDialog(this)==true) Destination.Text=Path.Combine(dialog.FolderName,"ReimsEngine");
+        if (dialog.ShowDialog(this)==true) Destination.Text=Path.Combine(dialog.FolderName,Path.GetFileName(DefaultDestination));
     }
 
     private void BrowseArchive(object sender, RoutedEventArgs e)

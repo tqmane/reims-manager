@@ -24,7 +24,7 @@
   </Border>
   <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
    <Button x:Name="CloseButton" Content="閉じる" Click="CloseWindow" Margin="0,0,8,0" Padding="18,8"/>
-   <Button x:Name="InstallButton" Content="セットアップ" Click="Install" Padding="18,8"/>
+   <Button x:Name="InstallButton" Content="セットアップ" Click="Install" Padding="18,8" IsDefault="True"/>
   </StackPanel>
  </Grid></Grid>
 </Window>

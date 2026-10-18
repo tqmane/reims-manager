@@ -399,7 +399,7 @@
           <ScrollViewer Grid.Row="2" x:Name="Welcome" VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="640" HorizontalAlignment="Left" Margin="24,32,24,24">
               <TextBlock Text="ワークスペースを始める" FontSize="26" FontWeight="SemiBold" Margin="0,0,0,10"/>
-              <TextBlock Text="新しい macOS 環境を作成するか、保存済みの仮想マシンを開きます。" Style="{StaticResource MutedText}" Margin="0,0,0,28"/>
+              <TextBlock Text="必要なエンジンの取得、Windows の準備、インストーラーの選択を順番に案内します。導入済みのエンジンは再利用できます。" Style="{StaticResource MutedText}" Margin="0,0,0,28"/>
               <Button Click="NewVm" Style="{StaticResource WelcomeAction}">
                 <Grid>
                   <Grid.ColumnDefinitions>
@@ -408,8 +408,8 @@
                   </Grid.ColumnDefinitions>
                   <TextBlock Text="" Style="{StaticResource CommandIcon}" FontSize="24"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="新しい仮想マシン" FontSize="17" FontWeight="SemiBold"/>
-                    <TextBlock Text="インストーラーから作成" Style="{StaticResource MutedText}" Margin="0,5,0,0"/>
+                    <TextBlock x:Name="NewVmWelcomeTitle" Text="macOS をセットアップ" FontSize="17" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="NewVmWelcomeDescription" Text="エンジンの準備から始める" Style="{StaticResource MutedText}" Margin="0,5,0,0"/>
                   </StackPanel>
                 </Grid>
               </Button>
@@ -826,7 +826,7 @@
                   </DockPanel>
                   <TextBlock Text="2  ディスクを準備" Style="{StaticResource SectionHeading}"/>
                   <TextBlock Text="新規ディスクの容量 (GiB)" Margin="0,0,0,8"/>
-                  <TextBox x:Name="NewDiskSize" Text="128" Width="160" HorizontalAlignment="Left"/>
+                  <TextBox x:Name="NewDiskSize" Text="300" Width="160" HorizontalAlignment="Left"/>
                   <TextBlock Text="3  作成後の動作" Style="{StaticResource SectionHeading}"/>
                   <CheckBox x:Name="StartAfterSetup" IsChecked="True" Content="作成後、インストーラーを起動する" Margin="0,0,0,12"/>
                   <CheckBox x:Name="ConnectIso" Content="インストーラーを接続して起動" Margin="0,0,0,12"/>

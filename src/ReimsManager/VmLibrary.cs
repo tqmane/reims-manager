@@ -12,6 +12,24 @@ internal sealed record VmEntry(string Name, string File, string Directory, strin
 
 internal static class VmLibrary
 {
+    internal static string DefaultRoot {
+        get {
+            string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            return Path.Combine(documents.Length > 0 ? documents : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reims", "Virtual Machines");
+        }
+    }
+
+    internal static VmEntry PlanCreate(string parent, string name)
+    {
+        if (!Path.IsPathFullyQualified(parent)) throw new ArgumentException("保存先は参照ボタンから選択するか、完全なパスを入力してください。");
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 80 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            name != name.TrimEnd('.', ' ') || name is "." or ".." ||
+            System.Text.RegularExpressions.Regex.IsMatch(name.Split('.')[0], "^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            throw new ArgumentException("VM の名前を確認してください。区切り文字や Windows の予約名は使用できません。");
+        string directory = Path.Combine(Path.GetFullPath(parent), name);
+        return Validate(Path.Combine(directory, name + ".reimsvm"), name, directory);
+    }
+
     internal static VmEntry Registered(string file)
     {
         try { return Open(file); }
