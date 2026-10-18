@@ -13,7 +13,9 @@ Get-Content .\status.json
 ```
 
 Use the actual Manager PID. `--pid` may be omitted only when exactly one other
-Manager process exists in the session. Commands are `status`, `start`,
+Manager process from the same executable path exists in the session. Executable
+paths are compared case-insensitively; inaccessible processes are skipped during
+discovery and rejected as explicit targets. Commands are `status`, `start`,
 `poweroff`, `restart`, `exit` (normal QEMU exit), `pause`, `resume`,
 `dock-console` and `popout-console`. No command force-kills a VM, changes the
 selected VM, sends guest keys, executes arbitrary code or accepts credentials.

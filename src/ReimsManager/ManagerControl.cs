@@ -14,6 +14,15 @@ internal static class ManagerControl
     internal static readonly string[] Commands = ["status", "start", "poweroff", "restart", "exit", "pause", "resume", "dock-console", "popout-console"];
     internal static string PipeName(int pid) => $"ReimsManager.{Process.GetCurrentProcess().SessionId}.{pid}";
 
+    internal static bool IsManager(Process process)
+    {
+        try {
+            using var current = Process.GetCurrentProcess();
+            return process.Id != current.Id && !process.HasExited && process.SessionId == current.SessionId &&
+                Environment.ProcessPath is { } executable && string.Equals(process.MainModule?.FileName, executable, StringComparison.OrdinalIgnoreCase);
+        } catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { return false; }
+    }
+
     internal static JsonElement Failure(string code, string message, bool mayContinue = false) => JsonSerializer.SerializeToElement(new {
         schema = 1, ok = false, error = code, message, operation_may_continue = mayContinue
     });
@@ -40,9 +49,7 @@ internal static class ManagerControl
     {
         if (!Commands.Contains(command)) throw new ArgumentException("Unsupported control command.");
         using var target = Process.GetProcessById(pid);
-        using var current = Process.GetCurrentProcess();
-        if (target.SessionId != current.SessionId || target.ProcessName != current.ProcessName || pid == current.Id)
-            throw new ArgumentException("Choose a Reims Manager process in this Windows session.");
+        if (!IsManager(target)) throw new ArgumentException("Choose the same Reims Manager executable in this Windows session.");
         using var pipe = new NamedPipeClientStream(".", PipeName(pid), PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         using var connection = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await pipe.ConnectAsync(connection.Token);
@@ -74,8 +81,7 @@ internal static class ManagerControl
                 var candidates = new List<int>();
                 foreach (var process in Process.GetProcessesByName(current.ProcessName)) {
                     using (process) {
-                        try { if (process.Id != current.Id && process.SessionId == current.SessionId) candidates.Add(process.Id); }
-                        catch (InvalidOperationException) { }
+                        if (IsManager(process)) candidates.Add(process.Id);
                     }
                 }
                 if (candidates.Count != 1) throw new ArgumentException("Specify --pid: exactly one running Manager was not found.");

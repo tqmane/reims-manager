@@ -15,6 +15,7 @@ internal static class SelfChecks
         CheckPolicy();
         await CheckBackend();
         await BackendPipeChecks.Run(Path.Combine(folder, "backend-pipe-checks"));
+        await ManagerControlChecks.Run(Path.Combine(folder, "control-target-checks"));
         CheckSafeCreation(folder);
         await CheckQmp(false);
         await CheckQmp(true);
