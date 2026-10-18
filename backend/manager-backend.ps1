@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','GetPrerequisites','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -25,6 +25,11 @@ param(
     [switch]$WithInstaller
 )
 $ErrorActionPreference='Stop'
+if ($Action -eq 'GetNetworkUplinks') {
+    . "$PSScriptRoot/network-uplinks.ps1"
+    Get-ReimsNetworkInventory | ConvertTo-Json -Depth 5 -Compress
+    return
+}
 if ($Action -eq 'GetPrerequisites') {
     . "$PSScriptRoot/host-prerequisites.ps1"
     Get-ReimsPrerequisites $Root $ToolsRoot $Cpus $MemoryMiB | ConvertTo-Json -Depth 6 -Compress
@@ -48,6 +53,7 @@ $env:REIMS_PROJECT_ROOT_OVERRIDE = [IO.Path]::GetFullPath($Root)
 if ($ToolsRoot) { $env:REIMS_MANAGER_TOOLS_ROOT = [IO.Path]::GetFullPath($ToolsRoot) }
 $env:REIMS_VM_ROOT_OVERRIDE = if ($VmDirectory) { [IO.Path]::GetFullPath($VmDirectory) } else { '' }
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
+. "$PSScriptRoot/network-uplinks.ps1"
 
 function Get-GuestEndpoint($Config) {
     if ((Get-ReimsNetworkMode $Config) -eq 'nat') { return @{host='127.0.0.1';port=$Config.ssh_port} }
@@ -125,6 +131,7 @@ if ($Action -eq 'Status') {
         audio=$(if ($config -and $config.PSObject.Properties['audio']) {$config.audio} else {'none'});
         with_installer=$installerAttached; network_adapter=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.adapter} else {''});
         guest_host=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.guest_host} else {''});
+        network_uplink_id=$(if ($config -and $config.PSObject.Properties['network'] -and $config.network.PSObject.Properties['physical_adapter_id']) {$config.network.physical_adapter_id} else {''});
         resolution=$(if ($config) {$config.resolution} else {'1920x1080'});
         network=$(if ($config) {Get-ReimsNetworkMode $config} else {'nat'});
         iso=$(if ($config) {$config.iso} else {''})} | ConvertTo-Json -Depth 5 -Compress
@@ -249,7 +256,7 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw '実在する TAP-Windows アダプターを選択してください。' }
         if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid macOS IP / hostname.' }
         $config = Get-ReimsVmConfig
-        $config | Add-Member -Force network @{mode=$Network; adapter=$Adapter; guest_host=$GuestHost}
+        $config | Add-Member -Force network (Get-ReimsSavedNetwork $config $Network $Adapter $GuestHost $PhysicalAdapter)
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         'ネットワーク設定を保存しました。次回起動時に適用します。'
     }
@@ -260,6 +267,7 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         if ($Cpus -gt $hostInfo.NumberOfLogicalProcessors -or [long]$MemoryMiB * 1MB -ge $hostInfo.TotalPhysicalMemory) { throw 'ホストの CPU / メモリ容量以内で設定してください。' }
         if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
         if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid guest address.' }
+        $selectedNetwork=Get-ReimsSavedNetwork (Get-ReimsVmConfig) $Network $Adapter $GuestHost $PhysicalAdapter
         if ($WithInstaller -and !$Iso) { throw 'インストーラーを接続する場合は ISO を選択してください。' }
         if ($Iso) { & "$PSScriptRoot/prepare-vm.ps1" -Iso $Iso | Out-Null }
         $config = Get-ReimsVmConfig
@@ -270,7 +278,7 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         $config | Add-Member -Force microphone ([bool]$Microphone)
         $config | Add-Member -Force usb_backend $UsbBackend
         $config | Add-Member -Force connect_installer ([bool]$WithInstaller)
-        $config | Add-Member -Force network @{mode=$Network;adapter=$Adapter;guest_host=$GuestHost}
+        $config | Add-Member -Force network $selectedNetwork
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         '仮想マシン設定を保存しました。次回起動に適用します。'
     }
@@ -305,10 +313,8 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     CreateBridge {
         Assert-ReimsVmStopped
         Assert-Administrator
-        if ($Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
-        $physical = @(Get-NetAdapter | Where-Object { $_.Name -eq $PhysicalAdapter -and $_.HardwareInterface })
-        if ($physical.Count -ne 1) { throw '実在する物理ネットワークアダプターを選択してください。' }
-        Invoke-ReimsTool "$env:SystemRoot/System32/netsh.exe" @('bridge','create',$Adapter,$PhysicalAdapter)
+        $bridge=New-ReimsHostBridge $Adapter $PhysicalAdapter
+        "Windows bridge created: $($bridge.bridge_id). Guest DHCP/LAN connectivity remains unverified; Wi-Fi depends on its driver and access point."
     }
     InstallTap {
         Assert-Administrator
