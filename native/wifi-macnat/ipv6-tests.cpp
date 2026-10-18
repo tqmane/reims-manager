@@ -54,6 +54,15 @@ int main(){
         check(!std::equal(before.begin()+56,before.begin()+58,b.begin()+56));
     }
     auto ns=nd(135,local,solicited(router));
+    const auto ns_interests=guest_multicast_interests(span(ns),guest);
+    check(ns_interests.size()==1 && ns_interests[0]==solicited(local)); // Not the neighbor's target address.
+    auto dad_interest=nd(135,ip6{},solicited(global),global,false);
+    const auto tentative_interests=guest_multicast_interests(span(dad_interest),guest);
+    check(tentative_interests.size()==1 && tentative_interests[0]==solicited(global));
+    auto invalid_interest=ns;invalid_interest.back()^=1;
+    check(guest_multicast_interests(span(invalid_interest),guest).empty());
+    write_mac(span(invalid_interest),6,peer);check(guest_multicast_interests(span(invalid_interest),guest).empty());
+    check(guest_multicast_interests(bytes(ns.data(),ns.size()-1),guest).empty());
     for(int defect=0;defect<6;++defect){
         translator relay(wifi,guest);auto b=ns;
         if(defect==0)b.back()^=1; // Bad original checksum must not be laundered.

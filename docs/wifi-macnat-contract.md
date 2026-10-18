@@ -101,13 +101,32 @@ selected NDIS modes. Per-adapter mutexes prevent a second helper using the
 same interfaces. No global packet-filter table is installed or reset.
 
 Each selected capture attaches an event and listen mode. The TAP's hardware
-filter is temporarily ORed with PROMISCUOUS; the selected Wi-Fi filter is
-ORed with ALL_MULTICAST for guest solicited-node/other multicast reception.
-Both original values are saved, set results are read back exactly, and an
-unconfirmed required filter refuses readiness. Native80211 promiscuous mode
-and multicast-list changes are not used. Ready/stop/error session records
-include `hardware_filters` with original/requested/read-back/restore results.
-Actual adapter/AP multicast acceptance remains a hardware qualification gate.
+filter is temporarily ORed with PROMISCUOUS and read back. An Ethernet-medium
+uplink retains the verified ALL_MULTICAST request path. A positively identified
+Native80211 medium instead uses normal listen plus a helper-owned Winsock
+IPv6 datagram socket: ALL_MULTICAST is not mandatory for that medium and its
+zero filter snapshot is not proof of no reception. SDK logical medium and
+GetIfEntry2 system/physical medium values select the class and are recorded.
+Native80211 hardware filters are observed, never set or restored by the
+helper. Their receipt uses `requested=null`, not a fabricated successful bit.
+
+The owned socket joins ff02::1 and ff02::fb on only the selected Wi-Fi index.
+Before forwarding validated guest IPv6 traffic it joins the source's
+solicited-node group; validated DAD targets are joined without assigned-address
+learning, and NA targets are handled as advertised addresses. Memberships are
+bounded with idle-group eviction; the fixed groups remain. Closing only this
+socket releases only its own references, leaving other applications' joins
+alone. There is no raw/promiscuous Native80211 mode, direct multicast-list
+replacement, route change, or system bridge. Other application-specific
+multicast groups beyond this set are not claimed to be subscribed.
+
+Ready/stop/error session records include `hardware_filters` with
+original/requested/read-back/restore results and `receive` with selected
+strategy, medium values, owned socket/group counts and release result.
+`multicast_delivery=requires-functional-validation` explicitly distinguishes
+successful socket/capture initialization from actual adapter/AP delivery.
+Group-count updates are committed when a new group is joined.
+Actual RA and solicited-node multicast reception remains a hardware gate.
 The helper signals ready after both captures start;
 Start resumes QEMU only then (unless explicitly Paused). Retained QEMU
 power-on restarts/validates the relay before resuming. Guest power-off may
@@ -218,3 +237,13 @@ These results do not establish the new IPv6 path. IPv6 multicast/RA/DAD,
 addressing/DNS/Internet and exact filter/policy restoration still require
 real hardware qualification after integration. CPU packet/backend fixtures
 are not that proof.
+
+The initial actual Native80211 attempt returned success setting Ethernet
+ALL_MULTICAST but read back zero and refused guest resume, with owned cleanup
+confirmed. That does not establish IPv6 hardware incapability. The membership
+candidate follows the Native80211/normal Winsock contracts; it still needs
+source-matched functional qualification. `reims-wifi-macnat --inspect <braced
+TAP GUID> <braced Wi-Fi GUID>` queries only the two selected interfaces'
+medium/filter/mode metadata and performs no capture, socket join or set.
+Primary references: [NDIS packet filters](https://learn.microsoft.com/en-us/windows-hardware/drivers/network/oid-gen-current-packet-filter),
+[Winsock IPv6 group options](https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-ipv6-socket-options).
