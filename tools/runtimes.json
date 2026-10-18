@@ -12,6 +12,12 @@
       "file": "python-3.14.8-embed-amd64.zip",
       "url": "https://www.python.org/ftp/python/3.14.8/python-3.14.8-embed-amd64.zip",
       "sha256": "a93abe456ab01bd96d7a085b3cdb6566b3063f4241360d114142fbdb07f0a310"
+    },
+    {
+      "name": "cursor-aid",
+      "file": "ReimsCursorAid.zip",
+      "url": "https://github.com/tqmane/reims-manager/releases/download/cursor-aid-cc11308-1/ReimsCursorAid.zip",
+      "sha256": "493cc1e280b1190e57782cccdd1abdac981fc010f08ad350fb6afee87c587c47"
     }
   ]
 }

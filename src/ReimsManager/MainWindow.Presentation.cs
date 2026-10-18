@@ -70,6 +70,9 @@ public partial class MainWindow
         SessionRestartButton.IsEnabled = CanOperate("Restart") && !applyingSettings;
         SessionPopOutButton.IsEnabled = CanOperate("Console") && !applyingSettings;
         SessionCursorAidButton.IsEnabled = CanOperate("EnableCursorAid") && !applyingSettings;
+        foreach (var item in SessionCursorMenuButton.ContextMenu.Items.OfType<MenuItem>())
+            if (item.Tag is string action) item.IsEnabled = CanOperate(action) && !applyingSettings;
+        SessionCursorMenuButton.IsEnabled = !IsUiBusy && HasVm;
         LibraryCommand.IsEnabled = !IsUiBusy;
         SessionSettingsButton.IsEnabled = SessionUsbButton.IsEnabled = SessionSharingButton.IsEnabled = SessionSnapshotButton.IsEnabled = HasVm && !IsUiBusy;
         bool editHardware = !IsUiBusy && loadedHardware && CanOperate("SetHardware");

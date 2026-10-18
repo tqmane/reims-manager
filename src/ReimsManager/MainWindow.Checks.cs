@@ -144,7 +144,17 @@ public partial class MainWindow
             await ArrangeCheck();CursorAidCard.BringIntoView();await ArrangeCheck();
             RequireInside(EnableCursorAidButton,HardwareScroll,"Cursor compatibility enable");
             RequireInside(DisableCursorAidButton,HardwareScroll,"Cursor compatibility disable");
+            MoveCursorExtendedButton.BringIntoView();await ArrangeCheck();
+            RequireInside(MoveCursorMainButton,HardwareScroll,"Main display cursor move");
+            RequireInside(MoveCursorExtendedButton,HardwareScroll,"Extended display cursor move");
+            ShowHostCursorButton.BringIntoView();await ArrangeCheck();
+            RequireInside(HideHostCursorButton,HardwareScroll,"Hide host cursor");
+            RequireInside(ShowHostCursorButton,HardwareScroll,"Show host cursor");
             SaveImage(Path.Combine(folder,"cursor-aid-running-compact.png"));
+            ExtendedDisplayCard.BringIntoView();await ArrangeCheck();
+            RequireInside(LightenExtendedDisplayButton,HardwareScroll,"Extended display performance preset");
+            RequireInside(RestoreExtendedDisplayButton,HardwareScroll,"Extended display restoration");
+            SaveImage(Path.Combine(folder,"extended-display-compact.png"));
             File.WriteAllText(Path.Combine(folder,"cursor-aid-page-result.json"),"{\"existing_display_page\":true,\"explicit_on_off_actions\":true,\"running_only\":true,\"compact_actions_reachable\":true,\"no_guest_calls\":true}");
         } finally {
             currentState=oldState;State.Text=oldStateText;Tabs.SelectedIndex=tab;Devices.SelectedIndex=device;Width=width;Height=height;UpdatePowerControls();
@@ -231,7 +241,7 @@ public partial class MainWindow
             OperationLog.Visibility != Visibility.Collapsed || WorkspaceStatusBar.Visibility != Visibility.Collapsed ||
             ConsoleFooter.Visibility != Visibility.Collapsed || SettingsPage.Visibility != Visibility.Collapsed)
             throw new Exception("Powered-on view still contains management chrome");
-        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionCursorAidButton, SessionUsbButton, SessionSharingButton, SessionSnapshotButton, SessionPopOutButton, CaptionCommands })
+        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionCursorAidButton, SessionCursorMenuButton, SessionUsbButton, SessionSharingButton, SessionSnapshotButton, SessionPopOutButton, CaptionCommands })
             RequireInside(control, TitleBar, "Session title bar");
         if (SessionCursorAidButton.Tag?.ToString()!="EnableCursorAid" || SessionCursorAidButton.Content?.ToString()!="カーソルを表示" ||
             SessionCursorAidButton.IsEnabled!=(currentState=="running" && !IsUiBusy))

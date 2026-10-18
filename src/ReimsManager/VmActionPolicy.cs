@@ -16,7 +16,8 @@ internal static class VmActionPolicy
             "Status" or "CollectLogs" => true,
             "Setup" or "ImportDisk" => state == "unprepared",
             "Start" => state is "stopped" or "shutdown",
-            "Clipboard" or "PowerOff" or "Restart" or "Pause" or "Pair" or "ApplyResolution" or "AttachUsb" or "EnableCursorAid" or "DisableCursorAid" => state == "running",
+            "Clipboard" or "PowerOff" or "Restart" or "Pause" or "Pair" or "ApplyResolution" or "AttachUsb" or "EnableCursorAid" or "DisableCursorAid" or "MoveCursorToMainDisplay" or "MoveCursorToExtendedDisplay" or "HideHostCursor" or "LightenExtendedDisplay" or "RestoreExtendedDisplay" => state == "running",
+            "ShowHostCursor" => state is "running" or "paused" or "stopped" or "shutdown" or "prelaunch" or "suspended",
             "ListUsb" or "DetachUsb" => state is "running" or "stopped",
             "Resume" => state is "paused" or "prelaunch" or "suspended",
             "Exit" => state is "running" or "shutdown",
@@ -49,6 +50,9 @@ internal static class VmActionPolicy
         "InstallTap" => "専用 TAP ドライバーを準備",
         "PrepareWifi" => "Wi-Fi 互換接続を準備", "DisableWifi" => "Wi-Fi 互換接続を解除",
         "EnableCursorAid" => "カーソル互換表示を有効化", "DisableCursorAid" => "カーソル互換表示を無効化",
+        "MoveCursorToMainDisplay" => "カーソルを VM 本体の画面へ移動", "MoveCursorToExtendedDisplay" => "カーソルを拡張画面へ移動",
+        "HideHostCursor" => "Windows 側のカーソルを隠す", "ShowHostCursor" => "Windows 側のカーソルを表示",
+        "LightenExtendedDisplay" => "拡張画面を軽量化", "RestoreExtendedDisplay" => "拡張画面の画質を戻す",
         "ApplyResolution" => "ゲストの解像度を変更", _ => action
     };
 }
