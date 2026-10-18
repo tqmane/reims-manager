@@ -47,3 +47,18 @@ official ZIP/signature/devcon installation is a separate integration owned
 by the host installer work. A dedicated TAP must already be available for
 `CreateBridge`. CPU fixtures simulate inventory/native operations/rollback;
 actual wired/Wi-Fi bridge connectivity has not been tested by this change.
+
+## Manager controls
+
+The network editor and bridge-preparation page show physical friendly names,
+Wi-Fi/wired type and link state; the persisted selection is the interface GUID.
+Internal TAP selection lives in an expandable detail area. Changing a dropdown
+only stages a setting. Host bridge creation remains a separate stopped-VM
+action with an explicit interruption warning and elevation, followed by applying
+the VM's bridged-mode settings. No TAP belonging to another VPN is auto-selected.
+
+NAT stays the default and does not require an uplink selection. Existing legacy
+TAP-only configurations remain saveable, and an unavailable saved physical ID
+is displayed as missing instead of silently dropping the selection. Cancel
+restores the staged GUID along with the other hardware fields. Inventory
+failures preserve the current configuration and do not mark the VM itself dead.

@@ -23,6 +23,7 @@ public partial class MainWindow
         var forwarded = new List<string>();
         controlFixtureBackend = async action => {
             if (!Dispatcher.CheckAccess()) throw new Exception("Control bypassed the UI dispatcher.");
+            if (action == "GetNetworkUplinks") return "{\"schema\":1,\"uplinks\":[],\"tap_adapters\":[]}";
             if (action == "Status") return JsonSerializer.Serialize(new {
                 state = fixtureState, prepared = true, snapshots = Array.Empty<string>(), taps = Array.Empty<string>(), adapters = Array.Empty<string>(),
                 runtime = fixtureState == "stopped" ? null : new { pid = child.Id, start_ticks = child.StartTime.ToUniversalTime().Ticks, executable = Environment.ProcessPath! },

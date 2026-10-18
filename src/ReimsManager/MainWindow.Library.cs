@@ -28,15 +28,16 @@ public partial class MainWindow
         UpdatePowerControls();
     }
 
-    private void AddVm(VmEntry entry)
+    private bool AddVm(VmEntry entry)
     {
         int existing = machines.FindIndex(x => string.Equals(x.File, entry.File, StringComparison.OrdinalIgnoreCase));
         if (existing < 0) machines.Add(entry); else machines[existing] = entry;
         settings.VirtualMachines = settings.VirtualMachines.Append(entry.File).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        SavePreferences();
+        bool saved = SavePreferences();
         LibrarySearch.Clear();
         UpdateLibraryView();
         Library.SelectedItem = machines.First(x => string.Equals(x.File, entry.File, StringComparison.OrdinalIgnoreCase));
+        return saved;
     }
 
     private async void VmChanged(object sender, SelectionChangedEventArgs e)
@@ -120,22 +121,69 @@ public partial class MainWindow
     {
         if (!HasEngine) { ShowError("先に Reims エンジンを設定してください。VM ファイルはまだ作成していません。"); return null; }
         var dialog = new SaveFileDialog { Filter = "Reims 仮想マシン|*.reimsvm", DefaultExt = ".reimsvm", AddExtension = true,
-            FileName = "macOS.reimsvm", Title = "新しい VM の名前と保存先", OverwritePrompt = true };
+            FileName = "macOS.reimsvm", Title = "新しい VM の名前と保存先", OverwritePrompt = true,
+            InitialDirectory = Directory.Exists(VmLibrary.DefaultRoot) ? VmLibrary.DefaultRoot : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) };
         if (dialog.ShowDialog(this) != true || !DiscardPendingChanges()) return null;
         string directory = Path.Combine(Path.GetDirectoryName(dialog.FileName)!, Path.GetFileNameWithoutExtension(dialog.FileName) + ".data");
         try {
             var entry = VmLibrary.Create(dialog.FileName, directory);
             hardwareDirty = identityDirty = false;
-            AddVm(entry); return entry;
+            return AddVm(entry) ? entry : null;
         } catch (Exception error) { ShowError(error.Message); return null; }
     }
 
-    private void NewVm(object sender, RoutedEventArgs e) { if (!IsUiBusy && CreateVm() is not null) Tabs.SelectedIndex = 5; }
+    private async void NewVm(object sender, RoutedEventArgs e)
+    {
+        if (IsUiBusy || !DiscardPendingChanges()) return;
+        NewVmRequest? request = null;
+        busy = true; UpdatePowerControls();
+        try {
+            if (!HasEngine && !SelectSetupEngine(continueToVm: true)) return;
+            var wizard = new NewVmWindow((action, arguments, elevate, cancellation) =>
+                Execute(action, arguments, elevate, cancellation: cancellation)) { Owner = this };
+            if (wizard.ShowDialog() == true) request = wizard.Request;
+        } catch (Exception error) { ShowError(error.Message); }
+        finally { busy = false; UpdatePowerControls(); }
+        if (request is null) return;
+        try {
+            var entry = VmLibrary.Create(request.Vm.File, request.Vm.Directory);
+            hardwareDirty = identityDirty = false;
+            if (!AddVm(entry)) return;
+            Iso.Text=request.Installer; NewDiskSize.Text=request.DiskGiB.ToString();
+            Cpus.Text=request.Cpus.ToString(); Memory.Text=request.MemoryMiB.ToString();
+            await RefreshState();
+            if (entry != selectedEntry) return;
+            if (!await Operate("Setup", ["-Iso", request.Installer, "-DiskGiB", request.DiskGiB.ToString(),
+                "-Cpus", request.Cpus.ToString(), "-MemoryMiB", request.MemoryMiB.ToString()])) return;
+            ConnectIso.IsChecked = true;
+            if (request.AutoStart) await StartPreparedVm(entry, request.Cpus, request.MemoryMiB);
+            else { StatusDetail.Text = "VM の準備ができました。上の「起動」から macOS のインストールを始められます。"; UpdatePowerControls(); }
+        } catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private async Task StartPreparedVm(VmEntry entry, int cpus, int memory)
+    {
+        long version = contextVersion;
+        busy = true; UpdatePowerControls();
+        SetupRequirements? requirements = null;
+        try {
+            requirements = SetupRequirements.Parse(await Execute("GetPrerequisites", ["-Cpus", cpus.ToString(), "-MemoryMiB", memory.ToString()], cancellation: statusCancellation.Token));
+        } catch (Exception error) { ShowError("自動起動を保留しました。必要条件を確認してから起動してください。\n" + error.Message); }
+        finally { busy = false; UpdatePowerControls(); }
+        if (version != contextVersion || entry != selectedEntry || closing) return;
+        if (requirements?.StartReady == true) await Operate("Start");
+        else { StatusDetail.Text = "VM の準備は完了しました。自動起動は保留しています。空き RAM と Windows の再起動要否を確認してください。"; UpdatePowerControls(); }
+    }
 
     private async void ImportVm(object sender, RoutedEventArgs e)
     {
-        if (IsUiBusy) return;
-        if (!HasEngine) { ShowError("ディスクを取り込む前に Reims エンジンを設定してください。"); return; }
+        if (IsUiBusy || !DiscardPendingChanges()) return;
+        if (!HasEngine) {
+            busy=true; UpdatePowerControls();
+            try { if (!SelectSetupEngine()) return; }
+            catch (Exception error) { ShowError(error.Message); return; }
+            finally { busy=false; UpdatePowerControls(); }
+        }
         var disk = new OpenFileDialog { Filter = "仮想ディスク|*.vmdk;*.qcow2;*.img;*.raw", Title = "完全に停止した VM のディスクを選択（元データは保持）" };
         if (disk.ShowDialog(this) != true || CreateVm() is not { } entry) return;
         await RefreshState();

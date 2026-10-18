@@ -45,7 +45,7 @@ public partial class MainWindow : Window
     {
         if (selfTest && controlFixtureBackend is not null) return await controlFixtureBackend(action);
         if (!HasEngine) throw new InvalidOperationException("先に Reims エンジンを選択してください。");
-        if (!HasVm && action is not ("EnableWhpx" or "InstallUsbDk" or "InstallTap" or "CreateBridge"))
+        if (!HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx" or "InstallUsbDk" or "InstallTap" or "CreateBridge"))
             throw new InvalidOperationException("操作する仮想マシンを選択してください。");
         string root = Path.GetFullPath(Root.Text);
         string backend = Path.Combine(AppContext.BaseDirectory,"scripts/manager-backend.ps1");
@@ -56,13 +56,13 @@ public partial class MainWindow : Window
         if (!File.Exists(pwsh)) throw new Exception("PowerShell 7 をインストールしてください。");
         var info = new ProcessStartInfo(pwsh) { UseShellExecute=elevate, CreateNoWindow=true, WorkingDirectory=root };
         foreach (string arg in new[] {"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",backend,"-Root",root,"-Action",action}.Concat(arguments)) info.ArgumentList.Add(arg);
-        info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory);
+        if (HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx" or "InstallUsbDk")) { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
         info.ArgumentList.Add("-Qemu"); info.ArgumentList.Add(settings.QemuExecutable);
         info.ArgumentList.Add("-ToolsRoot"); info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"runtimes"));
         if (input is not null) info.RedirectStandardInput=true;
         if (elevate) { info.Verb="runas"; info.WindowStyle=ProcessWindowStyle.Hidden; }
         else { info.RedirectStandardOutput=true; info.RedirectStandardError=true; info.StandardOutputEncoding=Encoding.UTF8; info.StandardErrorEncoding=Encoding.UTF8; }
-        bool readOnly = action is "Status" or "GetIdentity" or "ListUsb";
+        bool readOnly = action is "Status" or "GetIdentity" or "ListUsb" or "GetPrerequisites" or "GetNetworkUplinks";
         return await BackendCommand.Run(info, input, readOnly, readOnly ? cancellation : CancellationToken.None);
     }
 
@@ -156,12 +156,13 @@ public partial class MainWindow : Window
                         _ => ""
                     };
                     if (loadDetails) {
+                        await RefreshNetworkChoices();
+                        if (version != contextVersion || busy || closing) continue;
                         loadingHardware = true;
                         try {
                             Fill(Snapshots, latest.GetProperty("snapshots").EnumerateArray().Select(x => x.GetString()!));
                             string[] taps = latest.GetProperty("taps").EnumerateArray().Select(x => x.GetString()!).ToArray();
                             Fill(Tap, taps, true); Fill(BridgeTap, taps, true);
-                            Fill(Physical, latest.GetProperty("adapters").EnumerateArray().Where(x => x.TryGetProperty("HardwareInterface", out var value) && value.ValueKind == JsonValueKind.True).Select(x => x.GetProperty("Name").GetString()!), true);
                         } finally { loadingHardware = false; }
                         if (!loadedHardware && !hardwareDirty) {
                             if (latest.GetProperty("prepared").GetBoolean()) LoadHardware();
@@ -197,6 +198,8 @@ public partial class MainWindow : Window
         string adapter = latest.GetProperty("network_adapter").GetString() ?? "";
         if (adapter.Length > 0 && !Tap.Items.Cast<string>().Contains(adapter)) Fill(Tap, Tap.Items.Cast<string>().Append(adapter));
         Tap.SelectedItem=adapter; GuestHost.Text=latest.GetProperty("guest_host").GetString()??"";
+        SelectSavedUplink(latest.TryGetProperty("network_uplink_id", out var uplink) ? uplink.GetString() ?? "" : "");
+        if (Bridge.IsChecked == true && SelectedUplink.Length == 0) NetworkNotice.Text="以前の TAP 接続を保持しています。接続先を変更する場合は Wi-Fi・有線 LAN を選び、ブリッジを準備してください。";
         Sound.IsChecked=latest.GetProperty("audio").GetString()=="dsound";
         Microphone.IsChecked=latest.TryGetProperty("microphone",out var mic)&&mic.GetBoolean();
         UsbBackend.SelectedIndex=latest.TryGetProperty("usb_backend",out var usb)&&usb.GetString()=="usbdk" ? 1 : 0;
@@ -233,7 +236,15 @@ public partial class MainWindow : Window
         qemu=string.IsNullOrWhiteSpace(qemu) ? Path.Combine(root,File.Exists(Path.Combine(root,"reims-engine.json")) ? "bin/qemu-system-x86_64.exe" : "build/qemu/qemu-system-x86_64.exe") : Path.GetFullPath(qemu);
         if (!File.Exists(qemu)) throw new FileNotFoundException("Reims 対応 QEMU が見つかりません。エンジンのフォルダーを確認してください。");
         Root.Text=root; settings.EngineRoot=root; settings.QemuExecutable=qemu;
-        SavePreferences(); ResetVmContext(); UpdatePowerControls();
+        if (!SavePreferences()) throw new IOException("エンジンの保存先を記録できませんでした。アプリ設定の保存先を確認して再試行してください。");
+        ResetVmContext(); UpdatePowerControls();
+    }
+
+    private bool SelectSetupEngine(bool continueToVm = false)
+    {
+        var dialog = new EngineSetupWindow(continueToVm) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.InstalledDirectory is not { } folder) return false;
+        ConfigureEngine(folder); return true;
     }
 
     private async void SetupEngine(object sender, RoutedEventArgs e)
@@ -241,8 +252,7 @@ public partial class MainWindow : Window
         if (IsUiBusy || !DiscardPendingChanges()) return;
         busy=true; UpdatePowerControls();
         try {
-            var dialog=new EngineSetupWindow { Owner=this };
-            if (dialog.ShowDialog()==true && dialog.InstalledDirectory is { } folder) ConfigureEngine(folder);
+            SelectSetupEngine();
         } catch (Exception error) { ErrorNotice.Text=error.Message; Feedback.Visibility=Visibility.Visible; }
         finally { busy=false; UpdatePowerControls(); }
         await RefreshState();
@@ -280,6 +290,7 @@ public partial class MainWindow : Window
         foreach (var item in PowerMoreButton.ContextMenu.Items.OfType<MenuItem>()) item.IsEnabled = CanOperate(item.Tag?.ToString() ?? "");
         EngineNotice.Visibility = HasEngine ? Visibility.Collapsed : Visibility.Visible;
         EngineSummary.Text = HasEngine ? "エンジン設定済み" : "未設定";
+        NewVmWelcomeDescription.Text = HasEngine ? "Windows の準備を確認して ISO を選ぶ" : "エンジンの準備から始める";
         RefreshButton.IsEnabled = HasVm && HasEngine && !busy && !refreshing;
         RevealButton.IsEnabled = selectedEntry is not null;
         foreach (var button in LogicalChildren<Button>(Tabs)) {
@@ -306,9 +317,10 @@ public partial class MainWindow : Window
         if (!RequireAction("Setup")) return;
         if (!File.Exists(Iso.Text.Trim())) { ShowError("使用する ISO ファイルを選択してください。"); Iso.Focus(); return; }
         if (!ManagerValidation.Integer(NewDiskSize.Text, 64, 2048, 1, out _)) { ShowError("ディスク容量は 64〜2048 GiB の整数で指定してください。"); NewDiskSize.Focus(); return; }
-        if (await Operate("Setup",["-Iso",Iso.Text.Trim(),"-DiskGiB",NewDiskSize.Text.Trim()])) {
+        if (!ManagerValidation.Integer(Cpus.Text,1,Math.Min(64,Environment.ProcessorCount),1,out int cpus) || !ManagerValidation.Integer(Memory.Text,4096,131072,4,out int memory)) { ShowError("CPU・メモリの割り当てを確認してください。"); return; }
+        if (await Operate("Setup",["-Iso",Iso.Text.Trim(),"-DiskGiB",NewDiskSize.Text.Trim(),"-Cpus",cpus.ToString(),"-MemoryMiB",memory.ToString()])) {
             ConnectIso.IsChecked=true; loadedHardware=false; await RefreshState();
-            if (StartAfterSetup.IsChecked==true && await Operate("Start",["-WithInstaller"])) Tabs.SelectedIndex=0;
+            if (StartAfterSetup.IsChecked==true && selectedEntry is { } entry) await StartPreparedVm(entry,cpus,memory);
         }
     }
     private async void RefreshClick(object sender,RoutedEventArgs e) => await RefreshState();
@@ -325,6 +337,7 @@ public partial class MainWindow : Window
     private async Task<bool> SaveHardwareCore() {
         if (!RequireAction("SetHardware") || !ValidateHardware()) return false;
         var args=new List<string> {"-Cpus",Cpus.Text.Trim(),"-MemoryMiB",Memory.Text.Trim(),"-Resolution",Selected(Resolution),"-Iso",HardwareIsoPath.Text.Trim(),"-Network",Bridge.IsChecked==true?"bridge":"nat","-Adapter",Selected(Tap),"-GuestHost",GuestHost.Text.Trim(),"-Audio",Sound.IsChecked==true?"dsound":"none"};
+        if (Bridge.IsChecked == true && SelectedUplink.Length > 0) args.AddRange(["-PhysicalAdapter", SelectedUplink]);
         if (Microphone.IsChecked==true) args.Add("-Microphone");
         args.AddRange(["-UsbBackend",UsbBackend.SelectedIndex==1?"usbdk":"winusb"]);
         if (HardwareIso.IsChecked==true) args.Add("-WithInstaller");
@@ -351,7 +364,10 @@ public partial class MainWindow : Window
         await Operate("ExpandDisk",["-DiskGiB",size.ToString()]);
     }
     private async void ApplyResolution(object sender,RoutedEventArgs e) => await Operate("ApplyResolution",["-Resolution",Selected(Resolution)]);
-    private void OpenBridgeTab(object sender,RoutedEventArgs e) => Tabs.SelectedIndex=7;
+    private void OpenBridgeTab(object sender,RoutedEventArgs e) {
+        Physical.SelectedValue=SelectedUplink; BridgeTap.SelectedItem=Tap.SelectedItem;
+        Tabs.SelectedIndex=7;
+    }
     private void TapDownload(object sender,RoutedEventArgs e) => Process.Start(new ProcessStartInfo("https://build.openvpn.net/downloads/releases/") { UseShellExecute=true });
     private async void InstallTap(object sender,RoutedEventArgs e) {
         var dialog=new OpenFileDialog {Filter="TAP-Windows インストーラー|tap-windows*.exe"};
@@ -359,9 +375,14 @@ public partial class MainWindow : Window
     }
     private async void CreateBridge(object sender,RoutedEventArgs e) {
         if (!RequireAction("CreateBridge")) return;
-        string tap=Selected(BridgeTap), physical=Selected(Physical);
-        if (string.IsNullOrWhiteSpace(tap) || string.IsNullOrWhiteSpace(physical) || tap == physical) { ShowError("TAP と物理アダプターをそれぞれ選択してください。"); return; }
-        if (Confirm($"TAP: {tap}\n物理: {physical}\nこの 2 つをブリッジ接続します。IP アドレスが変わり、通信が一時的に切れる場合があります。")) await Operate("CreateBridge",["-Adapter",tap,"-PhysicalAdapter",physical],true);
+        string tap=Selected(BridgeTap);
+        if (string.IsNullOrWhiteSpace(tap) || Physical.SelectedItem is not NetworkUplink physical) { ShowError("物理接続先と、詳細にある Reims 専用 TAP を選択してください。"); return; }
+        if (Confirm($"接続先: {physical.DisplayName}\n専用 TAP: {tap}\nWindows の LAN が一時的に切断され、IP アドレスが変わる場合があります。ブリッジを作成しますか？") &&
+            await Operate("CreateBridge",["-Adapter",tap,"-PhysicalAdapter",physical.Id],true)) {
+            Uplink.SelectedValue=physical.Id; Tap.SelectedItem=tap;
+            StatusDetail.Text="ブリッジを準備しました。ネットワーク設定でブリッジを選び、適用してください。VM の通信状態は未確認です。";
+            UpdatePowerControls();
+        }
     }
     private async void Pair(object sender,RoutedEventArgs e) => await Operate("Pair",["-User",GuestUser.Text,"-Fingerprint",Fingerprint.Text]);
     private async void GenerateIdentity(object sender,RoutedEventArgs e) { if (Confirm("シリアル・MLB・ROM を更新します。SystemUUID は保持します。") && await Operate("GenerateIdentity")) await ReadIdentity(); }
@@ -373,10 +394,14 @@ public partial class MainWindow : Window
         if (!selfTest) throw new InvalidOperationException("Only the self-test renders fixtures.");
         UpdateLayout(); SaveImage(Path.Combine(folder,"library-empty.png"));
         var engine=new EngineSetupWindow { Owner=this, Opacity=0, ShowInTaskbar=false };
+        engine.Online.IsChecked=true;
         engine.Destination.Text=Path.Combine(folder,"new engine");
         engine.Show(); await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle); engine.UpdateLayout();
         SaveImage(Path.Combine(folder,"engine-setup.png"),(FrameworkElement)engine.Content);
+        engine.Existing.IsChecked=true; engine.UpdateLayout();
+        SaveImage(Path.Combine(folder,"engine-reuse.png"),(FrameworkElement)engine.Content);
         engine.Close();
+        await CheckOnboarding(folder);
         foreach (string component in new[]{"install-engine.ps1","engine-lock.json","opencore/base.py","opencore/apple-account.py","opencore/boot-policy.py","prepare-guest-bridge.ps1","guest-bridge-lock.json","opencore/guest-bridge.py"})
             if (!File.Exists(Path.Combine(AppContext.BaseDirectory,"scripts",component))) throw new Exception("Missing packaged setup component: "+component);
         ConfigureEngine(folder,Environment.ProcessPath!);

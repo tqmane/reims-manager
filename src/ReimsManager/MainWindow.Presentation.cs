@@ -74,6 +74,8 @@ public partial class MainWindow
         bool editHardware = !IsUiBusy && loadedHardware && CanOperate("SetHardware");
         foreach (UIElement field in new UIElement[] { Memory, MemorySlider, Cpus, HardwareIsoPath, GuestHost, Tap, UsbBackend,
             HardwareIso, Nat, Bridge, Sound, Microphone, DiskSize }) field.IsEnabled = editHardware;
+        Uplink.IsEnabled = editHardware && Bridge.IsChecked == true;
+        Physical.IsEnabled = BridgeTap.IsEnabled = !IsUiBusy && CanOperate("CreateBridge");
         Resolution.IsEnabled = !IsUiBusy && loadedHardware && (CanOperate("SetHardware") || CanOperate("ApplyResolution"));
         foreach (UIElement field in new UIElement[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityUuid, IdentityRom })
             field.IsEnabled = !IsUiBusy && CanOperate("SetIdentity");

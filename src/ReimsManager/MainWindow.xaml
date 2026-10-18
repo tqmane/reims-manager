@@ -399,7 +399,7 @@
           <ScrollViewer Grid.Row="2" x:Name="Welcome" VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="640" HorizontalAlignment="Left" Margin="24,32,24,24">
               <TextBlock Text="ワークスペースを始める" FontSize="26" FontWeight="SemiBold" Margin="0,0,0,10"/>
-              <TextBlock Text="新しい macOS 環境を作成するか、保存済みの仮想マシンを開きます。" Style="{StaticResource MutedText}" Margin="0,0,0,28"/>
+              <TextBlock Text="必要なエンジンの取得、Windows の準備、インストーラーの選択を順番に案内します。導入済みのエンジンは再利用できます。" Style="{StaticResource MutedText}" Margin="0,0,0,28"/>
               <Button Click="NewVm" Style="{StaticResource WelcomeAction}">
                 <Grid>
                   <Grid.ColumnDefinitions>
@@ -408,8 +408,8 @@
                   </Grid.ColumnDefinitions>
                   <TextBlock Text="" Style="{StaticResource CommandIcon}" FontSize="24"/>
                   <StackPanel Grid.Column="1">
-                    <TextBlock Text="新しい仮想マシン" FontSize="17" FontWeight="SemiBold"/>
-                    <TextBlock Text="インストーラーから作成" Style="{StaticResource MutedText}" Margin="0,5,0,0"/>
+                    <TextBlock x:Name="NewVmWelcomeTitle" Text="macOS をセットアップ" FontSize="17" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="NewVmWelcomeDescription" Text="エンジンの準備から始める" Style="{StaticResource MutedText}" Margin="0,5,0,0"/>
                   </StackPanel>
                 </Grid>
               </Button>
@@ -667,8 +667,14 @@
                     <TextBlock Text="Windows のインターネット接続を共有します。Apple Account も使用できます。" Style="{StaticResource MutedText}" Margin="24,0,0,20"/>
                     <RadioButton x:Name="Bridge" Content="ブリッジ" Margin="0,0,0,6"/>
                     <TextBlock Text="VM を LAN 上の独立した機器として接続します。" Style="{StaticResource MutedText}" Margin="24,0,0,8"/>
-                    <TextBlock Text="TAP アダプター" Style="{StaticResource FieldLabel}"/>
-                    <ComboBox x:Name="Tap"/>
+                    <TextBlock Text="ホストの接続先" Style="{StaticResource FieldLabel}"/>
+                    <ComboBox x:Name="Uplink" DisplayMemberPath="DisplayName" SelectedValuePath="Id" ToolTip="{Binding SelectedItem.Description, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="物理 Wi-Fi・有線 LAN の接続先"/>
+                    <TextBlock x:Name="NetworkNotice" Style="{StaticResource MutedText}" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
+                    <Expander x:Name="NetworkTapDetails" Header="詳細: 内部 TAP アダプター" Margin="0,16,0,0">
+                      <StackPanel><TextBlock Text="ブリッジを準備した専用 TAP を選びます。物理アダプターを直接 VM に転送する設定ではありません。" Style="{StaticResource MutedText}" Margin="0,8,0,8"/>
+                        <ComboBox x:Name="Tap" AutomationProperties.Name="内部 TAP アダプター"/>
+                      </StackPanel>
+                    </Expander>
                     <TextBlock Text="macOS の IP アドレス / ホスト名" Style="{StaticResource FieldLabel}"/>
                     <TextBox x:Name="GuestHost"/>
                     <Button Content="ブリッジの準備" Click="OpenBridgeTab" HorizontalAlignment="Left" Margin="0,18,0,0"/>
@@ -780,7 +786,7 @@
                   <TextBlock Text="起動プロファイルを再適用します。VM の完全終了後に操作してください。" Style="{StaticResource MutedText}"/>
                   <Button x:Name="ApplyBootProfileButton" Content="起動プロファイルを再適用" Tag="ApplyBootProfile" Click="ActionClick" HorizontalAlignment="Left" Margin="0,16,0,0"/>
                   <TextBlock Text="GPU 互換ブリッジ" Style="{StaticResource SectionHeading}"/>
-                  <TextBlock Text="WebGL 用のゲスト互換ブリッジを適用・解除します。macOS のバージョンごとの動作確認が必要です。" Style="{StaticResource MutedText}"/>
+                  <TextBlock Text="macOS 26.x の共通 ABI に対応する GPU 互換ブリッジを適用・解除します。未対応の ABI や不明なレイアウトは安全に拒否します。" Style="{StaticResource MutedText}"/>
                   <TextBlock x:Name="GuestBridgeStatus" Text="適用状況は未確認です。" Style="{StaticResource MutedText}" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
                   <WrapPanel Margin="0,16,0,0">
                     <Button x:Name="EnableGuestBridgeButton" Content="GPU 互換ブリッジを適用" Tag="EnableGuestBridge" Click="ActionClick"/>
@@ -826,7 +832,7 @@
                   </DockPanel>
                   <TextBlock Text="2  ディスクを準備" Style="{StaticResource SectionHeading}"/>
                   <TextBlock Text="新規ディスクの容量 (GiB)" Margin="0,0,0,8"/>
-                  <TextBox x:Name="NewDiskSize" Text="128" Width="160" HorizontalAlignment="Left"/>
+                  <TextBox x:Name="NewDiskSize" Text="300" Width="160" HorizontalAlignment="Left"/>
                   <TextBlock Text="3  作成後の動作" Style="{StaticResource SectionHeading}"/>
                   <CheckBox x:Name="StartAfterSetup" IsChecked="True" Content="作成後、インストーラーを起動する" Margin="0,0,0,12"/>
                   <CheckBox x:Name="ConnectIso" Content="インストーラーを接続して起動" Margin="0,0,0,12"/>
@@ -858,16 +864,21 @@
               <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="28,24,28,28" MaxWidth="680" HorizontalAlignment="Stretch">
                   <TextBlock Text="ブリッジ接続を準備" Style="{StaticResource PageHeading}"/>
-                  <TextBlock Text="TAP-Windows6 と物理アダプターを接続します。通常のインターネット利用には NAT を使用できます。" Style="{StaticResource MutedText}"/>
+                  <TextBlock Text="接続する Wi-Fi・有線 LAN を選びます。通常のインターネット利用には NAT を使用できます。選択だけでは Windows の接続を変更しません。" Style="{StaticResource MutedText}"/>
+                  <TextBlock Text="ホストの接続先" Style="{StaticResource FieldLabel}"/>
+                  <ComboBox x:Name="Physical" DisplayMemberPath="DisplayName" SelectedValuePath="Id" ToolTip="{Binding SelectedItem.Description, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="ブリッジする物理接続先"/>
+                  <Button Content="接続先を更新" Click="ReloadNetworkChoices" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+                  <TextBlock Text="Wi-Fi の対応は未確認です。作成すると Windows の通信が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>
+                  <Expander Header="詳細: 専用 TAP の準備" Margin="0,16,0,0"><StackPanel>
                   <WrapPanel Margin="0,20,0,0">
                     <Button Content="TAP をダウンロード" Click="TapDownload"/>
                     <Button Content="署名済み TAP を導入…" Click="InstallTap"/>
                   </WrapPanel>
                   <TextBlock Text="TAP アダプター" Style="{StaticResource FieldLabel}"/>
                   <ComboBox x:Name="BridgeTap"/>
-                  <TextBlock Text="物理アダプター" Style="{StaticResource FieldLabel}"/>
-                  <ComboBox x:Name="Physical"/>
-                  <Button Content="ブリッジを作成…" Click="CreateBridge" HorizontalAlignment="Left" Margin="0,20,0,12"/>
+                  <TextBlock Text="他の VPN の TAP を選ばず、Reims 専用のものを明示して選択してください。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                  </StackPanel></Expander>
+                  <Button Content="ブリッジを作成…" Click="CreateBridge" Tag="CreateBridge" HorizontalAlignment="Left" Margin="0,20,0,12"/>
                   <TextBlock Text="Windows の管理者権限が必要です。作成時はネットワーク接続が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>
                 </StackPanel>
               </ScrollViewer>
