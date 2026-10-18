@@ -21,10 +21,17 @@ public partial class NewVmWindow : Window
         InitializeComponent();
         ParentFolder.Text = VmLibrary.DefaultRoot;
         CpuCount.Text = Math.Min(4, Environment.ProcessorCount).ToString();
+        CpuCount.TextChanged += PlanChanged; MemorySize.TextChanged += PlanChanged;
         StartAfterCreation.Click += (_, _) => wantsStart = StartAfterCreation.IsChecked == true;
         if (checkOnLoad) Loaded += async (_, _) => await ReadRequirements();
         Closing += OnClosing;
         Closed += (_, _) => { closed = true; lifetime.Cancel(); };
+    }
+
+    private void PlanChanged(object sender, RoutedEventArgs e)
+    {
+        StartAfterCreation.IsEnabled = false; StartAfterCreation.IsChecked = false;
+        MemoryPlan.Text = "割り当てを変更しました。「割り当てを再確認」で現在の空き RAM を確認できます。作成時にも再確認します。";
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
@@ -100,7 +107,6 @@ public partial class NewVmWindow : Window
         NextButton.Visibility = vm ? Visibility.Collapsed : Visibility.Visible;
         StepTitle.Text = vm ? "3 / 3  仮想マシンを作成" : "2 / 3  Windows の準備";
         StepHint.Text = vm ? "保存先とインストーラーを選びます。作成前に必要条件とメモリをもう一度確認します。" : "必須の項目を確認します。USB・ブリッジ接続の準備は後からでも行えます。";
-        Notice.Text = "";
     }
     private void Next(object sender, RoutedEventArgs e) { if (!checking && requirements?.Ready == true) ChangePage(true); }
     private async void Back(object sender, RoutedEventArgs e) { ChangePage(false); await ReadRequirements(); }
@@ -122,19 +128,25 @@ public partial class NewVmWindow : Window
         try { LocationPreview.Text = "VM の保存先: " + VmLibrary.PlanCreate(ParentFolder.Text, VmName.Text.Trim()).Directory; }
         catch (ArgumentException) { LocationPreview.Text = "VM の名前と保存先を確認してください。"; }
     }
-    private async void Create(object sender, RoutedEventArgs e)
+    private async void Create(object sender, RoutedEventArgs e) { if (await TryCreateRequest()) DialogResult = true; }
+
+    internal async Task<bool> TryCreateRequest()
     {
-        if (checking || changingSystem || !ValidatePlan(out _, out _)) return;
+        if (checking || changingSystem || !ValidatePlan(out int cpus, out int memory)) return false;
         try {
             var entry = VmLibrary.PlanCreate(ParentFolder.Text, VmName.Text.Trim());
-            if (!File.Exists(Installer.Text.Trim())) throw new IOException("macOS の ISO / IMG を選択してください。");
+            string installer = Installer.Text.Trim();
+            if (!Path.IsPathFullyQualified(installer) || !File.Exists(installer) || Path.GetExtension(installer).ToLowerInvariant() is not (".iso" or ".img"))
+                throw new IOException("macOS の ISO / IMG を参照ボタンから選択するか、完全なパスを指定してください。");
             if (!ManagerValidation.Integer(Capacity.Text, 64, 2048, 1, out int disk)) throw new ArgumentException("ディスク容量は 64〜2048 GiB の整数で指定してください。");
             if (File.Exists(entry.File) || Directory.Exists(entry.Directory) && Directory.EnumerateFileSystemEntries(entry.Directory).Any())
                 throw new IOException("この保存先にはデータがあります。別の名前または親フォルダーを選んでください。");
-            if (!await ReadRequirements()) { ChangePage(false); return; }
+            if (!await ReadRequirements()) { ChangePage(false); return false; }
+            if (requirements!.Cpus != cpus || requirements.MemoryMiB != memory)
+                throw new IOException("確認した割り当てが一致しません。再確認してください。");
             Request = new(entry, Path.GetFullPath(Installer.Text.Trim()), disk, requirements!.Cpus, requirements.MemoryMiB,
                 requirements.StartReady && StartAfterCreation.IsChecked == true);
-            DialogResult = true;
-        } catch (Exception error) { Notice.Text = error.Message; }
+            return true;
+        } catch (Exception error) { Notice.Text = error.Message; return false; }
     }
 }

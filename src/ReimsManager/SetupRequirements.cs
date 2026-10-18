@@ -28,6 +28,6 @@ internal sealed record SetupRequirements(bool Ready, bool RestartRequired, Setup
         bool ready = root.GetProperty("ready").GetBoolean() && checks.All(x => !x.Required || x.Ready);
         bool restart = root.GetProperty("restart_required").GetBoolean();
         return new(ready, restart, checks, cpus, memory, available,
-            ready && !restart && available is not null && plan.GetProperty("start_ready").GetBoolean());
+            ready && !restart && available >= memory + 1024 && plan.GetProperty("start_ready").GetBoolean());
     }
 }

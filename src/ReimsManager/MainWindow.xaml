@@ -780,7 +780,7 @@
                   <TextBlock Text="起動プロファイルを再適用します。VM の完全終了後に操作してください。" Style="{StaticResource MutedText}"/>
                   <Button x:Name="ApplyBootProfileButton" Content="起動プロファイルを再適用" Tag="ApplyBootProfile" Click="ActionClick" HorizontalAlignment="Left" Margin="0,16,0,0"/>
                   <TextBlock Text="GPU 互換ブリッジ" Style="{StaticResource SectionHeading}"/>
-                  <TextBlock Text="WebGL 用のゲスト互換ブリッジを適用・解除します。macOS のバージョンごとの動作確認が必要です。" Style="{StaticResource MutedText}"/>
+                  <TextBlock Text="macOS 26.x の共通 ABI に対応する GPU 互換ブリッジを適用・解除します。未対応の ABI や不明なレイアウトは安全に拒否します。" Style="{StaticResource MutedText}"/>
                   <TextBlock x:Name="GuestBridgeStatus" Text="適用状況は未確認です。" Style="{StaticResource MutedText}" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
                   <WrapPanel Margin="0,16,0,0">
                     <Button x:Name="EnableGuestBridgeButton" Content="GPU 互換ブリッジを適用" Tag="EnableGuestBridge" Click="ActionClick"/>

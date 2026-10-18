@@ -10,6 +10,7 @@ namespace ReimsManager;
 public partial class EngineSetupWindow : Window
 {
     private bool installing;
+    private readonly bool continueToVm;
     public string? InstalledDirectory { get; private set; }
 
     internal static string DefaultDestination {
@@ -23,20 +24,29 @@ public partial class EngineSetupWindow : Window
 
     public EngineSetupWindow(bool continueToVm = false)
     {
+        this.continueToVm = continueToVm;
         InitializeComponent();
         Destination.Text=DefaultDestination;
+        Existing.Checked += (_, _) => UpdateInstallLabel();
+        Online.Checked += (_, _) => UpdateInstallLabel();
+        Local.Checked += (_, _) => UpdateInstallLabel();
+        if (Directory.Exists(DefaultDestination)) Existing.IsChecked = true;
         if (continueToVm) {
             Title="1 / 3  エンジンの準備";
             InstallButton.Content="ダウンロードして続ける";
             Status.Text="必要な部品を固定版から取得します。導入後、そのまま VM の作成に進みます。";
         }
         Closing += (_,e) => { if (installing) e.Cancel=true; };
+        UpdateInstallLabel();
     }
+
+    private void UpdateInstallLabel() => InstallButton.Content = Existing.IsChecked == true
+        ? continueToVm ? "検証して続ける" : "検証して選択" : continueToVm ? "セットアップして続ける" : "セットアップ";
 
     private void BrowseDestination(object sender, RoutedEventArgs e)
     {
-        var dialog=new OpenFolderDialog { Title="エンジンの親フォルダーを選択" };
-        if (dialog.ShowDialog(this)==true) Destination.Text=Path.Combine(dialog.FolderName,Path.GetFileName(DefaultDestination));
+        var dialog=new OpenFolderDialog { Title=Existing.IsChecked == true ? "導入済みエンジンのフォルダー" : "エンジンの親フォルダーを選択" };
+        if (dialog.ShowDialog(this)==true) Destination.Text=Existing.IsChecked == true ? dialog.FolderName : Path.Combine(dialog.FolderName,Path.GetFileName(DefaultDestination));
     }
 
     private void BrowseArchive(object sender, RoutedEventArgs e)
@@ -51,13 +61,23 @@ public partial class EngineSetupWindow : Window
         installing=true; Inputs.IsEnabled=false; InstallButton.IsEnabled=false; CloseButton.IsEnabled=false;
         Progress.Visibility=Visibility.Visible; Details.Clear();
         try {
-            string destination=Path.GetFullPath(Destination.Text);
-            if (Directory.Exists(destination) || File.Exists(destination)) throw new IOException("既存のフォルダーには上書きしません。新しい保存先を指定してください。");
+            if (!Path.IsPathFullyQualified(Destination.Text.Trim())) throw new ArgumentException("エンジンの保存先を参照ボタンから選択するか、完全なパスを指定してください。");
+            string destination=Path.GetFullPath(Destination.Text.Trim());
+            if (Existing.IsChecked != true && (Directory.Exists(destination) || File.Exists(destination))) throw new IOException("既存のフォルダーには上書きしません。「再利用」を選択するか、新しい保存先を指定してください。");
             string script=Path.Combine(AppContext.BaseDirectory,"scripts/install-engine.ps1");
             string pwsh=Path.Combine(AppContext.BaseDirectory,"runtimes/pwsh/pwsh.exe");
             if (!File.Exists(pwsh)) pwsh=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"PowerShell/7/pwsh.exe");
             var info=new ProcessStartInfo(pwsh) { UseShellExecute=false, CreateNoWindow=true,
                 RedirectStandardOutput=true, RedirectStandardError=true, StandardOutputEncoding=Encoding.UTF8, StandardErrorEncoding=Encoding.UTF8 };
+            if (Existing.IsChecked == true) {
+                Status.Text="導入済みのエンジンを検証しています…";
+                foreach (string arg in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",Path.Combine(AppContext.BaseDirectory,"scripts/manager-backend.ps1"),
+                    "-Action","GetPrerequisites","-Root",destination,"-ToolsRoot",Path.Combine(AppContext.BaseDirectory,"runtimes"),"-Cpus",Math.Min(4,Environment.ProcessorCount).ToString(),"-MemoryMiB","4096"}) info.ArgumentList.Add(arg);
+                var requirements = SetupRequirements.Parse(await BackendCommand.Run(info, null, true));
+                var engine = requirements.Checks.FirstOrDefault(check => check.Id == "engine");
+                if (engine?.Ready != true) throw new IOException(engine?.Message ?? "対応エンジンの検証結果を確認できません。");
+                InstalledDirectory=destination; installing=false; DialogResult=true; return;
+            }
             foreach (string arg in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",script,"-Destination",destination}) info.ArgumentList.Add(arg);
             if (Local.IsChecked==true) {
                 if (!File.Exists(Archive.Text)) throw new FileNotFoundException("エンジン ZIP を選択してください。");

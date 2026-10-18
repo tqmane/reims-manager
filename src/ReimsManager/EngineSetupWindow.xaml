@@ -1,6 +1,6 @@
 <Window x:Class="ReimsManager.EngineSetupWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Reims エンジンをセットアップ"
- Width="680" Height="610" MinWidth="600" MinHeight="560" WindowStartupLocation="CenterOwner"
+ Width="700" Height="680" MinWidth="620" MinHeight="640" WindowStartupLocation="CenterOwner"
  FontFamily="Segoe UI Variable, Yu Gothic UI" FontSize="14">
  <Grid Background="{DynamicResource ApplicationBackgroundBrush}"><Grid Margin="28"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel><TextBlock Text="VM を動かす準備" FontSize="26" FontWeight="SemiBold" Margin="0,0,0,12"/>
@@ -9,7 +9,8 @@
   <StackPanel Grid.Row="1" Margin="0,24,0,16" x:Name="Inputs">
    <TextBlock Text="エンジンの保存先" FontWeight="SemiBold" Margin="0,0,0,8"/>
    <DockPanel><Button Content="参照…" Click="BrowseDestination" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="Destination" AutomationProperties.Name="エンジンの保存先"/></DockPanel>
-   <TextBlock Text="新しいフォルダーを指定してください。VM の保存先は個別に選べます。" TextWrapping="Wrap" Margin="0,8,0,16" Opacity="0.7"/>
+   <TextBlock Text="新規導入では未使用のフォルダー、再利用では導入済みエンジンのフォルダーを指定します。VM は別の保存先に作成します。" TextWrapping="Wrap" Margin="0,8,0,16" Opacity="0.7"/>
+   <RadioButton x:Name="Existing" Content="導入済みのエンジンを検証して再利用" Margin="0,0,0,10"/>
    <RadioButton x:Name="Online" Content="対応するリリースをダウンロード" IsChecked="True" Margin="0,0,0,10"/>
    <RadioButton x:Name="Local" Content="ダウンロード済みのエンジン ZIP を使用" Margin="0,0,0,8"/>
    <DockPanel Margin="24,0,0,0"><Button Content="ZIP を選択…" Click="BrowseArchive" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="Archive" IsReadOnly="True" AutomationProperties.Name="エンジン ZIP"/></DockPanel>

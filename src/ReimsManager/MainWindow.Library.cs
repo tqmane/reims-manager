@@ -28,15 +28,16 @@ public partial class MainWindow
         UpdatePowerControls();
     }
 
-    private void AddVm(VmEntry entry)
+    private bool AddVm(VmEntry entry)
     {
         int existing = machines.FindIndex(x => string.Equals(x.File, entry.File, StringComparison.OrdinalIgnoreCase));
         if (existing < 0) machines.Add(entry); else machines[existing] = entry;
         settings.VirtualMachines = settings.VirtualMachines.Append(entry.File).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        SavePreferences();
+        bool saved = SavePreferences();
         LibrarySearch.Clear();
         UpdateLibraryView();
         Library.SelectedItem = machines.First(x => string.Equals(x.File, entry.File, StringComparison.OrdinalIgnoreCase));
+        return saved;
     }
 
     private async void VmChanged(object sender, SelectionChangedEventArgs e)
@@ -145,7 +146,8 @@ public partial class MainWindow
         if (request is null) return;
         try {
             var entry = VmLibrary.Create(request.Vm.File, request.Vm.Directory);
-            hardwareDirty = identityDirty = false; AddVm(entry);
+            hardwareDirty = identityDirty = false;
+            if (!AddVm(entry)) return;
             await RefreshState();
             if (entry != selectedEntry) return;
             if (!await Operate("Setup", ["-Iso", request.Installer, "-DiskGiB", request.DiskGiB.ToString(),

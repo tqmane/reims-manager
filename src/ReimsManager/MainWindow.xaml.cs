@@ -56,7 +56,7 @@ public partial class MainWindow : Window
         if (!File.Exists(pwsh)) throw new Exception("PowerShell 7 をインストールしてください。");
         var info = new ProcessStartInfo(pwsh) { UseShellExecute=elevate, CreateNoWindow=true, WorkingDirectory=root };
         foreach (string arg in new[] {"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",backend,"-Root",root,"-Action",action}.Concat(arguments)) info.ArgumentList.Add(arg);
-        if (HasVm && action != "GetPrerequisites") { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
+        if (HasVm && action is not ("GetPrerequisites" or "EnableWhpx" or "InstallUsbDk")) { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
         info.ArgumentList.Add("-Qemu"); info.ArgumentList.Add(settings.QemuExecutable);
         info.ArgumentList.Add("-ToolsRoot"); info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"runtimes"));
         if (input is not null) info.RedirectStandardInput=true;

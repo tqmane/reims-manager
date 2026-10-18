@@ -38,6 +38,7 @@
       <StackPanel Grid.Column="2"><TextBlock Text="CPU (vCPU)" Margin="0,0,0,8"/><TextBox x:Name="CpuCount" Text="4" AutomationProperties.Name="CPU 数"/></StackPanel>
       <StackPanel Grid.Column="4"><TextBlock Text="メモリ (MiB)" Margin="0,0,0,8"/><TextBox x:Name="MemorySize" Text="4096" AutomationProperties.Name="メモリ MiB"/></StackPanel>
      </Grid>
+     <Button Content="割り当てを再確認" Click="RefreshRequirementsClick" HorizontalAlignment="Left" Margin="0,12,0,0"/>
      <TextBlock Text="仮想ディスクは使用量に応じて増えます。選んだフォルダーの中に VM ごとのフォルダーを作成します。" TextWrapping="Wrap" Margin="0,10,0,0" Opacity="0.75"/>
      <TextBlock x:Name="MemoryPlan" TextWrapping="Wrap" Margin="0,20,0,8" AutomationProperties.LiveSetting="Polite"/>
      <CheckBox x:Name="StartAfterCreation" Content="準備ができたらインストーラーを起動する" IsChecked="True" Margin="0,8,0,0"/>
