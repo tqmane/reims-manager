@@ -59,6 +59,20 @@ public partial class MainWindow
             currentState = "running"; UpdatePowerControls();
             PopOutConsole(this, new RoutedEventArgs()); await ArrangeCheck();
             if (ConsoleView.Attached || FixtureGetParent(window) != 0) throw new Exception("Explicit pop-out did not restore the native window");
+            PrepareStartConsole(); UpdatePowerControls(); await ArrangeCheck(); UpdateConsole(); await ArrangeCheck();
+            if (consoleDetached || !ConsoleView.Attached || FixtureGetParent(window) != host)
+                throw new Exception("Start did not restore the default embedded console");
+            ConsoleView.Detach();
+            latest = JsonSerializer.SerializeToElement(new {
+                state = "running", runtime = new { pid = int.MaxValue, start_ticks = 0L, executable = Environment.ProcessPath! }
+            });
+            UpdateConsole();
+            if (consoleDetached) throw new Exception("A transient attach failure disabled automatic retries");
+            latest = JsonSerializer.SerializeToElement(new {
+                state = "running", runtime = new { pid = child.Id, start_ticks = child.StartTime.ToUniversalTime().Ticks, executable = Environment.ProcessPath! }
+            });
+            UpdateConsole(); await ArrangeCheck();
+            if (!ConsoleView.Attached || FixtureGetParent(window) != host) throw new Exception("Polling did not recover the existing console");
             DockConsole(this, new RoutedEventArgs()); await ArrangeCheck();
             if (!ConsoleView.Attached || FixtureGetParent(window) != host) throw new Exception("Explicit re-docking failed");
         } finally {

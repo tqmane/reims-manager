@@ -70,7 +70,7 @@ public partial class MainWindow : Window
         if (!RequireAction(action)) return false;
         if (action == "SnapshotRestore" && !DiscardPendingChanges()) return false;
         // Menus, keyboard shortcuts and buttons use exactly the same installer preference.
-        if (action == "Start") args = VmActionPolicy.StartArguments(ConnectIso.IsChecked == true);
+        if (action == "Start") { args = VmActionPolicy.StartArguments(ConnectIso.IsChecked == true); PrepareStartConsole(); }
         InvalidateReadRequests();
         busy = true; Tabs.IsEnabled = false;
         ErrorNotice.Text = ""; Feedback.Visibility = Visibility.Collapsed;

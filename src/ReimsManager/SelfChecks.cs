@@ -14,6 +14,7 @@ internal static class SelfChecks
         await SshConfigChecks.Run(folder);
         CheckPolicy();
         await CheckBackend();
+        await BackendPipeChecks.Run(Path.Combine(folder, "backend-pipe-checks"));
         CheckSafeCreation(folder);
         await CheckQmp(false);
         await CheckQmp(true);
@@ -98,7 +99,7 @@ internal static class SelfChecks
             throw new Exception("Atomic VM creation failed");
     }
 
-    private static async Task CheckBackend()
+    internal static async Task CheckBackend()
     {
         string pwsh = Path.Combine(AppContext.BaseDirectory, "runtimes/pwsh/pwsh.exe");
         ProcessStartInfo Command(string script) {

@@ -154,6 +154,10 @@ public partial class MainWindow
     }
 
     private void ShowPowerMenu(object sender, RoutedEventArgs e) { var menu = ((Button)sender).ContextMenu; menu.PlacementTarget = (Button)sender; menu.IsOpen = true; }
+    private void PrepareStartConsole()
+    {
+        consoleDetached = false; presentation.ShowConsole(); Tabs.SelectedIndex = 0;
+    }
     private async void MenuAction(object sender, RoutedEventArgs e) => await Operate(((MenuItem)sender).Tag.ToString()!);
     private void OpenSoundSettings(object sender, RoutedEventArgs e) => Process.Start(new ProcessStartInfo("ms-settings:sound") { UseShellExecute = true });
     private void PopOutConsole(object sender, RoutedEventArgs e)
@@ -189,7 +193,7 @@ public partial class MainWindow
                 if (ConsoleView.Attach(runtime.GetProperty("pid").GetInt32(), runtime.GetProperty("start_ticks").GetInt64(), runtime.GetProperty("executable").GetString()!)) {
                     ConsolePlaceholder.Visibility = Visibility.Collapsed; return;
                 }
-            } catch (Exception error) { AppendLog(error.Message + "\n"); consoleDetached = true; }
+            } catch (Exception error) { AppendLog(error.Message + "\n"); }
         }
         ConsoleView.Visibility = Visibility.Hidden; ConsolePlaceholder.Visibility = Visibility.Visible;
     }
