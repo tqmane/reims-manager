@@ -63,6 +63,7 @@ try {
     $json=& "$stub/manager-backend.ps1" -Root "$root/engine" -Action GetNetworkUplinks
     if (($json | ConvertFrom-Json).uplinks.Count -ne 2 -or (Test-Path "$root/engine/.work")) { throw 'Global inventory required a VM or engine writes' }
     'PASS: physical Wi-Fi/wired inventory, NAT preservation, GUID bridge selection, owned rollback, unrelated bridge protection, global read-only action'
+    & "$PSScriptRoot/remove-bridge.ps1"
 } finally {
     $allowed=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")+[IO.Path]::DirectorySeparatorChar
     if ($root.StartsWith($allowed,[StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $root -Recurse -Force }

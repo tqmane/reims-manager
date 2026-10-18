@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -315,6 +315,11 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         Assert-Administrator
         $bridge=New-ReimsHostBridge $Adapter $PhysicalAdapter
         "Windows bridge created: $($bridge.bridge_id). Guest DHCP/LAN connectivity remains unverified; Wi-Fi depends on its driver and access point."
+    }
+    RemoveBridge {
+        Assert-Administrator
+        $removed=Remove-ReimsHostBridge
+        "Owned Windows bridge removed: $($removed.bridge_id). VM network saved as NAT. Host DHCP/IP connectivity remains unverified."
     }
     InstallTap {
         Assert-Administrator

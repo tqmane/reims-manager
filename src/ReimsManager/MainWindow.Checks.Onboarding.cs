@@ -7,6 +7,21 @@ namespace ReimsManager;
 
 public partial class MainWindow
 {
+    internal async Task CheckNetworkPage(string folder)
+    {
+        if (!selfTest) throw new InvalidOperationException("Network fixture access only.");
+        Directory.CreateDirectory(folder);
+        ConfigureEngine(folder,Environment.ProcessPath!);
+        AddVm(new("Synthetic network VM",Path.Combine(folder,"fixture.reimsvm"),Path.Combine(folder,"fixture.data")));
+        State.Text="完全停止";StatusDetail.Text="";Feedback.Visibility=Visibility.Collapsed;
+        await CheckNetworkChoices(folder);
+        Width=MinWidth;Height=MinHeight;Tabs.SelectedIndex=7;currentState="stopped";UpdatePowerControls();
+        await ArrangeCheck();RemoveBridgeButton.BringIntoView();await ArrangeCheck();
+        RequireInside(RemoveBridgeButton,BridgeScroll,"Owned bridge removal");
+        SaveImage(Path.Combine(folder,"network-remove-bridge-compact.png"));
+        File.WriteAllText(Path.Combine(folder,"network-page-result.json"),"{\"physical_guid_draft\":true,\"missing_uplink_retained\":true,\"cancel_restores_nat\":true,\"remove_stopped_only\":true,\"remove_control_reachable\":true,\"no_host_network_calls\":true}");
+    }
+
     private async Task CheckOnboarding(string folder)
     {
         string parent = Path.Combine(folder, "wizard 日本語 VM"), iso = Path.Combine(folder, "synthetic.iso");
@@ -72,7 +87,13 @@ public partial class MainWindow
         await ArrangeCheck(); SaveImage(Path.Combine(folder, "network-friendly-uplinks.png"));
         if (!RestoreSettingsDrafts() || SelectedUplink.Length != 0 || Nat.IsChecked != true) throw new Exception("Cancel lost the saved network selection.");
         Physical.SelectedValue = id; Tabs.SelectedIndex = 7; await ArrangeCheck();
+        RemoveBridgeButton.BringIntoView();await ArrangeCheck();
+        RequireInside(RemoveBridgeButton,BridgeScroll,"Owned bridge removal");
         SaveImage(Path.Combine(folder, "network-bridge-preparation.png"));
+        foreach (string state in new[] { "running", "shutdown", "paused", "unknown", "unprepared", "stopped" }) {
+            currentState=state;UpdatePowerControls();
+            if (RemoveBridgeButton.IsEnabled != (state == "stopped")) throw new Exception("Bridge removal is enabled outside a fully stopped VM.");
+        }
         Tabs.SelectedIndex = 0; hardwareDirty = identityDirty = false; UpdatePowerControls();
     }
 }
