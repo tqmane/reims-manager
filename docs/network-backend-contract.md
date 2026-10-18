@@ -12,8 +12,9 @@ Values above are synthetic. IDs are InterfaceGuid values without braces.
 `kind` is `wifi` (interface type 71), `ethernet` (6), or `other`. Physical
 uplinks are hardware interfaces; VMware/virtual adapters are not choices.
 `connected` describes current link state, not successful guest bridging.
-Wi-Fi bridging depends on the driver/access point and is always reported
-as unverified until actually exercised. No physical Wi-Fi PCI passthrough
+Wi-Fi now uses a separate optional [IPv4 compatibility relay](wifi-macnat-contract.md),
+not a Windows host bridge; physical selection alone is not readiness.
+No physical Wi-Fi PCI passthrough
 or direct QEMU use of a Windows NDIS interface is implemented.
 
 The UI shows physical friendly names. Internal TAP choices can be optional

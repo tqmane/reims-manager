@@ -12,6 +12,8 @@ param(
 . "$PSScriptRoot/environment.ps1"
 . "$PSScriptRoot/usb.ps1"
 . "$PSScriptRoot/engine-package.ps1"
+. "$PSScriptRoot/wifi-macnat.ps1"
+. "$PSScriptRoot/network-uplinks.ps1"
 $script:ReimsEngine = Read-ReimsEngine $ProjectRoot
 
 function Get-ReimsSshKnownHostsOption([string]$Path) {
@@ -250,7 +252,8 @@ if (!$Qemu) { $Qemu = Get-ReimsEnginePath 'qemu' 'build/qemu/qemu-system-x86_64.
 $Qemu = [IO.Path]::GetFullPath($Qemu)
 if ($script:ReimsEngine -and $Qemu -ne (Get-ReimsEnginePath 'qemu' '')) { throw 'Selected QEMU does not belong to the installed engine package.' }
 $run = Join-Path $VmRoot ("logs/" + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-$qemuArgs = Get-ReimsQemuArguments $config $run -Paused:$Paused -Headless:$Headless -WithoutInstaller:$WithoutInstaller -DiagnosticTcg:$DiagnosticTcg
+$wifiMacNat=Test-ReimsWifiNetwork $config
+$qemuArgs = Get-ReimsQemuArguments $config $run -Paused:($Paused -or $wifiMacNat) -Headless:$Headless -WithoutInstaller:$WithoutInstaller -DiagnosticTcg:$DiagnosticTcg
 $runtime = Get-ReimsRuntime
 if (!$DryRun -and $runtime -and (Get-ReimsVmProcess $runtime)) {
     $status = Invoke-ReimsQmp $runtime 'query-status'
@@ -280,6 +283,7 @@ if (!$DryRun -and $runtime -and (Get-ReimsVmProcess $runtime)) {
         }
         Start-Sleep -Milliseconds 100
     } while ($true)
+    if ($wifiMacNat) { Start-ReimsWifiForwarder $config $runtime }
     if (!$Paused) { Invoke-ReimsQmp $runtime 'cont' | Out-Null }
     "Powered on the existing QEMU process, PID $($runtime.pid). Logs: $($runtime.run_directory)"
     return
@@ -344,7 +348,12 @@ try {
         }
     } while ($true)
     Write-ReimsJson (Join-Path $run 'qmp-status.json') $status
+    if ($wifiMacNat) {
+        Start-ReimsWifiForwarder $config $runtime
+        if (!$Paused) { Invoke-ReimsQmp $runtime 'cont' | Out-Null }
+    }
 } catch {
+    if ($wifiMacNat) { try { Stop-ReimsWifiForwarder } catch { Write-Warning $_.Exception.Message } }
     $owned = Get-ReimsVmProcess $runtime
     if ($owned) { Stop-Process -InputObject $owned -Force }
     throw

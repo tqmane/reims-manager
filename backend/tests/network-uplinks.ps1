@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $root=Join-Path ([IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")) ('network-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 $VmRoot=$root
-$fixture=@{bridges=@();commands=@();writeFailure=$false;createFailure=$false;unrelatedOnFailure=$false}
+$fixture=@{bridges=@();commands=@();writeFailure=$false;createFailure=$false;unrelatedOnFailure=$false;wifiConnected=$false}
 $wired='11111111-1111-4111-8111-111111111111';$wifi='22222222-2222-4222-8222-222222222222';$tap='33333333-3333-4333-8333-333333333333';$bridge='44444444-4444-4444-8444-444444444444'
 function Assert-ReimsVmStopped {}
 function Get-ReimsAdapterIpv4State { @{up=$true;usable=$false;addresses=@();gateways=@()} }
@@ -14,7 +14,7 @@ function Get-NetAdapterBinding {
 function Get-NetAdapter {
     @(
         [pscustomobject]@{Name='Wired';InterfaceGuid=$wired;HardwareInterface=$true;InterfaceType=6;InterfaceDescription='Authored Ethernet';Status='Up'},
-        [pscustomobject]@{Name='Wireless';InterfaceGuid=$wifi;HardwareInterface=$true;InterfaceType=71;InterfaceDescription='Authored WLAN';Status='Disconnected'},
+        [pscustomobject]@{Name='Wireless';InterfaceGuid=$wifi;HardwareInterface=$true;InterfaceType=71;InterfaceDescription='Authored WLAN';Status=$(if($fixture.wifiConnected){'Up'}else{'Disconnected'})},
         [pscustomobject]@{Name='Internal TAP';InterfaceGuid=$tap;HardwareInterface=$false;InterfaceType=53;InterfaceDescription='TAP-Windows Adapter';Status='Disconnected'},
         [pscustomobject]@{Name='VMware VMnet8';InterfaceGuid='55555555-5555-4555-8555-555555555555';HardwareInterface=$false;InterfaceType=6;InterfaceDescription='VMware Adapter';Status='Up'}
     )
@@ -46,6 +46,9 @@ try {
     if ($inventory.uplinks.Count -ne 2 -or $inventory.tap_adapters.Count -ne 1 -or $inventory.uplinks[1].kind -ne 'wifi' -or $inventory.uplinks[1].connected) { throw 'Physical/virtual inventory classification failed' }
     Reject { Resolve-ReimsPhysicalUplink 'VMware VMnet8' } 'physical'
     Reject { New-ReimsHostBridge 'Internal TAP' $wifi } 'Connect the selected'
+    $fixture.wifiConnected=$true
+    Reject { New-ReimsHostBridge 'Internal TAP' $wifi } 'PrepareWifi'
+    $fixture.wifiConnected=$false
     $config=[pscustomobject]@{network=[pscustomobject]@{mode='nat';adapter='';guest_host=''}}
     if ((Get-ReimsSavedNetwork $config 'nat' '' '' $wired).mode -ne 'nat' -or $fixture.commands.Count) { throw 'Saving NAT changed host networking' }
     Reject { Get-ReimsSavedNetwork $config 'bridge' 'Internal TAP' '' $wired } 'Run CreateBridge'
