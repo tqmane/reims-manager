@@ -8,6 +8,7 @@ $fixture=Join-Path $env:REIMS_PROJECT_ROOT_OVERRIDE ('.work/tmp/guest-bridge-fix
 $env:REIMS_VM_ROOT_OVERRIDE=$fixture
 $sourceScripts=Split-Path $PSScriptRoot
 . "$sourceScripts/start.ps1" -FunctionsOnly
+. "$sourceScripts/firmware.ps1"
 $lock=$null
 try {
     # A future qualified package is simulated only in this private backend copy.
@@ -17,8 +18,26 @@ try {
     & "$scripts/prepare-opencore.ps1" -Rebuild | Out-Null
     $ocPath=Join-Path $fixture 'state/opencore.json'; $statePath=Join-Path $fixture 'state/config.json'
     $oc=Get-Content $ocPath -Raw | ConvertFrom-Json
+    $enginePair=Resolve-ReimsFirmwarePair $null '' @((Get-ReimsEnginePath 'firmware' 'build/qemu/pc-bios'))
+    if((Get-FileHash $oc.firmware_code).Hash -ne (Get-FileHash $enginePair.code).Hash){throw 'New fixture did not use the engine pair'}
+    # Simulate an older recorded pair using authored suffix bytes; it is never booted.
+    $older=Join-Path $fixture 'firmware/older-pair';New-Item -ItemType Directory -Path $older | Out-Null
+    foreach($field in @('firmware_code','firmware_vars_template')){
+        $target=Join-Path $older ([IO.Path]::GetFileName($oc.$field))
+        Copy-Item -LiteralPath $oc.$field -Destination $target
+        Add-Content -LiteralPath $target -Value 'authored older-pair fixture'
+        $oc.$field=$target
+    }
+    $oc.code_sha256=(Get-FileHash $oc.firmware_code).Hash;$oc.vars_sha256=(Get-FileHash $oc.firmware_vars_template).Hash
+    $oc.firmware_source='authored-older-pair'
+    Write-ReimsJson $ocPath $oc
+    $live=Join-Path $fixture 'firmware/live-nvram.fd';[IO.File]::WriteAllText($live,'authored live NVRAM fixture')
+    $liveHash=(Get-FileHash $live).Hash
+    & "$scripts/prepare-opencore.ps1" -Rebuild | Out-Null
+    $retained=Get-Content $ocPath -Raw | ConvertFrom-Json
+    if($retained.firmware_code -ne $oc.firmware_code -or $retained.firmware_vars_template -ne $oc.firmware_vars_template -or $retained.code_sha256 -ne $oc.code_sha256 -or $retained.vars_sha256 -ne $oc.vars_sha256){throw 'Rebuild replaced older matched firmware'}
     $state=@{schema=1;base_disk=(Join-Path $fixture 'base.qcow2');active_disk=(Join-Path $fixture 'current.qcow2');
-        opencore=$oc.image;firmware_code=$oc.firmware_code;firmware_vars=$oc.firmware_vars_template;
+        opencore=$oc.image;firmware_code=$oc.firmware_code;firmware_vars=$live;
         rom=(Get-ReimsEnginePath 'rom' '.work/target/dist-vulkan/share/reims-vgpu/ReimsVgpu.rom');qmp_port=4444;ssh_port=2222}
     Write-ReimsJson $statePath $state
     $python=Get-ReimsTool 'python.exe'
@@ -84,7 +103,8 @@ assert c['NVRAM']['Add']['7C436110-AB2A-4BBB-A880-FE41995C9F82']['csr-active-con
     $lock.Dispose(); $lock=$null
     if(!$rejected -or (Get-FileHash $statePath).Hash -ne $oldConfig -or (Get-FileHash $ocPath).Hash -ne $oldOc){throw 'Failed metadata switch was not rolled back'}
     if(Test-Path (Join-Path $fixture 'state/runtime.json')){throw 'Fixture unexpectedly recorded a VM process'}
-    'PASS: authored addon validation, enable/disable, identity and bounds, active EFI rebuild, metadata rollback; no VM boot'
+    if((Get-FileHash $live).Hash -ne $liveHash){throw 'Live NVRAM changed during config/addon rebuild'}
+    'PASS: recorded OVMF pair/NVRAM, authored addon validation, enable/disable, identity and bounds, active EFI rebuild, metadata rollback; no VM boot'
 } finally {
     if($lock){$lock.Dispose()}
     $allowed=[IO.Path]::GetFullPath((Join-Path $env:REIMS_PROJECT_ROOT_OVERRIDE '.work/tmp'))+[IO.Path]::DirectorySeparatorChar

@@ -50,6 +50,8 @@ Before the final release, the maintainer must pin the completed common
 Reims implementation, review its safe runtime ABI checks, record native boot
 and app/browser qualification results, set `scope=generic-metal` and
 `runtime_validation=abi-checked`, and only then set `release_ready=true`.
+`generic-metal` means global routing for all clients, without process-name
+or suffix policy. Runtime ABI validation belongs in the common kext path.
 Use a new immutable tag for that source/range. These metadata assertions do
 not implement or replace ABI validation inside the kext. A publication
 request fails before building/publishing while those conditions are pending.

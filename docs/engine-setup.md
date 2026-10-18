@@ -53,6 +53,12 @@ All manifest paths are relative to the engine directory. QEMU's `-L`,
 disk tools, OVMF templates, ISO inspection and GPU ROM resolve through that
 manifest. VM-local writable firmware and disks stay in the VM directory.
 Changing the engine never overwrites the VM's NVRAM or SMBIOS identity.
+Rebuilding an existing VM reuses its recorded `firmware_code` and variables
+template, checking both recorded hashes before changing configuration or
+the EFI image. A newer engine's OVMF is selected only for new VMs. An
+explicit `-FirmwareDirectory` is checked against the existing pair: differing
+code or template is refused with a firmware/NVRAM migration explanation.
+Configuration and kext rebuilds do not migrate OVMF or regenerate identity.
 
 Downloads and the file manifest are checked automatically. ZIP traversal,
 duplicates, links, excessive extraction size, unknown source revisions and
