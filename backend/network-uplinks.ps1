@@ -33,6 +33,37 @@ function Get-ReimsHostBridgeIds {
     return @([regex]::Matches($text,'(?i)\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b') | ForEach-Object { ([guid]$_.Value).ToString('D') } | Select-Object -Unique)
 }
 
+function Assert-ReimsBridgeMembers($Record) {
+    $bridges=@(Get-ReimsHostBridgeIds)
+    if ($bridges.Count -ne 1 -or $bridges[0] -ne $Record.bridge_id) { throw 'Current bridge membership cannot be proven for this topology.' }
+    $nics=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
+    $bindings=@(Get-NetAdapterBinding -Name '*' -IncludeHidden -AllBindings -ComponentID ms_implat -ErrorAction Stop)
+    $enabled=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($binding in $bindings) {
+        if ($binding.ComponentID -ne 'ms_implat' -or $binding.Enabled -isnot [bool]) { throw 'Current bridge membership has unknown binding data.' }
+        if (!$binding.Enabled) { continue }
+        # This native InstanceID format was measured; unknown formats fail closed.
+        $match=[regex]::Match([string]$binding.InstanceID,'(?i)^\{(?<id>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\}::ms_implat$')
+        if (!$match.Success) { throw 'Current bridge membership has an unknown binding identity.' }
+        $id=([guid]$match.Groups['id'].Value).ToString('D')
+        if (@($nics | Where-Object { ([guid]$_.InterfaceGuid).ToString('D') -eq $id }).Count -ne 1 -or !$enabled.Add($id)) { throw 'Current bridge membership has an ambiguous adapter identity.' }
+    }
+    # An enabled multiplexor binding alone does not identify bridge membership.
+    # Cross-check native IsBridged flags; ignore friendly-name text completely.
+    $native=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $rows=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($line in (Invoke-ReimsNetworkCommand @('bridge','show','adapter'))) {
+        if ($line -notmatch '\{[0-9a-fA-F-]{36}\}') { continue }
+        $match=[regex]::Match($line,'(?i)^\s*\d+\s+\{(?<id>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\}\s+.+?\s+(?<bridged>Yes|No)\s+(?:Yes|No)\s+(?:enabled|disabled)\s*$')
+        if (!$match.Success) { throw 'Current bridge membership has an unsupported native table format.' }
+        $id=([guid]$match.Groups['id'].Value).ToString('D')
+        if (!$rows.Add($id)) { throw 'Current bridge membership has duplicate native adapter rows.' }
+        if ($match.Groups['bridged'].Value -ieq 'Yes') { [void]$native.Add($id) }
+    }
+    [string[]]$expected=@($Record.tap_id,$Record.physical_adapter_id)
+    if ($enabled.Count -ne 2 -or !$enabled.SetEquals($expected) -or !$native.SetEquals($expected)) { throw 'Current bridge members include foreign/missing adapters or unconfirmed bindings; no bridge was changed.' }
+}
+
 function New-ReimsHostBridge([string]$TapName,[string]$PhysicalSelection) {
     $uplink=Resolve-ReimsPhysicalUplink $PhysicalSelection
     if (!$uplink.connected) { throw 'Connect the selected physical adapter before creating a bridge.' }
@@ -106,6 +137,7 @@ function Remove-ReimsHostBridge {
         @($inventory.uplinks | Where-Object id -EQ $record.physical_adapter_id).Count -ne 1) { throw 'The owned TAP/uplink identity no longer matches; no bridge was changed.' }
     if ($config.network.mode -notin @('nat','bridge') -or ($config.network.mode -eq 'bridge' -and
         ($config.network.adapter -ne $record.tap_name -or $config.network.physical_adapter_id -ne $record.physical_adapter_id))) { throw 'The VM network does not match its owned bridge record.' }
+    Assert-ReimsBridgeMembers $record
     $originalHash=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($configBytes))
     $recordHash=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($recordBytes))
     $auditDirectory=Join-Path $VmRoot ('backups/network-remove-'+[guid]::NewGuid().ToString('N'))
@@ -125,6 +157,7 @@ function Remove-ReimsHostBridge {
         $config.network=@{mode='nat';adapter='';guest_host=''}
         Write-ReimsJson $configPath $config
         $natHash=(Get-FileHash -LiteralPath $configPath).Hash
+        Assert-ReimsBridgeMembers $record
         [void](Invoke-ReimsNetworkCommand @('bridge','destroy',([guid]$record.bridge_id).ToString('B')))
         if (@(Get-ReimsHostBridgeIds).Count) { throw 'Bridge removal did not leave the expected empty topology.' }
         $record.state='removed';$record.removed_utc=[DateTime]::UtcNow.ToString('o')

@@ -76,8 +76,33 @@ The backend accepts only one live Windows bridge matching the VM's active
 network settings. Missing, removed, foreign or multiple/ambiguous bridge
 topologies are refused. Native destroy receives only that recorded braced GUID;
 unrelated bridge/VMware interfaces, TAP devices and IP/metric settings are not
-explicitly altered. Link membership/IP/DHCP restoration is not inferred from
-the GUID inventory, and connectivity must be checked separately.
+explicitly altered. Before preparation and again immediately before native
+destroy, actual member evidence must match exactly the recorded TAP/uplink:
+enabled `ms_implat` bindings and native `netsh bridge show adapter`
+`IsBridged=Yes` GUIDs must both be that same two-element set. Extra NICs,
+other multiplexor teams, missing/duplicate identities, query failures and
+unrecognized native output refuse removal. Neither bridge GUID alone nor
+protocol binding alone establishes membership. IP/DHCP/connectivity must
+still be checked separately.
+
+Identity mapping uses the measured native binding `InstanceID` shape
+`{GUID}::ms_implat`, verifies that each enabled GUID identifies exactly one
+`Get-NetAdapter -IncludeHidden` result, and never parses friendly names or
+assumes an undocumented InterfaceGuid property exists on a binding object.
+Unknown InstanceID formats are refused. Native table parsing recognizes
+GUID rows and explicit Yes/No flags only; unknown/localized flag formats
+are refused instead of guessed. Binding `BindName` is an NDIS name, not
+adapter identity. The [CIM class documentation](https://learn.microsoft.com/en-us/windows/win32/fwp/wmi/netadaptercimprov/msft-netadapterbindingsettingdata)
+describes those properties; [native bridge commands](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netsh-bridge)
+describe the adapter status table and destructive scope of destroy.
+
+The native table format was checked against retained private captures with
+the two intended members and against current read-only binding enumeration;
+no bridge was created for this guard. Synthetic cases cover extra members
+in either evidence source, unknown/duplicate/missing identities, query or
+format failure, and a foreign NIC appearing after NAT was staged. This is
+a revalidation guard, not an atomic OS topology lock: changes by another
+administrator after the final check remain outside this transaction.
 
 Before changing anything, original config/record bytes are retained under a
 unique `backups/network-remove-*` directory with `transaction.json`. NAT config
@@ -99,3 +124,21 @@ CPU-only checks run with synthetic files, inventory and native calls:
 `remove-bridge.ps1` ownership/rollback cases. The affected WPF page can be checked
 with `ReimsManager.exe --network-page-check <private-output-directory>`; it
 does not invoke the host network backend or boot a VM.
+
+## Proposed host-readiness gate (not implemented)
+
+CreateBridge currently does not verify host lease recovery. The reviewed
+minimal proposal is to read the selected physical uplink's IPv4/default
+gateway before creation, aborting before mutation if that query fails. If
+it previously had usable non-link-local IPv4 and a default gateway, wait up
+to 30 seconds at 500 ms intervals for the uniquely identified new bridge
+to regain usable IPv4 plus a default gateway. Do this before saving its
+ownership record or applying bridged VM settings. On timeout/unresolved
+identity, raise through the existing owned-bridge rollback path and leave
+the VM's NAT configuration unchanged. Never reset adapters, renew leases,
+change metrics/other NICs, or use an Internet ping as acceptance. Before
+destroying during rollback, ownership/membership must remain provable.
+Synthetic tests should cover immediate/delayed recovery, LLA-only/missing
+gateway, missing bridge identity, timeout, rollback failure and NAT/foreign
+NIC preservation. These tests and the lease gate are pending, not proof of
+Internet access or guest DHCP.

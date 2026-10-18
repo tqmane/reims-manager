@@ -13,7 +13,20 @@ function Get-ReimsHostBridgeIds { return $fixture.bridges }
 function Get-ReimsNetworkInventory {
     return @{tap_adapters=@(@{id=$tap;name='Owned TAP'});uplinks=@(@{id=$uplink;name='Authored Wi-Fi'})}
 }
+function Get-NetAdapter {
+    foreach ($id in @($tap,$uplink,$foreign)) { [pscustomobject]@{InterfaceGuid=$id} }
+}
+function Get-NetAdapterBinding {
+    if ($fixture.bindingFailure) { throw 'Binding query fixture failure' }
+    foreach ($id in $fixture.bound) {
+        [pscustomobject]@{ComponentID='ms_implat';Enabled=$true;InstanceID=$(if($fixture.badBindingIdentity){'unknown'}else{"{$id}::ms_implat"})}
+    }
+}
 function Invoke-ReimsNetworkCommand($Arguments) {
+    if (($Arguments -join ' ') -eq 'bridge show adapter') {
+        if ($fixture.unknownNativeFormat) { return "1 {$tap} Unsupported native columns" }
+        return @(foreach($id in @($tap,$uplink,$foreign)){"1 {$id} Ignored display name $(if($id -in $fixture.nativeMembers){'Yes'}else{'No'}) Yes disabled"})
+    }
     $fixture.commands+=,($Arguments -join ' ')
     if (($Arguments -join ' ') -ne "bridge destroy {$bridge}") { throw 'Attempt to change an unowned interface/bridge' }
     if ($fixture.concurrentConfig) { [IO.File]::WriteAllText($fixture.configPath,'{"schema":1,"network":{"mode":"nat"},"user_change":"keep"}') }
@@ -26,6 +39,7 @@ function Write-ReimsJson($Path,$Value) {
     if ($Path -eq $fixture.recordPath -and $fixture.recordFailure) { throw 'Record write fixture failure' }
     [void][IO.Directory]::CreateDirectory((Split-Path $Path))
     [IO.File]::WriteAllText($Path,($Value | ConvertTo-Json -Depth 20))
+    if ($Path -eq $fixture.configPath -and $fixture.addMemberAfterNat -and $Value.network.mode -eq 'nat') { $fixture.bound+=,$foreign;$fixture.nativeMembers+=,$foreign }
 }
 function New-Case {
     $fixture.cases++
@@ -34,6 +48,8 @@ function New-Case {
     $fixture.running=$false;$fixture.bridges=@($bridge);$fixture.commands=@()
     $fixture.destroyFailure=$false;$fixture.configFailure=$false;$fixture.recordFailure=$false
     $fixture.stickyDestroy=$false;$fixture.foreignAfterDestroy=$false;$fixture.concurrentConfig=$false
+    $fixture.bound=@($tap,$uplink);$fixture.nativeMembers=@($tap,$uplink)
+    $fixture.bindingFailure=$false;$fixture.badBindingIdentity=$false;$fixture.unknownNativeFormat=$false;$fixture.addMemberAfterNat=$false
     $fixture.configPath=Join-Path $VmRoot 'state/config.json';$fixture.recordPath=Join-Path $VmRoot 'state/host-bridge.json'
     $config=@{schema=1;mac='52:54:00:12:34:56';network=@{mode='bridge';adapter='Owned TAP';physical_adapter_id=$uplink;guest_host='guest.invalid'}}
     Write-ReimsJson $fixture.configPath $config
@@ -77,6 +93,29 @@ try {
     Reject { Remove-ReimsHostBridge } 'does not match';Assert-Unchanged
     New-Case;$fixture.configFailure=$true
     Reject { Remove-ReimsHostBridge } 'Config write fixture';Assert-Unchanged
+    New-Case;$fixture.bound+=,$foreign;$fixture.nativeMembers+=,$foreign
+    Reject { Remove-ReimsHostBridge } 'foreign/missing';Assert-Unchanged
+    New-Case;$fixture.nativeMembers+=,$foreign
+    Reject { Remove-ReimsHostBridge } 'foreign/missing';Assert-Unchanged
+    New-Case;$fixture.bound+=,$foreign
+    Reject { Remove-ReimsHostBridge } 'foreign/missing';Assert-Unchanged
+    New-Case;$fixture.bound=@($tap,$tap,$uplink)
+    Reject { Remove-ReimsHostBridge } 'ambiguous adapter identity';Assert-Unchanged
+    New-Case;$fixture.bound=@()
+    Reject { Remove-ReimsHostBridge } 'foreign/missing';Assert-Unchanged
+    New-Case;$fixture.bound=@($tap,'66666666-6666-4666-8666-666666666666')
+    Reject { Remove-ReimsHostBridge } 'ambiguous adapter identity';Assert-Unchanged
+    New-Case;$fixture.bound=@($tap)
+    Reject { Remove-ReimsHostBridge } 'foreign/missing';Assert-Unchanged
+    New-Case;$fixture.bindingFailure=$true
+    Reject { Remove-ReimsHostBridge } 'Binding query fixture';Assert-Unchanged
+    New-Case;$fixture.badBindingIdentity=$true
+    Reject { Remove-ReimsHostBridge } 'unknown binding identity';Assert-Unchanged
+    New-Case;$fixture.unknownNativeFormat=$true
+    Reject { Remove-ReimsHostBridge } 'unsupported native table';Assert-Unchanged
+    New-Case;$fixture.addMemberAfterNat=$true
+    Reject { Remove-ReimsHostBridge } 'foreign/missing'
+    if ($fixture.commands.Count -or (Get-FileHash -LiteralPath $fixture.configPath).Hash -ne $fixture.originalHash) { throw 'Late foreign member was destroyed or original config not restored' }
     New-Case;$fixture.destroyFailure=$true
     Reject { Remove-ReimsHostBridge } 'Native destroy fixture'
     if ((Get-FileHash -LiteralPath $fixture.configPath).Hash -ne $fixture.originalHash -or
