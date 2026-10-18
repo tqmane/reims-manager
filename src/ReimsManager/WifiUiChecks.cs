@@ -6,10 +6,14 @@ namespace ReimsManager;
 internal static class WifiUiChecks
 {
     internal static JsonElement Snapshot(string? kind=WifiForwarderState.MacNat, bool installed=true, bool configured=true,
-        bool running=false, bool ready=false, string? error=null, int? pid=null) => JsonSerializer.SerializeToElement(new {
+        bool running=false, bool ready=false, string? error=null, int? pid=null, bool? ipv6Enabled=null)
+    {
+        bool ipv6=ipv6Enabled ?? (kind==WifiForwarderState.MacNat && configured);
+        return JsonSerializer.SerializeToElement(new {
             network="bridge",network_uplink_id="aaaaaaaa-1111-4111-8111-111111111111",
-            network_forwarder=new {kind,installed,configured,running,ready,pid,error,ipv4_only=true}
+            network_forwarder=new {kind,installed,configured,running,ready,pid,error,ipv4_only=!ipv6,ipv6_enabled=ipv6}
         });
+    }
 
     internal static void Run(string folder)
     {
@@ -17,19 +21,31 @@ internal static class WifiUiChecks
         if (WifiForwarderState.Read(JsonSerializer.SerializeToElement(new {})) is not null) throw new Exception("Missing forwarder state was confirmed.");
         if (WifiForwarderState.Read(JsonSerializer.SerializeToElement(new { network_forwarder=(object?)null })) is not null) throw new Exception("Null forwarder state was confirmed.");
         var none=WifiForwarderState.Read(Snapshot(kind:"none",installed:false,configured:false))!;
-        if (none.Kind is not null || none.Ready) throw new Exception("Unconfigured backend 'none' was treated as Wi-Fi readiness.");
+        if (none.Kind is not null || none.Ready || none.Ipv6Enabled) throw new Exception("Unconfigured backend 'none' was treated as Wi-Fi readiness.");
         var stopped=WifiForwarderState.Read(Snapshot())!;
         if (stopped.Ready || !stopped.Summary("stopped").Contains("起動待ち")) throw new Exception("Configured/stopped was shown connected.");
         var started=WifiForwarderState.Read(Snapshot(running:true,pid:1234))!;
         if (started.Ready || !started.Summary("running").Contains("初期化")) throw new Exception("Starting worker was shown ready.");
         var ready=WifiForwarderState.Read(Snapshot(running:true,ready:true,pid:1234))!;
-        if (!ready.Summary("running").Contains("転送プロセス") || ready.Summary("running").Contains("接続済")) throw new Exception("Capture readiness was presented as LAN connectivity.");
+        if (!ready.Ipv6Enabled || ready.Ipv4Only || !ready.Summary("running").Contains("転送プロセス") || !ready.Summary("running").Contains("IPv4 / IPv6") || ready.Summary("running").Contains("接続済"))
+            throw new Exception("Capture readiness/capability was presented as LAN connectivity.");
         if (!WifiForwarderState.Read(Snapshot(installed:false,running:true,ready:true,pid:1234))!.Summary("running").Contains("準備完了")) throw new Exception("A live ready worker was hidden by an unavailable driver inventory query.");
         var failed=WifiForwarderState.Read(Snapshot(running:true,ready:true,pid:1234,error:"Authored worker failure"))!;
         if (!failed.Summary("running").Contains("エラー")) throw new Exception("A reported error was hidden behind a ready flag.");
+        var legacy=WifiForwarderState.Read(Snapshot(kind:WifiForwarderState.LegacyMacNat,configured:false))!;
+        if (legacy.Kind!=WifiForwarderState.LegacyMacNat || legacy.Configured || legacy.Ipv6Enabled || !legacy.Ipv4Only || !legacy.Summary("stopped").Contains("再準備") ||
+            !WifiForwarderState.IsMacNat(legacy.Kind) || !WifiForwarderState.IsMacNat(ready.Kind) || WifiForwarderState.IsMacNat("unrecognized"))
+            throw new Exception("Legacy IPv4 configuration was dropped or silently upgraded to IPv6.");
         Reject(()=>WifiForwarderState.Read(Snapshot(ready:true)));
+        Reject(()=>WifiForwarderState.Read(Snapshot(running:true,ready:true,pid:1234,configured:false)));
+        Reject(()=>WifiForwarderState.Read(Snapshot(running:true,ready:true)));
+        Reject(()=>WifiForwarderState.Read(Snapshot(ipv6Enabled:false)));
+        Reject(()=>WifiForwarderState.Read(Snapshot(kind:WifiForwarderState.LegacyMacNat,configured:false,ipv6Enabled:true)));
         foreach(string json in new[]{Snapshot().GetRawText().Replace("\"ready\":false","\"ready\":\"false\""),
-            Snapshot().GetRawText().Replace("\"ipv4_only\":true","\"ipv4_only\":false")}) {
+            Snapshot().GetRawText().Replace("\"ipv4_only\":false","\"ipv4_only\":true"),
+            Snapshot().GetRawText().Replace(",\"ipv6_enabled\":true",""),
+            Snapshot().GetRawText().Replace("\"ipv6_enabled\":true","\"ipv6_enabled\":null"),
+            Snapshot().GetRawText().Replace("\"ipv6_enabled\":true","\"ipv6_enabled\":\"true\"")}) {
             using var document=JsonDocument.Parse(json);Reject(()=>WifiForwarderState.Read(document.RootElement));
         }
         const string id="aaaaaaaa-1111-4111-8111-111111111111";
@@ -52,7 +68,7 @@ internal static class WifiUiChecks
             File.WriteAllText(file,json);Reject(()=>WifiPrepareResult.Read(file,DateTime.MinValue));
         }
         File.WriteAllText(file,new string(' ',65537));Reject(()=>WifiPrepareResult.Read(file,DateTime.MinValue));
-        File.WriteAllText(Path.Combine(folder,"wifi-ui-result.json"),"{\"missing_status_unconfirmed\":true,\"none_kind_supported\":true,\"worker_ready_not_lan\":true,\"errors_visible\":true,\"explicit_terms_only\":true,\"stopped_only\":true,\"fresh_bounded_prepare_result\":true}");
+        File.WriteAllText(Path.Combine(folder,"wifi-ui-result.json"),"{\"missing_status_unconfirmed\":true,\"none_kind_supported\":true,\"worker_ready_not_lan\":true,\"errors_visible\":true,\"explicit_terms_only\":true,\"stopped_only\":true,\"fresh_bounded_prepare_result\":true,\"typed_ipv6_required\":true,\"protocol_flags_consistent\":true,\"legacy_ipv4_preserved_requires_reprepare\":true}");
     }
 
     private static void Reject(Action action)

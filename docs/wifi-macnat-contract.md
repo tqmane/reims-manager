@@ -1,6 +1,6 @@
-# Wi-Fi IPv4 compatibility
+# Wi-Fi MAC translation
 
-This optional path relays IPv4/ARP between one Manager-owned TAP and one
+This optional path relays IPv4/ARP and IPv6 between one Manager-owned TAP and one
 selected physical Wi-Fi GUID using an authored helper and the MIT ndisapi
 user-mode SDK. It does not create a Windows bridge, pass a physical NIC
 name to QEMU, modify physical TCP/IP bindings, renew leases, change metrics,
@@ -14,7 +14,7 @@ works before a VM exists. The global path does not load the VM environment
 or write files. `Status.network_forwarder` has the same shape:
 
 ```json
-{"schema":1,"kind":"none","installed":false,"configured":false,"running":false,"ready":false,"pid":null,"enabled":false,"helper_available":true,"driver_state":"not_installed","forwarder_state":"stopped","error":"","tap_id":"","uplink_id":"","ipv4_only":true,"terms":{"id":"winpkfilter-3.6.2.1-personal-evaluation","url":"https://www.ntkernel.com/windows-packet-filter/download/","license_url":"https://www.ntkernel.com/windows-packet-filter/licensing/","commercial_license_required":true,"notice":"Free for non-commercial personal/academic use and commercial evaluation. Commercial deployment/redistribution requires separate vendor licensing."}}
+{"schema":1,"kind":"none","installed":false,"configured":false,"running":false,"ready":false,"pid":null,"enabled":false,"helper_available":true,"driver_state":"not_installed","forwarder_state":"stopped","error":"","tap_id":"","uplink_id":"","ipv4_only":true,"ipv6_enabled":false,"terms":{"id":"winpkfilter-3.6.2.1-personal-evaluation","url":"https://www.ntkernel.com/windows-packet-filter/download/","license_url":"https://www.ntkernel.com/windows-packet-filter/licensing/","commercial_license_required":true,"notice":"Free for non-commercial personal/academic use and commercial evaluation. Commercial deployment/redistribution requires separate vendor licensing."}}
 ```
 
 `driver_state` is `running`, `not_installed`, or `unknown`. `forwarder_state`
@@ -23,12 +23,30 @@ the matching native session, a live helper identity and a live matching
 QEMU PID/creation time; link Up, a driver service, or a stale ready file is
 insufficient. It confirms capture readiness, not guest DHCP or Internet.
 
+New profiles use `network.mode=bridge, forwarder=macnat`; status kind is
+`macnat`. Typed `ipv6_enabled=true` means a matching enabled preparation
+receipt, a live Manager-owned TAP identity, and disabled effective
+RouterDiscovery in ActiveStore. It is configuration readiness, not a claim that the
+uplink has IPv6 Internet. `ipv4_only` is always its inverse. An unconfigured
+profile has both `configured=false` and `ipv6_enabled=false`.
+`enabled` also preserves prepared/error ownership receipts so stopped-VM
+Disable remains available after a failed preparation; such phases never
+count as configured or ready.
+
+Legacy `macnat-ipv4` profiles remain recognizable for preparation and
+Disable. They report `configured=false, ipv6_enabled=false, ipv4_only=true`
+and `Reapply Wi-Fi preparation for IPv6`, while preserving enabled state
+for stopped-VM Disable. Start rejects an old unprepared receipt before
+launch/capture. PrepareWifi migrates it explicitly. Ready additionally
+requires the native session's typed IPv6-ready receipt, preventing a new
+backend from treating an older helper binary as IPv6 capable.
+
 Actions use existing `Root`, `ToolsRoot`, and `VmDirectory` parameters:
 
 | Action | Additional arguments | Policy/result |
 |---|---|---|
-| PrepareWifi | `-PhysicalAdapter <Wi-Fi GUID> [-Adapter <owned TAP GUID>] [-GuestHost <hostname/address>] -AcceptPacketFilterTerms` | Stopped VM + UAC. Install missing driver and create/reuse Manager-owned TAP, prepare bindings and save `mode=bridge, forwarder=macnat-ipv4`. Driver consent is required before a missing driver is installed. |
-| DisableWifi | none | Stopped VM + UAC; verify owned identity and restore recorded TAP IPv4 binding, retain IPv6, then save NAT. No foreign TAP adoption. |
+| PrepareWifi | `-PhysicalAdapter <Wi-Fi GUID> [-Adapter <owned TAP GUID>] [-GuestHost <hostname/address>] -AcceptPacketFilterTerms` | Stopped VM + UAC. Install missing driver and create/reuse Manager-owned TAP, prepare bindings/RouterDiscovery and save `mode=bridge, forwarder=macnat`. Driver consent is required before a missing driver is installed. |
+| DisableWifi | none | Stopped VM + UAC; verify owned identity and restore recorded TAP IPv4 binding and RouterDiscovery values, retain IPv6 binding/LLA, then save NAT. No foreign TAP adoption. |
 | InstallWifiDriver | `-AcceptPacketFilterTerms` | Optional standalone driver step with explicit consent + UAC; no VM needed. If a VM is selected it must be stopped. |
 
 `PrepareWifi` creates/reuses a TAP with the installation receipt in the normal
@@ -58,7 +76,7 @@ Read-only Status is authoritative for configuration and runtime afterward.
 The hardware draft retains the existing `nat`/`bridge` mode and the selected
 physical GUID. SetHardware/SetNetwork accept `-Network bridge -Adapter <TAP
 name or GUID> -PhysicalAdapter <Wi-Fi GUID>`, only for the already enabled
-matching pair; the backend preserves `forwarder=macnat-ipv4`. If an existing
+matching pair; the backend preserves `forwarder=macnat`. If an existing
 Wi-Fi configuration omits PhysicalAdapter, its recorded GUID is retained.
 Switching away requires DisableWifi first so the TAP IPv4 binding is
 restored. Friendly Wi-Fi selection should offer compatibility activation;
@@ -82,9 +100,34 @@ time before capturing. It refuses missing/duplicate IDs and unknown/nonzero
 selected NDIS modes. Per-adapter mutexes prevent a second helper using the
 same interfaces. No global packet-filter table is installed or reset.
 
-Each selected capture attaches an event and listen mode. Only the TAP's
-hardware packet filter is temporarily extended to promiscuous, preserving
-its previous value. The helper signals ready after both captures start;
+Each selected capture attaches an event and listen mode. The TAP's hardware
+filter is temporarily ORed with PROMISCUOUS and read back. An Ethernet-medium
+uplink retains the verified ALL_MULTICAST request path. A positively identified
+Native80211 medium instead uses normal listen plus a helper-owned Winsock
+IPv6 datagram socket: ALL_MULTICAST is not mandatory for that medium and its
+zero filter snapshot is not proof of no reception. SDK logical medium and
+GetIfEntry2 system/physical medium values select the class and are recorded.
+Native80211 hardware filters are observed, never set or restored by the
+helper. Their receipt uses `requested=null`, not a fabricated successful bit.
+
+The owned socket joins ff02::1 and ff02::fb on only the selected Wi-Fi index.
+Before forwarding validated guest IPv6 traffic it joins the source's
+solicited-node group; validated DAD targets are joined without assigned-address
+learning, and NA targets are handled as advertised addresses. Memberships are
+bounded with idle-group eviction; the fixed groups remain. Closing only this
+socket releases only its own references, leaving other applications' joins
+alone. There is no raw/promiscuous Native80211 mode, direct multicast-list
+replacement, route change, or system bridge. Other application-specific
+multicast groups beyond this set are not claimed to be subscribed.
+
+Ready/stop/error session records include `hardware_filters` with
+original/requested/read-back/restore results and `receive` with selected
+strategy, medium values, owned socket/group counts and release result.
+`multicast_delivery=requires-functional-validation` explicitly distinguishes
+successful socket/capture initialization from actual adapter/AP delivery.
+Group-count updates are committed when a new group is joined.
+Actual RA and solicited-node multicast reception remains a hardware gate.
+The helper signals ready after both captures start;
 Start resumes QEMU only then (unless explicitly Paused). Retained QEMU
 power-on restarts/validates the relay before resuming. Guest power-off may
 retain QEMU and its relay; Exit/ForceExit or QEMU death ends the relay.
@@ -92,7 +135,8 @@ retain QEMU and its relay; Exit/ForceExit or QEMU death ends the relay.
 Fixed VM files:
 
 - `state/wifi-forwarder.json`: selected GUID/PnP receipt, original IP bindings,
-  enabled/prepared/error/disabled phase; enable failure records rollback.
+  `ipv6_enabled`, original RouterDiscovery per store, enabled/prepared/error/
+  disabled phase; enable failure records rollback.
 - `state/wifi-forwarder/runtime.json`: helper PID/creation time/executable,
   QEMU PID/creation time and session GUID.
 - `state/wifi-forwarder/status.json`: atomic native starting/ready/stopped/error,
@@ -103,12 +147,43 @@ Fixed VM files:
 The loop checks the held QEMU handle and stop request at least between
 bounded packet batches, with a 100 ms idle poll. Cleanup resets only modes
 it acquired, detaches its capture events, drains its queues and restores
-its recorded TAP hardware filter. If an acquired mode/filter changed,
+its recorded selected hardware filters. If an acquired mode/filter changed,
 cleanup refuses to overwrite unknown ownership and reports unconfirmed
 cleanup. Backend waits up to 10 seconds and never kills another process
 or force-clears driver modes. A crashed helper/stale status is unconfirmed,
 not success. SDK configuration operations are not atomic against arbitrary
 third-party driver clients; unknown state requires inspection.
+
+PrepareWifi changes only the owned TAP's IPv6 RouterDiscovery through
+Get/Set-NetIPInterface, explicit `-PolicyStore ActiveStore` and the exact
+selected interface index. The original effective value (`Enabled`,
+`Disabled`, or `ControlledByDHCP`, normalized from the documented 0/1/2
+enum) is saved in `router_discovery_before.ActiveStore` with
+`router_discovery_store=ActiveStore`. It is written before disabling the
+effective setting. Reapply keeps that original. A value that has returned
+to the known original requires explicit stopped/admin PrepareWifi to
+disable it again; any other value refuses reapply. Start/status/native
+guards always require the current effective setting to be Disabled.
+Failure and Disable restore only the exact recorded effective value.
+IPv6 binding/LLA remain
+enabled. Physical IP bindings, DHCP configuration, routes and metrics are
+not edited. The native helper independently checks the selected TAP's
+RouterDiscoveryBehavior through GetIpInterfaceEntry before capture, during
+its loop and before forwarding an RA; unknown/enabled state ends the relay.
+
+The first dual-store implementation incorrectly required a readable
+RouterDiscovery enum from PersistentStore. A real provider can return a
+persistent interface row with NULL/default RouterDiscovery while ActiveStore
+reports Enabled. NULL is not mapped to Enabled, nor is ordinal 255 used as
+a default-reset command. The documented Set-NetIPInterface PolicyStore
+contract says to specify ActiveStore only. The current implementation does
+not read or write PersistentStore, so an unset/default or custom persistent
+policy is not replaced to manufacture a restoration value. If an effective
+setting changes after a restart or outside Manager, capture remains blocked
+until explicit safe preparation. Older dual-store IPv6 receipts without
+the new scope marker require inspection; unknown persistence is never
+overwritten. CPU cases cover NULL/default persistence, exact active undo,
+reapply, unknown/255 effective refusal and zero persistent mutations.
 
 ## Driver delivery and limits
 
@@ -128,15 +203,47 @@ import, proprietary driver source in Git, global bridge or automatic reboot
 is involved. Existing unknown installations are preserved. Installation
 can briefly interrupt networking and must be explicitly authorized.
 
-The relay intentionally forwards only IPv4 and Ethernet/IPv4 ARP.
-External IPv6 (including RA/DNS advertisements) is not forwarded. TAP IPv6
-is retained for link-local management. Ethernet, ARP lengths/types, IPv4
+Ethernet, ARP lengths/types, IPv4
 version/IHL/total length, UDP length and DHCP fixed-header/cookie bounds are
 validated before field reads. Fragmented IPv4 is forwarded without parsing
 or editing the transport header. VLAN/jumbo/other EtherTypes are dropped.
-This is MAC translation, not an IP firewall or a general IPv6 bridge.
 
-Parent's private prototype qualified DHCP/gateway/SSH/DNS/HTTP on the
-current guest without changing host physical IPs. This authored production
-helper still requires that end-to-end qualification after integration.
-Pure packet and mocked backend tests are not real NIC/driver/VM proof.
+IPv6 validates base payload length, advancing bounded extension headers and
+fragment fields. Data/ESP/fragment payloads remain L2-only. First/atomic
+fragmented ND is refused (RFC 6980); noninitial fragment bytes are opaque,
+never interpreted or edited as ND. ND cannot reassemble without its refused
+first fragment. AH-protected ND is refused rather than invalidating its
+authentication. Unfragmented ND validates hop limit 255, code/type, target,
+option sizes and the original ICMPv6 pseudo-header checksum before editing.
+Guest SLLA/TLLA options are translated, then the full checksum is recomputed.
+Peer/router options are retained. Multicast RA/RDNSS and MLD Router Alert
+traffic pass without L3 edits. Valid MLD reports/Done may use `::` before
+link-local assignment. DAD NS has no SLLA and never learns its tentative
+target. Normal IPv6 source and NA-target learning support warm relay
+restart; the bounded cache evicts old addresses as privacy addresses rotate.
+This is MAC translation, not an IP firewall or IP address translation.
+
+References: [IPv6](https://www.rfc-editor.org/rfc/rfc8200),
+[ND](https://www.rfc-editor.org/rfc/rfc4861),
+[fragmented ND](https://www.rfc-editor.org/rfc/rfc6980),
+[MLD before link-local assignment](https://www.rfc-editor.org/rfc/rfc3590),
+[Windows interface policy](https://learn.microsoft.com/en-us/powershell/module/nettcpip/set-netipinterface).
+
+The packaged IPv4 product was qualified with DHCP, gateway reachability,
+SSH, ordinary DNS/HTTPS, warm relay restart and owned-mode cleanup; host
+physical connectivity and other running virtualization workloads remained
+available. Official driver catalog-member/INF verification also passed.
+These results do not establish the new IPv6 path. IPv6 multicast/RA/DAD,
+addressing/DNS/Internet and exact filter/policy restoration still require
+real hardware qualification after integration. CPU packet/backend fixtures
+are not that proof.
+
+The initial actual Native80211 attempt returned success setting Ethernet
+ALL_MULTICAST but read back zero and refused guest resume, with owned cleanup
+confirmed. That does not establish IPv6 hardware incapability. The membership
+candidate follows the Native80211/normal Winsock contracts; it still needs
+source-matched functional qualification. `reims-wifi-macnat --inspect <braced
+TAP GUID> <braced Wi-Fi GUID>` queries only the two selected interfaces'
+medium/filter/mode metadata and performs no capture, socket join or set.
+Primary references: [NDIS packet filters](https://learn.microsoft.com/en-us/windows-hardware/drivers/network/oid-gen-current-packet-filter),
+[Winsock IPv6 group options](https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-ipv6-socket-options).

@@ -3,9 +3,12 @@ using System.Text.Json;
 
 namespace ReimsManager;
 
-internal sealed record WifiForwarderState(string? Kind, bool Installed, bool Configured, bool Running, bool Ready, int? Pid, string? Error, bool Ipv4Only)
+internal sealed record WifiForwarderState(string? Kind, bool Installed, bool Configured, bool Running, bool Ready, int? Pid, string? Error, bool Ipv4Only, bool Ipv6Enabled)
 {
-    internal const string MacNat = "macnat-ipv4";
+    internal const string MacNat = "macnat";
+    internal const string LegacyMacNat = "macnat-ipv4";
+    internal static bool IsMacNat(string? kind) => kind is MacNat or LegacyMacNat;
+    internal bool KnownKind => Kind is null || IsMacNat(Kind);
     internal static WifiForwarderState? Read(JsonElement status)
     {
         if (status.ValueKind != JsonValueKind.Object || !status.TryGetProperty("network_forwarder", out var value) || value.ValueKind == JsonValueKind.Null) return null;
@@ -15,13 +18,16 @@ internal sealed record WifiForwarderState(string? Kind, bool Installed, bool Con
         var result = new WifiForwarderState(kind, value.GetProperty("installed").GetBoolean(),
             value.GetProperty("configured").GetBoolean(), value.GetProperty("running").GetBoolean(), value.GetProperty("ready").GetBoolean(),
             value.GetProperty("pid").ValueKind == JsonValueKind.Null ? null : value.GetProperty("pid").GetInt32(),
-            value.GetProperty("error").GetString(), value.GetProperty("ipv4_only").GetBoolean());
-        if (result.Pid <= 0 || result.Ready && !result.Running || result.Kind==MacNat && !result.Ipv4Only) throw new InvalidDataException("転送プロセスの状態を確認できません。");
+            value.GetProperty("error").GetString(), value.GetProperty("ipv4_only").GetBoolean(), value.GetProperty("ipv6_enabled").GetBoolean());
+        if (result.Pid <= 0 || result.Ready && (!result.Configured || !result.Running || !result.Pid.HasValue) || result.Ipv4Only == result.Ipv6Enabled ||
+            result.Kind==LegacyMacNat && result.Ipv6Enabled || result.Kind==MacNat && result.Configured && !result.Ipv6Enabled)
+            throw new InvalidDataException("転送プロセス・IPv6 設定の状態を確認できません。");
         return result;
     }
 
-    internal string Summary(string vmState) => !string.IsNullOrWhiteSpace(Error) ? "転送エラー" : Kind is not (null or MacNat) ? "未対応の転送方式" :
-        Running && Ready ? "転送プロセスの準備完了（IPv4）" : Running ? "転送プロセスを初期化しています" :
+    internal string Summary(string vmState) => !string.IsNullOrWhiteSpace(Error) ? "転送エラー" : !KnownKind ? "未対応の転送方式" :
+        Kind==LegacyMacNat ? "旧 IPv4 設定・IPv6 用に再準備が必要です" :
+        Running && Ready ? $"転送プロセスの準備完了（{(Ipv6Enabled ? "IPv4 / IPv6" : "IPv4")}）" : Running ? "転送プロセスを初期化しています" :
         !Installed ? "ドライバー・転送ツールの準備が必要です" : !Configured ? "Wi-Fi 互換接続は未設定です" :
         vmState is "stopped" or "shutdown" ? "設定済み・VM の起動待ち" : "転送プロセスは停止しています";
 

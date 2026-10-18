@@ -1,7 +1,7 @@
 # Functions only; querying a missing configuration creates no directories.
 function Test-ReimsWifiNetwork($Config) {
     return [bool]($Config -and $Config.PSObject.Properties['network'] -and $Config.network.mode -eq 'bridge' -and
-        $Config.network.PSObject.Properties['forwarder'] -and $Config.network.forwarder -eq 'macnat-ipv4')
+        $Config.network.PSObject.Properties['forwarder'] -and $Config.network.forwarder -in @('macnat','macnat-ipv4'))
 }
 function Get-ReimsWifiHelper {
     $root=if($env:REIMS_MANAGER_TOOLS_ROOT){$env:REIMS_MANAGER_TOOLS_ROOT}else{Join-Path (Split-Path $PSScriptRoot) 'runtimes'}
@@ -25,7 +25,7 @@ function Read-ReimsWifiJson([string]$Path) {
 function Get-ReimsWifiStatus([string]$Directory) {
     $pin=Get-Content -LiteralPath "$PSScriptRoot/wifi-macnat-lock.json" -Raw | ConvertFrom-Json
     $result=@{schema=1;kind='none';installed=$false;configured=$false;running=$false;ready=$false;pid=$null;enabled=$false;helper_available=(Test-Path -LiteralPath (Get-ReimsWifiHelper) -PathType Leaf)
-        driver_state=(Get-ReimsWifiDriverState);forwarder_state='stopped';error='';tap_id='';uplink_id='';ipv4_only=$true
+        driver_state=(Get-ReimsWifiDriverState);forwarder_state='stopped';error='';tap_id='';uplink_id='';ipv4_only=$true;ipv6_enabled=$false
         terms=@{id=$pin.driver.terms_id;url=$pin.driver.terms_url;license_url=$pin.driver.license_url;commercial_license_required=$true
             notice='Free for non-commercial personal/academic use and commercial evaluation. Commercial deployment/redistribution requires separate vendor licensing.'}}
     $result.installed=$result.helper_available -and $result.driver_state -eq 'running'
@@ -33,12 +33,17 @@ function Get-ReimsWifiStatus([string]$Directory) {
     try {
         $record=Read-ReimsWifiJson (Join-Path $Directory 'state/wifi-forwarder.json')
         if(!$record){return $result}
-        $result.enabled=$record.state -eq 'enabled';$result.tap_id=$record.tap_id;$result.uplink_id=$record.uplink_id
+        $result.enabled=$record.state -in @('enabled','prepared','error');$result.tap_id=$record.tap_id;$result.uplink_id=$record.uplink_id
         $result.error=[string]$record['error']
         $config=Read-ReimsWifiJson (Join-Path $Directory 'state/config.json')
-        if($config -and $config.ContainsKey('network') -and $config.network['forwarder'] -eq 'macnat-ipv4'){
-            $result.kind='macnat-ipv4'
-            $result.configured=$result.enabled -and $config.network.mode -eq 'bridge' -and $config.network.tap_id -eq $record.tap_id -and $config.network.physical_adapter_id -eq $record.uplink_id
+        if($config -and $config.ContainsKey('network') -and $config.network['forwarder'] -in @('macnat','macnat-ipv4')){
+            $result.kind=$config.network.forwarder
+            $result.configured=$record.state -eq 'enabled' -and $config.network.mode -eq 'bridge' -and $config.network.tap_id -eq $record.tap_id -and $config.network.physical_adapter_id -eq $record.uplink_id
+            if($result.kind -eq 'macnat-ipv4'){$result.configured=$false;$result.error='Reapply Wi-Fi preparation for IPv6'}
+            if($result.configured -and $result.kind -eq 'macnat'){
+                Assert-ReimsWifiRouterDisabled $record
+                $result.ipv6_enabled=$true;$result.ipv4_only=$false
+            }
         }
         $native=Read-ReimsWifiJson (Join-Path $Directory 'state/wifi-forwarder/status.json')
         $runtime=Read-ReimsWifiJson (Join-Path $Directory 'state/wifi-forwarder/runtime.json')
@@ -50,15 +55,16 @@ function Get-ReimsWifiStatus([string]$Directory) {
                 $result.running=[bool]$sameQemu;$result.pid=$runtime.pid
                 if($sameQemu -and $native -and $native.session -eq $runtime.session -and $native.helper_pid -eq $runtime.pid -and
                     $native.qemu_pid -eq $runtime.qemu_pid -and $native.qemu_start_ticks -eq $runtime.qemu_start_ticks -and $native.state -in @('starting','ready','error')){
-                    $result.forwarder_state=$native.state;$result.error=$native.error
-                    $result.ready=$result.configured -and $native.state -eq 'ready'
+                    $result.forwarder_state=$native.state;if($native.error){$result.error=$native.error}
+                    $result.ready=$result.configured -and $native.state -eq 'ready' -and $native['ipv6_enabled'] -is [bool] -and $native['ipv6_enabled'] -eq $true
+                    if($native.state -eq 'ready' -and !$result.ready -and $result.kind -eq 'macnat'){$result.forwarder_state='unconfirmed';$result.error='Installed helper has no confirmed IPv6 readiness receipt.'}
                 }else{$result.forwarder_state='unconfirmed'}
             }elseif($native -and $native.session -eq $runtime.session -and $native.state -eq 'error'){
                 $result.forwarder_state='error';$result.error=$native.error
             }elseif($native -and $native.session -eq $runtime.session -and $native.state -eq 'stopped'){$result.forwarder_state='stopped'}
             else{$result.forwarder_state='unconfirmed';$result.error='Forwarder exited without confirmed cleanup.'}
         }
-    } catch {$result.forwarder_state='unconfirmed';$result.error=$_.Exception.Message}
+    } catch {$result.forwarder_state='unconfirmed';$result.error=$_.Exception.Message;$result.configured=$false;$result.ipv6_enabled=$false;$result.ipv4_only=$true;$result.ready=$false}
     return $result
 }
 function Get-ReimsWifiNic([string]$Id) {
@@ -103,6 +109,40 @@ function Set-ReimsWifiBinding([string]$Id,[string]$Component,[bool]$Enabled) {
     if($Enabled){Enable-NetAdapterBinding -Name $nic.Name -ComponentID $Component -Confirm:$false -ErrorAction Stop | Out-Null}
     else{Disable-NetAdapterBinding -Name $nic.Name -ComponentID $Component -Confirm:$false -ErrorAction Stop | Out-Null}
 }
+function Get-ReimsWifiRouterDiscovery([string]$Id) {
+    $nic=Get-ReimsWifiNic $Id
+    $result=@{}
+    # Set-NetIPInterface documents ActiveStore only. PersistentStore can return
+    # a row with no RouterDiscovery value; it is not an effective policy value.
+    foreach($store in @('ActiveStore')){
+        $interfaces=@(Get-NetIPInterface -InterfaceIndex $nic.InterfaceIndex -AddressFamily IPv6 -PolicyStore $store -ErrorAction Stop)
+        if($interfaces.Count -ne 1 -or $interfaces[0].InterfaceIndex -ne $nic.InterfaceIndex){throw 'Dedicated TAP IPv6 interface identity is unknown.'}
+        $value=[string]$interfaces[0].RouterDiscovery
+        # CDXML enum values are 0/1/2; remoting may serialize the ordinal.
+        $ordinals=@{'0'='Disabled';'1'='Enabled';'2'='ControlledByDHCP'}
+        if($ordinals.ContainsKey($value)){$value=$ordinals[$value]}
+        if($value -notin @('Disabled','Enabled','ControlledByDHCP')){throw 'Unknown TAP IPv6 RouterDiscovery setting.'}
+        $result[$store]=$value
+    }
+    return $result
+}
+function Set-ReimsWifiRouterDiscovery([string]$Id,[string]$Store,[string]$Value) {
+    if($Store -ne 'ActiveStore' -or $Value -notin @('Disabled','Enabled','ControlledByDHCP')){throw 'Invalid RouterDiscovery restore setting.'}
+    $nic=Get-ReimsWifiNic $Id
+    Set-NetIPInterface -InterfaceIndex $nic.InterfaceIndex -AddressFamily IPv6 -PolicyStore $Store -RouterDiscovery $Value -ErrorAction Stop | Out-Null
+}
+function Assert-ReimsWifiRouterDisabled($Record,[switch]$AllowOriginal) {
+    if($Record['ipv6_enabled'] -isnot [bool] -or $Record['ipv6_enabled'] -ne $true -or !$Record.ContainsKey('router_discovery_before')){throw 'Reapply PrepareWifi to protect the dedicated TAP before enabling IPv6.'}
+    if($Record['router_discovery_store'] -ne 'ActiveStore'){throw 'Older dual-store RouterDiscovery receipt requires inspection; unknown persistent policy was not changed.'}
+    [void](Assert-ReimsOwnedWifiTap $Record.tap_id $Record.pnp_instance_id)
+    $live=Get-ReimsWifiRouterDiscovery $Record.tap_id
+    foreach($store in @('ActiveStore')){
+        if($Record.router_discovery_before[$store] -notin @('Disabled','Enabled','ControlledByDHCP') -or
+            ($live[$store] -ne 'Disabled' -and !($AllowOriginal -and $live[$store] -eq $Record.router_discovery_before[$store]))){
+            throw 'Dedicated TAP RouterDiscovery changed outside Manager; inspect before reapplying or starting IPv6.'
+        }
+    }
+}
 function Set-ReimsWifiEnabled([string]$TapId,[string]$UplinkId,[string]$GuestHost) {
     Assert-ReimsVmStopped;Assert-Administrator
     Stop-ReimsWifiForwarder
@@ -115,28 +155,47 @@ function Set-ReimsWifiEnabled([string]$TapId,[string]$UplinkId,[string]$GuestHos
     Assert-ReimsWifiCaptureAvailable $tap.adapter_id $uplink.id
     $before=Get-ReimsWifiBindings $tap.adapter_id
     $liveBefore=$before.Clone()
+    $routerBefore=$null
+    if($before.ms_tcpip6){$routerBefore=Get-ReimsWifiRouterDiscovery $tap.adapter_id}
+    $liveRouterBefore=$routerBefore
     $path=Join-Path $VmRoot 'state/wifi-forwarder.json';$previous=Read-ReimsWifiJson $path
     if($previous -and $previous.state -ne 'disabled'){
         if($previous.state -ne 'enabled' -or $previous.tap_id -ne $tap.adapter_id -or $previous.uplink_id -ne $uplink.id){throw 'Disable the previous Wi-Fi configuration before changing adapters.'}
         if($before.ms_tcpip -or !$before.ms_tcpip6){throw 'TAP bindings changed outside Manager; inspect before reapplying.'}
+        if($previous['ipv6_enabled'] -eq $true){Assert-ReimsWifiRouterDisabled $previous -AllowOriginal;$routerBefore=$previous.router_discovery_before}
         $before=$previous.bindings_before
     }
-    $record=@{schema=1;state='prepared';tap_id=$tap.adapter_id;tap_name=$tap.adapter_name;pnp_instance_id=$tap.pnp_instance_id;uplink_id=$uplink.id;bindings_before=$before;error=''}
+    $record=@{schema=1;state='prepared';tap_id=$tap.adapter_id;tap_name=$tap.adapter_name;pnp_instance_id=$tap.pnp_instance_id;uplink_id=$uplink.id;bindings_before=$before;error='';ipv6_enabled=$false;router_discovery_store='ActiveStore'}
+    if($routerBefore){$record.router_discovery_before=$routerBefore}
     $config=Get-ReimsVmConfig
     Write-ReimsJson $path $record
     try {
         Assert-ReimsVmStopped
         Set-ReimsWifiBinding $tap.adapter_id ms_tcpip $false
         Set-ReimsWifiBinding $tap.adapter_id ms_tcpip6 $true
+        if(!$routerBefore){$routerBefore=Get-ReimsWifiRouterDiscovery $tap.adapter_id;$liveRouterBefore=$routerBefore;$record.router_discovery_before=$routerBefore}
+        $record.ipv6_enabled=$true
+        # Persist the original effective setting before it can be changed.
+        Write-ReimsJson $path $record
+        foreach($store in @('ActiveStore')){Set-ReimsWifiRouterDiscovery $tap.adapter_id $store 'Disabled'}
+        Assert-ReimsWifiRouterDisabled $record
         $after=Get-ReimsWifiBindings $tap.adapter_id
         if($after.ms_tcpip -or !$after.ms_tcpip6){throw 'Dedicated TAP IP binding preparation failed.'}
         $record.state='enabled';Write-ReimsJson $path $record
-        $config | Add-Member -Force network @{mode='bridge';forwarder='macnat-ipv4';adapter=$tap.adapter_name;tap_id=$tap.adapter_id;physical_adapter_id=$uplink.id;physical_adapter_name=$uplink.name;guest_host=$GuestHost}
+        $config | Add-Member -Force network @{mode='bridge';forwarder='macnat';adapter=$tap.adapter_name;tap_id=$tap.adapter_id;physical_adapter_id=$uplink.id;physical_adapter_name=$uplink.name;guest_host=$GuestHost}
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         return $record
     } catch {
         $record.state='error';$failure=$_.Exception.Message
-        try{[void](Assert-ReimsOwnedWifiTap $record.tap_id $record.pnp_instance_id);foreach($key in @('ms_tcpip','ms_tcpip6')){Set-ReimsWifiBinding $record.tap_id $key $liveBefore[$key]}
+        try{[void](Assert-ReimsOwnedWifiTap $record.tap_id $record.pnp_instance_id)
+            if($liveRouterBefore){
+                $live=Get-ReimsWifiRouterDiscovery $record.tap_id
+                foreach($store in @('ActiveStore')){
+                    if($live[$store] -ne 'Disabled' -and $live[$store] -ne $liveRouterBefore[$store]){throw 'RouterDiscovery ownership changed during preparation.'}
+                    Set-ReimsWifiRouterDiscovery $record.tap_id $store $liveRouterBefore[$store]
+                }
+            }
+            foreach($key in @('ms_tcpip','ms_tcpip6')){Set-ReimsWifiBinding $record.tap_id $key $liveBefore[$key]}
             if($previous -and $previous.state -eq 'enabled'){$record=$previous}}
         catch{$failure+='; binding rollback requires inspection: '+$_.Exception.Message}
         $record.error=$failure
@@ -153,11 +212,21 @@ function Disable-ReimsWifiMacNat {
     if($record.state -eq 'enabled' -and ($current.ms_tcpip -or !$current.ms_tcpip6)){throw 'TAP bindings changed outside Manager; inspect before restoring.'}
     Assert-ReimsWifiCaptureAvailable $record.tap_id $record.uplink_id
     foreach($key in @('ms_tcpip','ms_tcpip6')){if($record.bindings_before[$key] -isnot [bool]){throw 'Original binding state is invalid.'}}
+    $routerCurrent=$null
+    if($record['ipv6_enabled'] -eq $true){
+        if($record['router_discovery_store'] -ne 'ActiveStore'){throw 'Older dual-store RouterDiscovery receipt requires inspection; unknown persistent policy was not changed.'}
+        $routerCurrent=Get-ReimsWifiRouterDiscovery $record.tap_id
+        foreach($store in @('ActiveStore')){
+            if($record.router_discovery_before[$store] -notin @('Disabled','Enabled','ControlledByDHCP') -or
+                ($routerCurrent[$store] -ne 'Disabled' -and $routerCurrent[$store] -ne $record.router_discovery_before[$store])){throw 'RouterDiscovery ownership changed; refusing restore.'}
+        }
+    }
     $config=Get-ReimsVmConfig
     $savedNat=$false
     try {
         # IPv6 remains enabled for link-local management; only host IPv4 is undone.
         Set-ReimsWifiBinding $record.tap_id ms_tcpip $record.bindings_before.ms_tcpip
+        if($routerCurrent){foreach($store in @('ActiveStore')){Set-ReimsWifiRouterDiscovery $record.tap_id $store $record.router_discovery_before[$store]}}
         $config | Add-Member -Force network @{mode='nat';adapter='';guest_host=''}
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         $savedNat=$true
@@ -165,7 +234,8 @@ function Disable-ReimsWifiMacNat {
     }catch{
         $failure=$_.Exception.Message
         if(!$savedNat){
-            try{[void](Assert-ReimsOwnedWifiTap $record.tap_id $record.pnp_instance_id);Set-ReimsWifiBinding $record.tap_id ms_tcpip $current.ms_tcpip}
+            try{[void](Assert-ReimsOwnedWifiTap $record.tap_id $record.pnp_instance_id);Set-ReimsWifiBinding $record.tap_id ms_tcpip $current.ms_tcpip
+                if($routerCurrent){foreach($store in @('ActiveStore')){Set-ReimsWifiRouterDiscovery $record.tap_id $store $routerCurrent[$store]}}}
             catch{$failure+='; IPv4 rollback requires inspection: '+$_.Exception.Message}
         }
         $record.state='error';$record.error=$failure;Write-ReimsJson $path $record
@@ -185,7 +255,8 @@ function Get-ReimsWifiSavedNetwork($Config,[string]$Tap,[string]$Uplink,[string]
     $record=Read-ReimsWifiJson (Join-Path $VmRoot 'state/wifi-forwarder.json')
     if(!$record -or $record.state -ne 'enabled' -or $record.uplink_id -ne ([guid]$Uplink).ToString('D') -or
         ($Tap -ne $record.tap_name -and $Tap.Trim('{}') -ne $record.tap_id)){throw 'Enable this dedicated TAP/Wi-Fi pair before saving Wi-Fi mode.'}
-    return @{mode='bridge';forwarder='macnat-ipv4';adapter=$record.tap_name;tap_id=$record.tap_id;physical_adapter_id=$record.uplink_id;guest_host=$GuestHost}
+    $kind=if($record['ipv6_enabled'] -eq $true){Assert-ReimsWifiRouterDisabled $record;'macnat'}else{'macnat-ipv4'}
+    return @{mode='bridge';forwarder=$kind;adapter=$record.tap_name;tap_id=$record.tap_id;physical_adapter_id=$record.uplink_id;guest_host=$GuestHost}
 }
 function Prepare-ReimsWifi([string]$EngineRoot,[string]$TapId,[string]$UplinkId,[string]$GuestHost,[bool]$AcceptDriverTerms) {
     Assert-ReimsVmStopped;Assert-Administrator
@@ -224,6 +295,7 @@ function Start-ReimsWifiForwarder($Config,$QemuRuntime) {
     $record=Read-ReimsWifiJson (Join-Path $VmRoot 'state/wifi-forwarder.json')
     if(!$record -or $record.state -ne 'enabled' -or $Config.network.tap_id -ne $record.tap_id -or $Config.network.physical_adapter_id -ne $record.uplink_id){throw 'Wi-Fi configuration/ownership does not match.'}
     [void](Assert-ReimsOwnedWifiTap $record.tap_id $record.pnp_instance_id)
+    Assert-ReimsWifiRouterDisabled $record
     $bindings=Get-ReimsWifiBindings $record.tap_id
     if($bindings.ms_tcpip -or !$bindings.ms_tcpip6){throw 'Dedicated TAP host IPv4 must be disabled and IPv6 retained.'}
     $uplink=Resolve-ReimsPhysicalUplink $record.uplink_id
@@ -244,7 +316,10 @@ function Start-ReimsWifiForwarder($Config,$QemuRuntime) {
             $state=Read-ReimsWifiJson (Join-Path $folder 'status.json')
             if($state -and $state.session -eq $session){
                 if($state.state -eq 'error'){throw $state.error}
-                if($state.state -eq 'ready' -and $state.helper_pid -eq $runtime.pid -and $state.qemu_pid -eq $QemuRuntime.pid -and $state.qemu_start_ticks -eq $QemuRuntime.start_ticks){return}
+                if($state.state -eq 'ready' -and $state.helper_pid -eq $runtime.pid -and $state.qemu_pid -eq $QemuRuntime.pid -and $state.qemu_start_ticks -eq $QemuRuntime.start_ticks){
+                    if($state['ipv6_enabled'] -isnot [bool] -or $state['ipv6_enabled'] -ne $true){throw 'Installed helper has no confirmed IPv6 readiness receipt; update the complete Manager package.'}
+                    return
+                }
             }
             if($process.HasExited){throw 'Forwarder exited before ready; inspect its fixed state/logs.'}
             Start-Sleep -Milliseconds 100

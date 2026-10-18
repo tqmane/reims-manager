@@ -253,6 +253,10 @@ $Qemu = [IO.Path]::GetFullPath($Qemu)
 if ($script:ReimsEngine -and $Qemu -ne (Get-ReimsEnginePath 'qemu' '')) { throw 'Selected QEMU does not belong to the installed engine package.' }
 $run = Join-Path $VmRoot ("logs/" + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 $wifiMacNat=Test-ReimsWifiNetwork $config
+if($wifiMacNat -and !$DryRun){
+    $wifiRecord=Read-ReimsWifiJson (Join-Path $VmRoot 'state/wifi-forwarder.json')
+    if(!$wifiRecord -or $wifiRecord['ipv6_enabled'] -isnot [bool] -or $wifiRecord['ipv6_enabled'] -ne $true){throw 'Reapply Wi-Fi preparation for IPv6 before starting this VM.'}
+}
 $qemuArgs = Get-ReimsQemuArguments $config $run -Paused:($Paused -or $wifiMacNat) -Headless:$Headless -WithoutInstaller:$WithoutInstaller -DiagnosticTcg:$DiagnosticTcg
 $runtime = Get-ReimsRuntime
 if (!$DryRun -and $runtime -and (Get-ReimsVmProcess $runtime)) {

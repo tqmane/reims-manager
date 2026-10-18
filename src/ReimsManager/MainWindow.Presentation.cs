@@ -75,7 +75,7 @@ public partial class MainWindow
         foreach (UIElement field in new UIElement[] { Memory, MemorySlider, Cpus, HardwareIsoPath, GuestHost, Tap, UsbBackend,
             HardwareIso, Nat, Bridge, Sound, Microphone, DiskSize }) field.IsEnabled = editHardware;
         Uplink.IsEnabled = editHardware && Bridge.IsChecked == true;
-        NetworkTapDetails.Visibility=Bridge.IsChecked==true && Uplink.SelectedItem is not NetworkUplink { Kind:"wifi" } && hardwareForwarder!=WifiForwarderState.MacNat ? Visibility.Visible : Visibility.Collapsed;
+        NetworkTapDetails.Visibility=Bridge.IsChecked==true && Uplink.SelectedItem is not NetworkUplink { Kind:"wifi" } && !WifiForwarderState.IsMacNat(hardwareForwarder) ? Visibility.Visible : Visibility.Collapsed;
         Physical.IsEnabled = BridgeTap.IsEnabled = !IsUiBusy && CanOperate("CreateBridge");
         Resolution.IsEnabled = !IsUiBusy && loadedHardware && (CanOperate("SetHardware") || CanOperate("ApplyResolution"));
         foreach (UIElement field in new UIElement[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityUuid, IdentityRom })

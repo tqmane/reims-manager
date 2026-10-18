@@ -132,7 +132,7 @@ public partial class MainWindow : Window
                 var token = statusCancellation.Token;
                 try {
                     JsonElement response;
-                    bool pollForwarder = hardwareForwarder == WifiForwarderState.MacNat || wifiForwarder?.Kind == WifiForwarderState.MacNat;
+                    bool pollForwarder = WifiForwarderState.IsMacNat(hardwareForwarder) || WifiForwarderState.IsMacNat(wifiForwarder?.Kind);
                     if (!loadDetails && !pollForwarder) {
                         var live = await LiveVmStatus.Read(requestedVm, token);
                         if (version != contextVersion || busy || closing) continue;
