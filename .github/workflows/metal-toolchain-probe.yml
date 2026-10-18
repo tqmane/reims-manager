@@ -53,7 +53,7 @@ jobs:
               ],
               "records": [],
           }
-          deadline = time.monotonic() + 210
+          deadline = time.monotonic() + 240
 
           def record(item):
               report["records"].append(item)
@@ -62,7 +62,7 @@ jobs:
                   log.write(json.dumps(item, indent=2) + "\n")
               print(json.dumps(item), flush=True)
 
-          def run(label, args, environment, target=None):
+          def run(label, args, environment, target=None, timeout_seconds=15):
               item = {
                   "label": label, "command": [str(arg) for arg in args],
                   "developer_dir": environment.get("DEVELOPER_DIR"),
@@ -71,8 +71,9 @@ jobs:
               }
               remaining = deadline - time.monotonic()
               if remaining <= 0:
-                  record({**item, "status": "not_run", "reason": "210-second diagnostic budget exhausted"})
+                  record({**item, "status": "not_run", "reason": "240-second diagnostic budget exhausted"})
                   return False
+              item["timeout_seconds"] = min(timeout_seconds, remaining)
               env = dict(environment)
               if target is not None:
                   env["MACOSX_DEPLOYMENT_TARGET"] = target
@@ -86,7 +87,7 @@ jobs:
                   record({**item, "status": "unavailable", "stderr": str(error)})
                   return False
               try:
-                  stdout, stderr = process.communicate(timeout=min(15, remaining))
+                  stdout, stderr = process.communicate(timeout=item["timeout_seconds"])
                   status = "completed"
               except subprocess.TimeoutExpired:
                   try:
@@ -103,6 +104,9 @@ jobs:
               return status == "completed" and process.returncode == 0
 
           selected = dict(os.environ)
+          run("selected/provision-metal-toolchain", [
+              "xcodebuild", "-downloadComponent", "MetalToolchain",
+          ], selected, timeout_seconds=180)
           clt = Path("/Library/Developer/CommandLineTools")
           developers = [("selected", selected)]
           if clt.is_dir():
