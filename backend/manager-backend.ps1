@@ -327,7 +327,11 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     InstallTap {
         Assert-ReimsVmStopped
-        & "$PSScriptRoot/install-tap.ps1" -Installer $Installer -Adapter $Adapter
+        $tapJson=(& "$PSScriptRoot/install-tap.ps1" -Installer $Installer -Adapter $Adapter) -join "`n"
+        $tapResult=$tapJson | ConvertFrom-Json -AsHashtable
+        if ($tapResult -isnot [Collections.IDictionary] -or !$tapResult.Contains('schema') -or $tapResult.schema -ne 1) { throw 'Unexpected TAP result schema; no confirmed result was saved.' }
+        Write-ReimsJson (Join-Path $VmRoot 'state/tap-install-result.json') $tapResult
+        $tapJson
     }
     Pair {
         if (!$User -or $Fingerprint -notmatch '^SHA256:[A-Za-z0-9+/]{43}$') { throw 'macOS のユーザー名と setup.command が表示した SHA256 指紋を入力してください。' }
