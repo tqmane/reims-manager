@@ -114,6 +114,7 @@
             <Button x:Name="SessionRestartButton" Content="" Tag="Restart" Click="ActionClick" Style="{StaticResource ChromeButton}" ToolTip="macOSを再起動" AutomationProperties.Name="macOSを再起動"/>
             <Border Width="1" Margin="6,9" Background="{DynamicResource CardBorderBrush}"/>
             <Button x:Name="SessionSettingsButton" Content="" Click="OpenSettings" Style="{StaticResource ChromeButton}" ToolTip="仮想マシンの設定" AutomationProperties.Name="仮想マシンの設定"/>
+            <Button x:Name="SessionCursorAidButton" Content="カーソルを表示" Tag="EnableCursorAid" Click="ActionClick" Style="{StaticResource CommandButton}" shell:WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="1 回のクリックで、SSH ペアリング済みの VM に同梱ヘルパーを検証・導入して起動します。解除は「設定 → ディスプレイ → カーソル互換表示 → オフにする」。" AutomationProperties.Name="カーソルを表示"/>
             <Button x:Name="SessionUsbButton" Content="" Tag="usb" Click="OpenSettingsCategory" Style="{StaticResource ChromeButton}" ToolTip="USBデバイス" AutomationProperties.Name="USBデバイス"/>
             <Button x:Name="SessionSharingButton" Content="" Tag="2" Click="NavigatePage" Style="{StaticResource ChromeButton}" ToolTip="クリップボード共有" AutomationProperties.Name="クリップボード共有"/>
             <Button x:Name="SessionSnapshotButton" Content="" Tag="4" Click="NavigatePage" Style="{StaticResource ChromeButton}" ToolTip="スナップショット" AutomationProperties.Name="スナップショット"/>
@@ -621,7 +622,7 @@
               <Grid/>
             </TabItem>
             <TabItem Header="設定">
-              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <ScrollViewer x:Name="HardwareScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid x:Name="Editors" Margin="24,24,24,20">
                   <StackPanel x:Name="MemoryPage">
                     <TextBlock Text="メモリ" Style="{StaticResource PageHeading}"/>
@@ -717,6 +718,15 @@
                     </ComboBox>
                     <Button Content="実行中の macOS に適用" Click="ApplyResolution" HorizontalAlignment="Left" Margin="0,18,0,0" Tag="ApplyResolution"/>
                     <TextBlock Text="macOS 26 の Intel VM では、画面幅が 2048 ピクセルを超えると表示が乱れる既知の問題があります。安定した操作には 1920 × 1080 を推奨します。4K は描画負荷も高くなります。" Style="{StaticResource MutedText}" Margin="0,20,0,0"/>
+                    <Border x:Name="CursorAidCard" Style="{StaticResource NoticeCard}" Margin="0,20,0,0"><StackPanel>
+                      <TextBlock Text="カーソル互換表示" FontSize="18" FontWeight="SemiBold"/>
+                      <TextBlock Text="画面ミラーリングでカーソルが見えないときに、macOS の実際のカーソルを通常の画面内容として描画します。" Style="{StaticResource MutedText}" Margin="0,8,0,8"/>
+                      <TextBlock Text="この VM の macOS ユーザーで、ログイン後もオンの状態が続きます。ミラーリングは自動検出しません。必要なときだけオンにし、不要になったらオフにしてください。操作には実行中の VM と SSH ペアリングが必要です。" Style="{StaticResource MutedText}"/>
+                      <WrapPanel Margin="0,16,0,0">
+                        <Button x:Name="EnableCursorAidButton" Content="オンにする" Tag="EnableCursorAid" Click="ActionClick" AutomationProperties.Name="カーソル互換表示をオンにする"/>
+                        <Button x:Name="DisableCursorAidButton" Content="オフにする" Tag="DisableCursorAid" Click="ActionClick" AutomationProperties.Name="カーソル互換表示をオフにする"/>
+                      </WrapPanel>
+                    </StackPanel></Border>
                     <TextBlock Text="Reims vGPU · Apple Paravirtualized Graphics" Style="{StaticResource MutedText}" Margin="0,24,0,0"/>
                   </StackPanel>
                 </Grid>
