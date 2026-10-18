@@ -1,10 +1,16 @@
 #Requires -Version 7.2
 [CmdletBinding()]
-param()
-. "$PSScriptRoot/start.ps1" -FunctionsOnly
-Assert-ReimsVmStopped
+param([string]$CacheDirectory)
+$ErrorActionPreference='Stop'
+if ($CacheDirectory) {
+    $ReimsWorkRoot=[IO.Path]::GetFullPath($CacheDirectory)
+} else {
+    . "$PSScriptRoot/start.ps1" -FunctionsOnly
+    Assert-ReimsVmStopped
+}
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'USB 転送ドライバーの導入には Windows の管理者権限が必要です。' }
+New-Item -ItemType Directory -Force -Path (Join-Path $ReimsWorkRoot 'downloads'),(Join-Path $ReimsWorkRoot 'diagnostics') | Out-Null
 $installer = Join-Path $ReimsWorkRoot 'downloads/UsbDk_1.0.22_x64.msi'
 if (!(Test-Path -LiteralPath $installer)) {
     Invoke-WebRequest 'https://github.com/daynix/UsbDk/releases/download/v1.00-22/UsbDk_1.0.22_x64.msi' -OutFile $installer

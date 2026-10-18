@@ -3,6 +3,7 @@
 param([Parameter(Mandatory)][string]$Destination, [string]$Archive, [string]$Sha256)
 . "$PSScriptRoot/engine-package.ps1"
 $pin=Get-ReimsEngineLock
+$localArchive=[bool]$Archive
 if ($Archive) {
     $Archive=[IO.Path]::GetFullPath($Archive)
     $Sha256=Get-ReimsArchiveDigest $Archive $Sha256
@@ -20,22 +21,15 @@ $archiveLock=$null
 try {
     if (!$Archive) {
         Write-Output '配布済みエンジンを確認しています…'
-        $api="https://api.github.com/repos/$($pin.release_repository)/releases/tags/$($pin.id)"
-        try { $release=Invoke-RestMethod $api -Headers @{'User-Agent'='ReimsManager'} -TimeoutSec 30 }
-        catch { throw "対応エンジンのリリースを取得できません。ネットワークを確認するか、リポジトリの Windows engine package CI 成果物 ZIP と SHA256 を選択してください。$api" }
-        if ($release.draft -or $release.prerelease -or $release.tag_name -ne $pin.id) { throw 'The matching engine has not been released.' }
-        $assets=@($release.assets | Where-Object name -EQ $pin.asset)
-        if ($assets.Count -ne 1 -or $assets[0].digest -notmatch '^sha256:([a-f0-9]{64})$') { throw 'The engine release has no unique SHA256-verified asset.' }
-        $Sha256=$Matches[1]
-        $expected="https://github.com/$($pin.release_repository)/releases/download/$($pin.id)/$($pin.asset)"
-        if ($assets[0].browser_download_url -ne $expected) { throw 'Unexpected release asset URL.' }
+        $asset=Resolve-ReimsReleaseAsset $pin
         $Archive=Join-Path $work $pin.asset
         Write-Output 'エンジンとネイティブ DLL をダウンロードしています…'
-        Get-ReimsPinnedDownload $expected $Sha256 $Archive
+        try { Receive-ReimsReleaseAsset $asset $Archive }
+        catch { throw "対応エンジンを取得・検証できません。未公開、ネットワーク障害、または ZIP の不一致です。$($_.Exception.Message)" }
     }
     # Keep the verified ZIP immutable until extraction finishes.
     $archiveLock=[IO.File]::Open($Archive,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-    if ((Get-FileHash -LiteralPath $Archive).Hash -ne $Sha256) { throw 'Engine archive SHA256 mismatch; download the ZIP and matching sidecar again.' }
+    if ($localArchive -and (Get-FileHash -LiteralPath $Archive).Hash -ne $Sha256) { throw 'Engine archive SHA256 mismatch; download the ZIP and matching sidecar again.' }
     Write-Output 'ファイルとソースの固定版を検証しています…'
     $stage=Join-Path $work 'engine'
     Expand-ReimsPackage $Archive $stage

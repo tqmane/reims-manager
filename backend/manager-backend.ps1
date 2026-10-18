@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -24,6 +24,26 @@ param(
     [ValidateSet('winusb','usbdk')][string]$UsbBackend = 'winusb',
     [switch]$WithInstaller
 )
+$ErrorActionPreference='Stop'
+if ($Action -eq 'GetPrerequisites') {
+    . "$PSScriptRoot/host-prerequisites.ps1"
+    Get-ReimsPrerequisites $Root $ToolsRoot $Cpus $MemoryMiB | ConvertTo-Json -Depth 6 -Compress
+    return
+}
+if ($Action -eq 'EnableWhpx') {
+    # Host onboarding does not require a selected VM or create developer caches.
+    & "$PSScriptRoot/enable-whpx.ps1"
+    return
+}
+if ($Action -eq 'InstallUsbDk' -and !$VmDirectory) {
+    $cache=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'ReimsManager/support'
+    & "$PSScriptRoot/install-usbdk.ps1" -CacheDirectory $cache
+    return
+}
+if ($Action -eq 'Setup') {
+    . "$PSScriptRoot/engine-package.ps1"
+    if (!(Read-ReimsEngine $Root)) { throw '先に Manager から対応エンジンをセットアップしてください。' }
+}
 $env:REIMS_PROJECT_ROOT_OVERRIDE = [IO.Path]::GetFullPath($Root)
 if ($ToolsRoot) { $env:REIMS_MANAGER_TOOLS_ROOT = [IO.Path]::GetFullPath($ToolsRoot) }
 $env:REIMS_VM_ROOT_OVERRIDE = if ($VmDirectory) { [IO.Path]::GetFullPath($VmDirectory) } else { '' }
@@ -186,22 +206,9 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         & "$PSScriptRoot/bootstrap.ps1"
         & "$PSScriptRoot/build.ps1"
     }
-    EnableWhpx {
-        Assert-ReimsVmStopped
-        Assert-Administrator
-        & "$PSScriptRoot/enable-whpx.ps1"
-    }
     Setup {
-        Assert-ReimsVmStopped
-        if (!$Iso) { throw 'macOS インストーラーを選択してください。' }
-        & "$PSScriptRoot/prepare-opencore.ps1" -Rebuild | Out-Null
-        $ports = Get-NewVmPorts
-        & "$PSScriptRoot/prepare-vm.ps1" -Iso $Iso -DiskGiB $DiskGiB -QmpPort $ports[0] -SshPort $ports[1] | Out-Null
-        if (!(Test-Path (Join-Path $VmRoot 'state/opencore-identity.json'))) {
-            & "$PSScriptRoot/prepare-opencore.ps1" -GenerateIdentity -Rebuild | Out-Null
-        }
-        & "$PSScriptRoot/prepare-tools.ps1"
-        '準備完了。インストーラー付きで起動し、macOS インストール後に ReimsTools の setup.command を実行してください。'
+        . "$PSScriptRoot/setup.ps1"
+        Invoke-ReimsVmSetup $Iso $DiskGiB $Cpus $MemoryMiB
     }
     Start { & "$PSScriptRoot/start.ps1" -Qemu $Qemu -WithoutInstaller:(!$WithInstaller) }
     PowerOff { Invoke-GuestControl '-h'; & "$PSScriptRoot/stop.ps1" }

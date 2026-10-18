@@ -2,10 +2,11 @@
 [CmdletBinding()]
 param([ValidateSet('Enable','Disable')][string]$Mode='Enable', [string]$Archive, [string]$Sha256)
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
+. "$PSScriptRoot/guest-bridge-release.ps1"
 Assert-ReimsVmStopped
 [void](Get-ReimsVmConfig)
 $pinPath=Join-Path $PSScriptRoot 'guest-bridge-lock.json'
-$pin=Get-Content -Raw -LiteralPath $pinPath | ConvertFrom-Json
+$pin=Get-Content -Raw -LiteralPath $pinPath | ConvertFrom-Json -AsHashtable
 $statePath=Join-Path $VmRoot 'state/config.json'
 $ocPath=Join-Path $VmRoot 'state/opencore.json'
 $stateHash=(Get-FileHash -LiteralPath $statePath).Hash; $ocHash=(Get-FileHash -LiteralPath $ocPath).Hash
@@ -31,6 +32,7 @@ if ($Mode -eq 'Enable') {
 $work=Join-Path $ReimsSupportRoot ('tmp/guest-bridge-'+[guid]::NewGuid().ToString('N'))
 $slot=Join-Path $VmRoot ('firmware/guest-bridge-'+[guid]::NewGuid().ToString('N'))
 $keepSlot=$false; $archiveLock=$null
+$localArchive=[bool]$Archive
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
     $package=Join-Path $work 'package'
@@ -38,20 +40,14 @@ try {
         if ($Archive) { $Archive=[IO.Path]::GetFullPath($Archive); $Sha256=Get-ReimsArchiveDigest $Archive $Sha256 }
         else {
             Write-Output 'WebGL 互換ドライバーの対応版を取得しています…'
-            $release=Invoke-RestMethod "https://api.github.com/repos/$($pin.release_repository)/releases/tags/$($pin.id)" -Headers @{'User-Agent'='ReimsManager'} -TimeoutSec 30
-            if ($release.draft -or $release.prerelease -or $release.tag_name -ne $pin.id) { throw 'The qualified guest bridge release is not available.' }
-            $assets=@($release.assets | Where-Object name -EQ $pin.asset)
-            if ($assets.Count -ne 1 -or $assets[0].digest -notmatch '^sha256:([a-f0-9]{64})$') { throw 'Guest bridge release has no unique SHA256 asset.' }
-            $Sha256=$Matches[1]
-            $url="https://github.com/$($pin.release_repository)/releases/download/$($pin.id)/$($pin.asset)"
-            if ($assets[0].browser_download_url -ne $url) { throw 'Unexpected guest bridge URL.' }
+            $release=Get-ReimsGuestBridgeRelease $pin
             $downloads=Join-Path $ReimsSupportRoot 'downloads'
             New-Item -ItemType Directory -Force -Path $downloads | Out-Null
             $Archive=Join-Path $downloads "$($pin.id).zip"
-            Get-ReimsPinnedDownload $url $Sha256 $Archive
+            Receive-ReimsReleaseAsset $release $Archive
         }
         $archiveLock=[IO.File]::Open($Archive,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-        if ((Get-FileHash -LiteralPath $Archive).Hash -ne $Sha256) { throw 'Guest bridge archive SHA256 mismatch.' }
+        if ($localArchive -and (Get-FileHash -LiteralPath $Archive).Hash -ne $Sha256) { throw 'Guest bridge archive SHA256 mismatch.' }
         Expand-ReimsPackage $Archive $package
         $archiveLock.Dispose(); $archiveLock=$null
         Invoke-ReimsTool $python @('-X','utf8',$patch,'verify',$package,$pinPath)

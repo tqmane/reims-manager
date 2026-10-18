@@ -50,6 +50,9 @@ function Get-ReimsTool([string]$Name, [string]$ExplicitPath) {
         $python = Join-Path $env:REIMS_MANAGER_TOOLS_ROOT 'python/python.exe'
         if (Test-Path -LiteralPath $python -PathType Leaf) { return $python }
     }
+    if ($script:ReimsEngine -and $Name -eq 'python.exe') {
+        throw 'Bundled Python is missing. Re-extract the complete Manager package and pass its runtimes directory.'
+    }
     $built = Join-Path $ProjectRoot "build/qemu/$Name"
     if ($Name -like 'qemu-*' -and (Test-Path -LiteralPath $built -PathType Leaf)) { return $built }
     $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1

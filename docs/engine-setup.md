@@ -6,7 +6,14 @@ No developer checkout, MSYS2 installation, Rust, system Python or separate
 PowerShell installation is required by the delivered application.
 
 Setup looks up the engine release paired with this manager in
-`tqmane/reims-manager`. If the first engine release has not been published,
+`tqmane/reims-manager`. Its published ZIP size and tag/asset are pinned in
+`engine-lock.json`: installation downloads that public HTTPS URL directly,
+without GitHub API access, authentication or a ZIP SHA requirement.
+Anonymous API rate limits therefore do not block this engine download.
+Missing assets/network errors and size mismatches remain errors. Extracted
+package inventory/source pins and native probes still apply before atomic
+installation. No different tag or generic QEMU is substituted on failure.
+If the engine release has not been published,
 download the ZIP inside the **Windows engine package** Actions artifact and
 choose **Use downloaded engine ZIP**. The corresponding `.zip.sha256` file
 from that same release or CI artifact must be beside the ZIP. No checksum
@@ -114,9 +121,11 @@ manager's OpenCore page fetches and applies the separate [guest bridge
 addon](guest-bridge.md), built by its own macOS CI job from those exact
 sources. Its release does not rebuild or replace the Windows engine.
 Application is optional and requires a qualified generic implementation and
-runtime ABI validation. The global `ac60717c` candidate records proposed
-Darwin 25 family bounds but has no qualified kernels and cannot be applied.
-After qualification, explicit enable/reapply migrates owned bridge/Lilu
+runtime ABI validation. Source `700379ce` records native WebGL acceptance on
+Darwin 25.4.0 and 25.6.0 with engine 2. Family bounds are not a claim that
+every OS version was tested, and 60 FPS is not guaranteed. Fresh setup
+requires the qualified addon release and applies it automatically. Explicit
+enable/reapply migrates owned bridge/Lilu
 entries to the reviewed package range; ordinary rebuilds preserve bounds.
 Native guest and browser checks are required before release promotion.
 

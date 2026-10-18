@@ -1,6 +1,7 @@
 # Shared package contract; loading this file has no filesystem side effects.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/release-asset.ps1"
 
 function Get-ReimsEngineLock { Get-Content -Raw -LiteralPath "$PSScriptRoot/engine-lock.json" | ConvertFrom-Json -AsHashtable }
 

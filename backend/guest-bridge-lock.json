@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "guest-bridge-700379ce-candidate-1",
+  "id": "guest-bridge-700379ce-1",
   "release_repository": "tqmane/reims-manager",
   "asset": "ReimsGuestBridge.zip",
   "required_engine_id": "engine-b8b4486c-7100064d-2",
@@ -8,10 +8,18 @@
   "max_kernel": "25.99.99",
   "macos": "26.x",
   "abi_family": "Darwin25",
-  "scope": "global-metal-candidate",
-  "runtime_validation": "pending-generic-abi-validation",
-  "release_ready": false,
-  "qualified_kernels": [],
+  "scope": "generic-metal",
+  "runtime_validation": "abi-checked",
+  "release_ready": true,
+  "qualified_kernels": ["25.4.0", "25.6.0"],
+  "qualification": {
+    "26.4": { "kernel": "25.4.0", "webgl_stages": 22, "browsers": ["Safari", "Chrome"] },
+    "26.7.1": { "kernel": "25.6.0", "webgl_stages": 22, "browsers": ["Safari", "Chrome", "Edge"] }
+  },
+  "limitations": [
+    "Frame pacing varies and can degrade during later runs; 60 FPS is not guaranteed.",
+    "Darwin 25 ABI bounds describe the supported translation family, not a test of every macOS 26.x version. Unknown request layouts fail explicitly."
+  ],
   "sources": {
     "reims": { "repository": "https://github.com/tqmane/reims-vgpu", "commit": "700379ce32942b474dbbbb0f8c18f6736b10c863" },
     "lilu": { "repository": "https://github.com/acidanthera/Lilu", "commit": "e4748cc081bf060302c7d3c44a643ce1d11b7e1d" },

@@ -46,10 +46,11 @@ def package(root, pin=READY):
 
 class GuestBridgeTests(unittest.TestCase):
     def test_candidate_cannot_be_published_or_applied(self):
+        candidate = dict(PIN, release_ready=False, qualified_kernels=[])
         with self.assertRaisesRegex(ValueError, 'still a candidate'):
-            bridge.require_qualified(PIN)
+            bridge.require_qualified(candidate)
         with self.assertRaisesRegex(ValueError, 'still a candidate'):
-            bridge.patch_config(config(), PIN, True)
+            bridge.patch_config(config(), candidate, True)
         for field, value in [('scope', 'browser-scoped'), ('runtime_validation', 'pending'), ('qualified_kernels', [])]:
             bad = dict(READY); bad[field] = value
             with self.assertRaises(ValueError):
@@ -99,7 +100,14 @@ class GuestBridgeTests(unittest.TestCase):
             bridge.patch_config(custom, READY, True)
         self.assertEqual(custom['Kernel']['Add'][0]['MaxKernel'], '25.4.0')
         with self.assertRaisesRegex(ValueError, 'still a candidate'):
-            bridge.patch_config(old, PIN, True)
+            bridge.patch_config(old, dict(PIN, release_ready=False), True)
+
+    def test_release_records_measured_kernels_and_frame_pacing_limit(self):
+        bridge.require_qualified(PIN)
+        self.assertEqual(PIN['qualified_kernels'], ['25.4.0', '25.6.0'])
+        self.assertTrue(PIN['limitations'])
+        self.assertEqual(PIN['qualification']['26.4']['webgl_stages'], 22)
+        self.assertEqual(PIN['qualification']['26.7.1']['kernel'], '25.6.0')
 
     def test_package_hashes_source_and_kernel_pin_are_checked(self):
         with tempfile.TemporaryDirectory() as tmp:
