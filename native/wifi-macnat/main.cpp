@@ -221,6 +221,21 @@ int wmain(int argc,wchar_t** argv){
             return 0;
         }
         if(argc==2 && std::wstring(argv[1])==L"--self-test"){
+            for(const bool cleanup_fails:{false,true}){
+                static unsigned close_calls{},cleanup_calls{};static bool fail_cleanup{};
+                close_calls=cleanup_calls=0;fail_cleanup=cleanup_fails;
+                const auto failed_close=+[](SOCKET)->int{++close_calls;return SOCKET_ERROR;};
+                const auto cleanup_call=+[]()->int{++cleanup_calls;return fail_cleanup?SOCKET_ERROR:0;};
+                bool confirmed=true;std::string saved;
+                multicast_memberships owned(confirmed,saved);owned.socket_=static_cast<SOCKET>(42);owned.winsock_=true;
+                const bool failed=!owned.close(failed_close,cleanup_call);const auto first_receipt=saved;
+                owned.close(failed_close,cleanup_call);
+                const bool terminal=owned.socket_==INVALID_SOCKET && !owned.winsock_;
+                // Never pass a synthetic handle to real APIs if the check fails.
+                owned.socket_=INVALID_SOCKET;owned.winsock_=false;
+                require(failed && terminal && !confirmed && !owned.released_ && close_calls==1 && cleanup_calls==1 && saved==first_receipt,
+                    "Failed socket close was retried or cleanup failure receipt changed");
+            }
             require(guid(L"{ABCDEFAB-1234-4234-8234-123456789ABC}")==L"{abcdefab-1234-4234-8234-123456789abc}","GUID check failed");
             MIB_IF_ROW2 metadata{};metadata.MediaType=NdisMedium802_3;metadata.PhysicalMediumType=NdisPhysicalMedium802_3;
             require(!native_wifi_medium(0,metadata),"Ethernet incorrectly selected Native80211");
