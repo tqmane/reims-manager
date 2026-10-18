@@ -25,8 +25,8 @@ sets a flag; normal main-thread cleanup closes the owned panel. There is no
 automatic timeout or application-specific process check.
 
 `ReimsCursorAid --duration 120` runs a bounded trial. `--self-test` checks
-geometry, image-data bounds and argument handling without opening a window,
-querying the current cursor or requesting capture permissions.
+geometry, snapshot and pipe bounds, PNG metadata and argument handling without
+opening a window, querying the current cursor or requesting capture permissions.
 
 `--move-to-display main` moves once to the main display's center.
 `--move-to-display extended` selects the unique active, non-main, non-mirrored
@@ -58,10 +58,11 @@ selected geometry and a nonzero result. The exit code is 0 for success,
 with usage on stderr. Availability of this action follows the bundled
 helper's pinned source revision; manifest schema 1 is unchanged.
 
-Position and glyph refreshes have separate schedules: position targets
-60 Hz, while the image is checked at 10 Hz. The helper copies the selected
-Core Graphics image provider's data and compares its format and color space;
-it does not repeatedly encode all cursor representations into TIFF. For a
+Position and glyph refreshes run in separate processes: the controller targets
+60 Hz, while one child of the same executable checks the image at 10 Hz on its
+own main thread. The child copies the selected Core Graphics image provider's
+data and compares its format, color space, size and hot spot. It sends a PNG
+snapshot only when the image, hot spot or availability changes. For a
 translation, it repositions the existing window without requesting content
 drawing. It requests content drawing on first show, size changes or image
 changes. A missing or unsupported image is hidden rather than replaced with
@@ -71,11 +72,27 @@ The main thread drains up to 64 of its own AppKit events per position tick,
 dispatches them normally and updates its windows. It does not use an event
 tap, a global input monitor, `finishLaunching` or an activation request.
 
+The controller never waits for a child snapshot. It drains at most 256 KiB of
+a nonblocking pipe per tick and decodes only the newest complete snapshot.
+Frames are length-prefixed JSON, limited to 6 MiB, with at most 4 MiB of PNG
+data. ImageIO checks the PNG type, dimensions, bit depth and a conservative
+four-channel pixel-data bound before AppKit decodes pixels. Decoded dimensions
+must match the snapshot; its bitmap data is also limited to 4 MiB. This bounds
+pixel data, not all temporary memory used by the system image libraries.
+
+If the system's cursor query blocks, movement continues with the last actual
+image and hot spot, which may temporarily be stale. An explicit unavailable
+snapshot hides the aid; an incomplete frame keeps the previous snapshot.
+Worker EOF, invalid data or a startup failure ends the controller with an
+error. It does not repeatedly spawn children. Shutdown closes the pipe and
+signals only its own child without waiting for it. The per-user LaunchAgent
+still supervises the controller according to its installed service policy.
+The internal `--glyph-worker` entry point is for that owned child only.
+
 The schedules are targets, not latency guarantees. WindowServer calls, guest
 load and the sharing application's encoding and transport can delay visible
-updates. Position and glyph queries still run on the same main thread; a
-blocked system cursor query or window operation can stall both schedules.
-Avoiding content drawing for translations does not remove that limitation.
+updates. Separating the image query removes it from the controller's position
+loop; position, visibility and window operations can still block independently.
 Guest-side rendering, the destination's displayed pointer and CPU
 cost during idle and motion require separate runtime checks.
 

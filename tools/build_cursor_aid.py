@@ -56,14 +56,15 @@ def main():
         binary = work / ("ReimsCursorAid-" + architecture)
         run(clang, "-arch", architecture, "-isysroot", sdk,
             "-mmacosx-version-min=11.0", "-fobjc-arc", "-Wall", "-Wextra", "-O2",
-            str(source), "-framework", "AppKit", "-framework", "CoreGraphics", "-o", str(binary))
+            str(source), "-framework", "AppKit", "-framework", "CoreGraphics",
+            "-framework", "ImageIO", "-o", str(binary))
         slices.append(str(binary))
     binary = package / "ReimsCursorAid"
     run(lipo, "-create", *slices, "-output", str(binary))
     binary.chmod(0o755)
     run("codesign", "--force", "--sign", "-", str(binary))
     run("codesign", "--verify", "--strict", str(binary))
-    # This entry point checks pure geometry, data bounds and arguments. It creates no window.
+    # Pure geometry, snapshot/pipe bounds and arguments; no window or current-cursor query.
     result = json.loads(output(str(binary), "--self-test"))
     if result.get("self_test") != "passed" or result.get("failures") != 0 or result.get("checks", 0) < 1:
         raise RuntimeError("Native self-test did not execute successfully")
