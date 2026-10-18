@@ -6,6 +6,11 @@ New-Item -ItemType Directory -Force -Path $root | Out-Null
 $VmRoot=$root
 $fixture=@{bridges=@();commands=@();writeFailure=$false;createFailure=$false;unrelatedOnFailure=$false}
 $wired='11111111-1111-4111-8111-111111111111';$wifi='22222222-2222-4222-8222-222222222222';$tap='33333333-3333-4333-8333-333333333333';$bridge='44444444-4444-4444-8444-444444444444'
+function Assert-ReimsVmStopped {}
+function Get-ReimsAdapterIpv4State { @{up=$true;usable=$false;addresses=@();gateways=@()} }
+function Get-NetAdapterBinding {
+    foreach($id in @($tap,$wired)){[pscustomobject]@{ComponentID='ms_implat';Enabled=$true;InstanceID="{$id}::ms_implat"}}
+}
 function Get-NetAdapter {
     @(
         [pscustomobject]@{Name='Wired';InterfaceGuid=$wired;HardwareInterface=$true;InterfaceType=6;InterfaceDescription='Authored Ethernet';Status='Up'},
@@ -18,6 +23,7 @@ function Invoke-ReimsNetworkCommand($Arguments) {
     $fixture.commands+=,($Arguments -join ' ')
     switch ($Arguments[1]) {
         list { return ($fixture.bridges -join "`n") }
+        show { return @("1 {$tap} Ignored TAP Yes Yes disabled","2 {$wired} Ignored uplink Yes Yes disabled") }
         create {
             if ($fixture.createFailure) { if($fixture.unrelatedOnFailure){$fixture.bridges=@('66666666-6666-4666-8666-666666666666')}; throw 'Native create fixture failure' }
             $fixture.bridges=@($bridge);return 'Created fixture bridge'
@@ -64,6 +70,7 @@ try {
     if (($json | ConvertFrom-Json).uplinks.Count -ne 2 -or (Test-Path "$root/engine/.work")) { throw 'Global inventory required a VM or engine writes' }
     'PASS: physical Wi-Fi/wired inventory, NAT preservation, GUID bridge selection, owned rollback, unrelated bridge protection, global read-only action'
     & "$PSScriptRoot/remove-bridge.ps1"
+    & "$PSScriptRoot/bridge-readiness.ps1"
 } finally {
     $allowed=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")+[IO.Path]::DirectorySeparatorChar
     if ($root.StartsWith($allowed,[StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $root -Recurse -Force }
