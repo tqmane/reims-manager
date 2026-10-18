@@ -112,6 +112,12 @@ across logins until explicitly disabled. It does not detect mirroring processes
 or sessions automatically; the helper can remain alive and idle. Turn it off
 when it is no longer needed.
 
+The VM console toolbar's `カーソルを表示` button invokes that same enable operation
+in one click: the backend verifies, installs and starts the bundled helper
+through paired SSH. Repeating enable is idempotent. It needs no browser,
+manual download or terminal flow. Use display settings' Off action to undo it;
+the toolbar button is an action, not a persistent state indicator.
+
 `EnableCursorAid` and `DisableCursorAid` use the existing selected-VM backend
 operation path without elevation or additional arguments. Both require a running
 VM, a configured engine and paired SSH. Failures use the normal operation error

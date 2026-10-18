@@ -231,8 +231,11 @@ public partial class MainWindow
             OperationLog.Visibility != Visibility.Collapsed || WorkspaceStatusBar.Visibility != Visibility.Collapsed ||
             ConsoleFooter.Visibility != Visibility.Collapsed || SettingsPage.Visibility != Visibility.Collapsed)
             throw new Exception("Powered-on view still contains management chrome");
-        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionUsbButton, SessionSharingButton, SessionSnapshotButton, SessionPopOutButton, CaptionCommands })
+        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionCursorAidButton, SessionUsbButton, SessionSharingButton, SessionSnapshotButton, SessionPopOutButton, CaptionCommands })
             RequireInside(control, TitleBar, "Session title bar");
+        if (SessionCursorAidButton.Tag?.ToString()!="EnableCursorAid" || SessionCursorAidButton.Content?.ToString()!="カーソルを表示" ||
+            SessionCursorAidButton.IsEnabled!=(currentState=="running" && !IsUiBusy))
+            throw new Exception("The one-click cursor toolbar action lost its label, route or running-only policy.");
         Rect icons = SessionCommands.TransformToAncestor(TitleBar).TransformBounds(new Rect(SessionCommands.RenderSize));
         Rect caption = CaptionCommands.TransformToAncestor(TitleBar).TransformBounds(new Rect(CaptionCommands.RenderSize));
         if (icons.Right > caption.Left || TitleBar.ActualHeight > 45) throw new Exception("Session title bar overlaps or is not compact");

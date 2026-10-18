@@ -69,6 +69,7 @@ public partial class MainWindow
         SessionPauseButton.IsEnabled = CanOperate(resume ? "Resume" : "Pause") && !applyingSettings;
         SessionRestartButton.IsEnabled = CanOperate("Restart") && !applyingSettings;
         SessionPopOutButton.IsEnabled = CanOperate("Console") && !applyingSettings;
+        SessionCursorAidButton.IsEnabled = CanOperate("EnableCursorAid") && !applyingSettings;
         LibraryCommand.IsEnabled = !IsUiBusy;
         SessionSettingsButton.IsEnabled = SessionUsbButton.IsEnabled = SessionSharingButton.IsEnabled = SessionSnapshotButton.IsEnabled = HasVm && !IsUiBusy;
         bool editHardware = !IsUiBusy && loadedHardware && CanOperate("SetHardware");
