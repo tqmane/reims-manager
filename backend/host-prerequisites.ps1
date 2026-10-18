@@ -17,9 +17,9 @@ public static class ReimsSetupWhpx {
 '@
     }
     try {
-        [ulong]$value=0; [uint32]$written=0
-        $result=[ReimsSetupWhpx]::WHvGetCapability(0,[ref]$value,8,[ref]$written)
-        $whpx=$result -ge 0 -and $written -ge 4 -and ($value -band 0xffffffff) -ne 0
+        [ulong]$capability=0; [uint32]$written=0
+        $result=[ReimsSetupWhpx]::WHvGetCapability(0,[ref]$capability,8,[ref]$written)
+        $whpx=$result -ge 0 -and $written -ge 4 -and ($capability -band 0xffffffff) -ne 0
     } catch { $whpx=$false }
     $icds=@()
     $drivers='HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
