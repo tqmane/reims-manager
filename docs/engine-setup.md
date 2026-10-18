@@ -24,11 +24,12 @@ download generic QEMU as a substitute: it lacks the Reims device.
 ## Components and source pins
 
 `backend/engine-lock.json` is the reviewed source of version pins. It selects
-Reims `d8b9c2af`, QEMU `7100064d` and metal2vulkan `d41a1c2f`, rather than
+Reims `b8b4486c`, QEMU `7100064d` and metal2vulkan `ea5d6b87`, rather than
 following moving `windows-native-tahoe` branches. The latter runtime is the
 pin in Reims's Cargo manifest; later runtime development commits are not
-silently substituted. These pins preserve the currently qualified host
-implementation, including the guest bridge source at that Reims revision.
+silently substituted. Engine `engine-b8b4486c-7100064d-2` is the next build
+candidate for the common Metal path; native qualification remains pending.
+Guest bridge source is independently pinned in `guest-bridge-lock.json`.
 
 The engine package contains:
 
@@ -53,6 +54,21 @@ All manifest paths are relative to the engine directory. QEMU's `-L`,
 disk tools, OVMF templates, ISO inspection and GPU ROM resolve through that
 manifest. VM-local writable firmware and disks stay in the VM directory.
 Changing the engine never overwrites the VM's NVRAM or SMBIOS identity.
+Portable runtimes require a VM directory outside the engine package. Their
+scratch/cache/report directories live in `<VM>/support`; verified OpenCore
+tools are extracted to `<VM>/support/opencore/OpenCore-1.0.8-2011e8b7216e`.
+The installed engine is not modified by OpenCore setup, so full package-file
+verification remains valid afterwards. Development checkout build caches
+continue to use that checkout's `.work` directory.
+Rebuilding an existing VM reuses its recorded `firmware_code` and variables
+template, checking both recorded hashes before changing configuration or
+the EFI image. A newer engine's OVMF is selected only for new VMs. An
+explicit `-FirmwareDirectory` is checked against the existing pair: differing
+code or template is refused with a firmware/NVRAM migration explanation.
+Configuration and kext rebuilds do not migrate OVMF or regenerate identity.
+OpenCore edit backups live under the selected VM's `backups/opencore`, not
+the engine's build/scratch directories. See the [UI/backend contract](opencore-manager-contract.md)
+for persistent paths and the OpenCore/guest bridge action arguments.
 
 Downloads and the file manifest are checked automatically. ZIP traversal,
 duplicates, links, excessive extraction size, unknown source revisions and
@@ -74,6 +90,13 @@ The authored configuration changes are kept as executable source:
 
 - `backend/opencore/base.py`: derives a fresh VM configuration from the
   official `Docs/Sample.plist`, with iMac20,1, firmware quirks and drivers.
+  Its `ScanPolicy=0x301` combines filesystem lock (bit 0), APFS (bit 8),
+  and HFS (bit 9); FAT/ESP entries cannot recursively start OpenCore itself.
+  Auxiliary entries remain visible for installers. Existing VMs keep their
+  custom scan policy on ordinary rebuilds. **Repair boot entries** explicitly
+  applies this scan profile, preserving identity and auxiliary visibility;
+  the previous configuration is backed up first. Rebuilds follow the active
+  configuration/image recorded in the VM's OpenCore manifest.
 - `backend/opencore/apple-account.py`: the existing reversible Apple
   Account kernel-string compatibility patch, limited to Darwin **25.4.0**.
   It does not change SIP or blindly extend the OS version bounds.
@@ -86,10 +109,16 @@ The authored configuration changes are kept as executable source:
 binary patch. Its complete source/build checks remain at the pinned Reims
 revision under `guest/metal-compat`. Existing VM configurations keep that
 plugin and its version bounds when rebuilt. The Windows engine job does
-**not** build or silently install this macOS-compiled guest plugin. A fresh
-VM therefore needs separately qualified guest bridge installation for the
-stock-browser WebGL fix. OS updates require testing the plugin against the
-new kernel before expanding its compatibility bounds.
+**not** build or silently install this macOS-compiled guest plugin. The
+manager's OpenCore page fetches and applies the separate [guest bridge
+addon](guest-bridge.md), built by its own macOS CI job from those exact
+sources. Its release does not rebuild or replace the Windows engine.
+Application is optional and requires a qualified generic implementation and
+runtime ABI validation. The global `ac60717c` candidate records proposed
+Darwin 25 family bounds but has no qualified kernels and cannot be applied.
+After qualification, explicit enable/reapply migrates owned bridge/Lilu
+entries to the reviewed package range; ordinary rebuilds preserve bounds.
+Native guest and browser checks are required before release promotion.
 
 ## Build and publication
 

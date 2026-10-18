@@ -29,7 +29,7 @@ if ($runtime.diagnostic_only) { throw 'A paused TCG diagnostic is not a performa
 $config = Get-ReimsVmConfig
 $status = Invoke-ReimsQmp $runtime 'query-status'
 if (!$status.running) { throw 'VM is paused; no running-VM benchmark can be collected.' }
-$directory = Join-Path $ProjectRoot ('.work/diagnostics/benchmark-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$directory = Join-Path $ReimsWorkRoot ('diagnostics/benchmark-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Path $directory | Out-Null
 $samples = [Collections.Generic.List[object]]::new()
 $stderr = Join-Path $runtime.run_directory 'stderr.log'

@@ -376,7 +376,7 @@ public partial class MainWindow : Window
         engine.Show(); await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle); engine.UpdateLayout();
         SaveImage(Path.Combine(folder,"engine-setup.png"),(FrameworkElement)engine.Content);
         engine.Close();
-        foreach (string component in new[]{"install-engine.ps1","engine-lock.json","opencore/base.py","opencore/apple-account.py"})
+        foreach (string component in new[]{"install-engine.ps1","engine-lock.json","opencore/base.py","opencore/apple-account.py","opencore/boot-policy.py","prepare-guest-bridge.ps1","guest-bridge-lock.json","opencore/guest-bridge.py"})
             if (!File.Exists(Path.Combine(AppContext.BaseDirectory,"scripts",component))) throw new Exception("Missing packaged setup component: "+component);
         ConfigureEngine(folder,Environment.ProcessPath!);
         machines.Add(new VmEntry("macOS Tahoe",Path.Combine(folder,"Tahoe.reimsvm"),Path.Combine(folder,"Tahoe.data")));

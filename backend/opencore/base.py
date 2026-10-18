@@ -13,7 +13,8 @@ c['Kernel']['Quirks'].update(AppleXcpmExtraMsrs=True, DisableLinkeditJettison=Fa
 c['Misc']['Boot'].update(HideAuxiliary=False, Timeout=0)
 c['Misc']['Debug'].update(AppleDebug=True, ApplePanic=True, DisplayLevel=0x80000042, Target=75)
 c['Misc']['Serial']['Init'] = True
-c['Misc']['Security'].update(ScanPolicy=0, SecureBootModel='x86legacy', DmgLoading='Signed', Vault='Optional')
+# FS lock + APFS + HFS excludes the FAT bootloader volume from its own picker.
+c['Misc']['Security'].update(ScanPolicy=0x301, SecureBootModel='x86legacy', DmgLoading='Signed', Vault='Optional')
 apple = '7C436110-AB2A-4BBB-A880-FE41995C9F82'
 c['NVRAM']['Add'][apple] = {'boot-args': '-v keepsyms=1 serial=3 debug=0x108', 'csr-active-config': bytes(4),
                           'prev-lang:kbd': b'en:252', 'run-efi-updater': 'No'}

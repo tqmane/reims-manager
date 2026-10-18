@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -171,7 +171,7 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     SetIdentity {
         Assert-ReimsVmStopped
-        $temporary = Join-Path $ProjectRoot ('.work/tmp/identity-' + [guid]::NewGuid() + '.json')
+        $temporary = Join-Path $ReimsWorkRoot ('tmp/identity-' + [guid]::NewGuid() + '.json')
         try {
             $json = [Console]::In.ReadToEnd()
             if ($json.Length -gt 4096) { throw 'Identity data is too large.' }
@@ -220,6 +220,9 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     SnapshotCreate { & "$PSScriptRoot/snapshot.ps1" -Action Create -Name $Name }
     SnapshotRestore { & "$PSScriptRoot/snapshot.ps1" -Action Restore -Name $Name }
+    EnableGuestBridge { & "$PSScriptRoot/prepare-guest-bridge.ps1" -Mode Enable }
+    DisableGuestBridge { & "$PSScriptRoot/prepare-guest-bridge.ps1" -Mode Disable }
+    ApplyBootProfile { & "$PSScriptRoot/prepare-opencore.ps1" -ApplyBootProfile -Rebuild }
     GenerateIdentity { & "$PSScriptRoot/prepare-opencore.ps1" -GenerateIdentity -Rebuild }
     EnableAppleAccount { & "$PSScriptRoot/prepare-opencore.ps1" -AppleAccountCompatibility Enable -Rebuild }
     DisableAppleAccount { & "$PSScriptRoot/prepare-opencore.ps1" -AppleAccountCompatibility Disable -Rebuild }

@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param([switch]$Screenshot, [switch]$Zip)
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
-$destination = Join-Path $ProjectRoot ('.work/diagnostics/vm-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$destination = Join-Path $ReimsWorkRoot ('diagnostics/vm-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Path $destination | Out-Null
 $hostReport = [ordered]@{
     collected_utc = [DateTime]::UtcNow.ToString('o'); powershell = $PSVersionTable.PSVersion.ToString()

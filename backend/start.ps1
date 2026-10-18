@@ -281,7 +281,7 @@ $launch = [ordered]@{
     headless = [bool]$Headless; diagnostic_only = [bool]$DiagnosticTcg
 }
 if ($DryRun) {
-    Write-ReimsJson (Join-Path $ProjectRoot '.work/diagnostics/vm-launch.json') $launch
+    Write-ReimsJson (Join-Path $ReimsWorkRoot 'diagnostics/vm-launch.json') $launch
     $launch | ConvertTo-Json -Depth 10
     return
 }

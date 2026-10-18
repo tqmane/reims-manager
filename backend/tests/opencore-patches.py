@@ -34,6 +34,8 @@ class OpenCorePatches(unittest.TestCase):
             self.assertEqual(result['NVRAM']['Add'][APPLE]['csr-active-config'], bytes(4))
             self.assertEqual(result['PlatformInfo']['Generic']['SystemProductName'], 'iMac20,1')
             self.assertEqual(result['Misc']['Security']['SecureBootModel'], 'x86legacy')
+            self.assertEqual(result['Misc']['Security']['ScanPolicy'], (1 << 0) | (1 << 8) | (1 << 9))
+            self.assertFalse(result['Misc']['Boot']['HideAuxiliary'])
             self.assertEqual(plistlib.loads(source.read_bytes()), original)
             result['Kernel']['Patch'].append({'Comment': 'Keep unrelated patch'})
             base.write_bytes(plistlib.dumps(result))
@@ -50,6 +52,23 @@ class OpenCorePatches(unittest.TestCase):
             self.assertEqual(plistlib.loads(removed.read_bytes()), enabled)
             run('apple-account.py', patched, removed, 'Disable')
             self.assertEqual(plistlib.loads(removed.read_bytes()), result)
+
+    def test_explicit_boot_profile_preserves_identity_and_other_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, destination = Path(tmp)/'source.plist', Path(tmp)/'candidate.plist'
+            original = {'Misc': {'Security': {'ScanPolicy': 0x7fffffff, 'SecureBootModel': 'x86legacy'},
+                                 'Boot': {'HideAuxiliary': True, 'Timeout': 5}},
+                        'PlatformInfo': {'Generic': {'SystemUUID': 'fixture-identity'}}, 'Kernel': {'Patch': ['keep']}}
+            source.write_bytes(plistlib.dumps(original)); before = source.read_bytes()
+            previous = sys.argv
+            try:
+                sys.argv = ['boot-policy.py', str(source), str(destination)]
+                runpy.run_path(str(SCRIPTS/'boot-policy.py'), run_name='__main__')
+            finally:
+                sys.argv = previous
+            expected = copy.deepcopy(original); expected['Misc']['Security']['ScanPolicy'] = 0x301
+            self.assertEqual(plistlib.loads(destination.read_bytes()), expected)
+            self.assertEqual(source.read_bytes(), before)
 
 
 if __name__ == '__main__':

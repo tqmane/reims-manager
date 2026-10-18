@@ -34,6 +34,12 @@ jobs:
         run: |
           pwsh -NoProfile -File ./backend/tests/engine-package.ps1
           if ($LASTEXITCODE) { throw 'Engine fixtures failed.' }
+          pwsh -NoProfile -File ./backend/tests/firmware-pair.ps1
+          if ($LASTEXITCODE) { throw 'Recorded firmware pair fixture failed.' }
+          pwsh -NoProfile -File ./backend/tests/opencore-backup.ps1
+          if ($LASTEXITCODE) { throw 'VM-owned OpenCore backup fixture failed.' }
+          pwsh -NoProfile -File ./backend/tests/portable-support.ps1
+          if ($LASTEXITCODE) { throw 'Immutable engine support fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/native-probe.ps1
           if ($LASTEXITCODE) { throw 'Native timeout fixture failed.' }
           pwsh -NoProfile -File ./backend/tests/manager-ports.ps1
@@ -42,6 +48,8 @@ jobs:
           if ($LASTEXITCODE) { throw 'DLL closure fixtures failed.' }
           python ./backend/tests/opencore-patches.py
           if ($LASTEXITCODE) { throw 'OpenCore patch fixtures failed.' }
+          python ./backend/tests/guest-bridge.py
+          if ($LASTEXITCODE) { throw 'Guest bridge fixtures failed.' }
       - name: Build manager and run native self-checks
         shell: pwsh
         run: ./tools/build.ps1

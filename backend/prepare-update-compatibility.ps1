@@ -2,7 +2,10 @@
 [CmdletBinding()]
 param()
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
+. "$PSScriptRoot/opencore-backup.ps1"
 Assert-ReimsVmStopped
+$downloads = Join-Path $ReimsSupportRoot 'downloads'
+New-Item -ItemType Directory -Force -Path $downloads | Out-Null
 $manifest = Get-Content -Raw (Join-Path $VmRoot 'state/opencore.json') | ConvertFrom-Json
 [void](Assert-ReimsArtifactPath $manifest.config)
 $ocDirectory = Split-Path $manifest.config
@@ -11,7 +14,7 @@ $packages = @(
     @{name='RestrictEvents';version='1.1.6';sha256='98170dfae195ddd28b5d95e3f040125a13ca783bcb9bd1e5b8c588e217b14ee6'}
 )
 foreach ($package in $packages) {
-    $archive = Join-Path $ProjectRoot ".work/downloads/$($package.name)-$($package.version)-RELEASE.zip"
+    $archive = Join-Path $downloads "$($package.name)-$($package.version)-RELEASE.zip"
     if (!(Test-Path -LiteralPath $archive)) {
         $url = "https://github.com/acidanthera/$($package.name)/releases/download/$($package.version)/$($package.name)-$($package.version)-RELEASE.zip"
         Invoke-WebRequest $url -OutFile "$archive.partial"
@@ -19,7 +22,7 @@ foreach ($package in $packages) {
         Move-Item -LiteralPath "$archive.partial" -Destination $archive
     }
     if ((Get-FileHash $archive).Hash -ne $package.sha256) { throw "Cached digest mismatch: $($package.name)" }
-    $expanded = Join-Path $ProjectRoot ".work/downloads/$($package.name)-$($package.version)"
+    $expanded = Join-Path $ReimsSupportRoot "kexts/$($package.name)-$($package.version)"
     Expand-Archive -LiteralPath $archive -DestinationPath $expanded -Force
     $kext = Get-ChildItem -LiteralPath $expanded -Directory -Recurse -Filter "$($package.name).kext" | Select-Object -First 1
     if (!$kext) { throw "Missing kext: $($package.name)" }
@@ -27,8 +30,7 @@ foreach ($package in $packages) {
     New-Item -ItemType Directory -Force -Path $destination | Out-Null
     Copy-Item -LiteralPath $kext.FullName -Destination $destination -Recurse -Force
 }
-$backup = Join-Path $ProjectRoot ('.work/diagnostics/opencore-before-updates-' + (Get-Date -Format 'yyyyMMdd-HHmmss-ffff') + '.plist')
-Copy-Item -LiteralPath $manifest.config -Destination $backup
+$backup = Backup-ReimsOpenCoreConfig $VmRoot $manifest.config 'updates'
 $candidate = "$backup.candidate"
 $patch = @'
 import pathlib, plistlib, sys
