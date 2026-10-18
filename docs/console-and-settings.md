@@ -103,6 +103,43 @@ clipboard and snapshot pages are immediate operations; the footer states that
 Cancel does not undo them. Unknown state and guest-only shutdown are not treated
 as permission to write offline configuration.
 
+## Wi-Fi compatibility connection
+
+`LAN 接続の準備` reuses the physical Wi-Fi / wired adapter selector. When
+exactly one connected Wi-Fi is available, it suggests that adapter without
+changing the VM or Windows configuration. Selecting Wi-Fi shows one preparation
+action; the backend prepares a dedicated owned TAP automatically. Wired Windows
+bridge preparation and removal remain separate. NAT remains the default.
+
+Wi-Fi preparation and removal require a fully stopped VM and Windows elevation.
+Before a missing Windows Packet Filter driver can be installed, the user must
+check the explicit personal/academic-use or commercial-evaluation terms consent.
+The page links the vendor's download and commercial-license terms and states
+that installation can briefly interrupt Windows networking. It never grants
+consent automatically or forces a Windows restart. A prerequisite restart is
+reported as incomplete preparation; the user can repeat preparation afterward.
+
+The optional `network_forwarder` status is authoritative for the forwarding
+worker. Missing/malformed status is unconfirmed, a reported error stays visible,
+and `ready` means the live worker initialized, not that DHCP, LAN or Internet
+works. Active Wi-Fi status is polled from the backend instead of reusing a
+cached readiness flag. The compatibility path forwards IPv4 only; external IPv6
+is unsupported. Physical link presence is labeled separately from connectivity.
+
+The hardware draft retains the selected physical GUID and forwarding mode.
+Unrelated unsaved memory/identity changes must be applied or cancelled before
+the immediate preparation action. `解除して NAT に戻す` delegates owned TAP
+binding restoration to the backend; changing the hardware radio to NAT alone
+cannot bypass cleanup. Preparation reads only the fixed, fresh schema-1 result
+after successful elevated process exit, with a 64 KiB input limit. An unreadable
+result reports possible partial changes rather than assuming rollback.
+
+CPU fixtures cover status parsing, error/readiness precedence, explicit consent,
+stopped-state policy and fresh/bounded result validation. The focused network
+page fixture checks the actual Fluent controls, draft retention and action
+visibility with synthetic metadata and no host network calls. Neither fixture
+establishes real Wi-Fi, driver installation or guest connectivity.
+
 ## Launcher completion
 
 Windows can leave a detached QEMU holding inherited stdout/stderr pipe handles

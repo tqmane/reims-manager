@@ -137,6 +137,7 @@ public partial class MainWindow
             Nat.IsChecked = true; UsbBackend.SelectedIndex = 0; Resolution.SelectedIndex = 1;
             Tap.ItemsSource = BridgeTap.ItemsSource = Physical.ItemsSource = Uplink.ItemsSource = Snapshots.ItemsSource = null;
             NetworkNotice.Text = "";
+            wifiForwarder=null;wifiStatusError=null;hardwareForwarder="";PacketFilterTerms.IsChecked=false;
             UsbDevices.ItemsSource = null;
         } finally { loadingIdentity = loadingHardware = false; }
         RememberHardwareDraft(); RememberIdentityDraft();
@@ -233,9 +234,15 @@ public partial class MainWindow
         if (Bridge.IsChecked == true) {
             bool legacy = latest.ValueKind == System.Text.Json.JsonValueKind.Object && latest.TryGetProperty("network", out var mode) && mode.GetString() == "bridge" &&
                 (!latest.TryGetProperty("network_uplink_id", out var saved) || string.IsNullOrEmpty(saved.GetString()));
-            if (SelectedUplink.Length == 0 && !legacy) return InvalidField(Uplink, "ホストの Wi-Fi・有線 LAN を選び、「ブリッジの準備」から接続を準備してください。");
-            if (string.IsNullOrWhiteSpace(Selected(Tap))) { NetworkTapDetails.IsExpanded = true; return InvalidField(Tap, "ブリッジの準備で選択した Reims 専用 TAP を指定してください。"); }
+            if (SelectedUplink.Length == 0 && !legacy) return InvalidField(Uplink, "ホストの Wi-Fi・有線 LAN を選び、「LAN 接続の準備」から接続を準備してください。");
+            bool wifi=Uplink.SelectedItem is NetworkUplink { Kind:"wifi" } || hardwareForwarder==WifiForwarderState.MacNat;
+            if (wifi) {
+                string savedId=latest.TryGetProperty("network_uplink_id",out var id) ? id.GetString() ?? "" : "";
+                if (wifiForwarder is not { Kind:WifiForwarderState.MacNat,Configured:true } || SelectedUplink!=savedId)
+                    return InvalidField(Uplink,"先に「LAN 接続の準備」で、この Wi-Fi の互換接続を準備してください。");
+            } else if (string.IsNullOrWhiteSpace(Selected(Tap))) { NetworkTapDetails.IsExpanded = true; return InvalidField(Tap, "ブリッジの準備で選択した Reims 専用 TAP を指定してください。"); }
         }
+        if (hardwareForwarder==WifiForwarderState.MacNat && Nat.IsChecked==true) return InvalidField(Nat,"Wi-Fi 互換接続の解除ボタンで、専用 TAP の設定を復元してから NAT に戻してください。");
         if (!ManagerValidation.Host(GuestHost.Text.Trim())) return InvalidField(GuestHost, "macOS の IP アドレスまたはホスト名を確認してください。");
         if (Microphone.IsChecked == true && Sound.IsChecked != true) return InvalidField(Microphone, "マイクを使用するには、スピーカー共有も有効にしてください。");
         return true;
