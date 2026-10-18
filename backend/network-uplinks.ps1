@@ -102,6 +102,7 @@ function New-ReimsHostBridge([string]$TapName,[string]$PhysicalSelection) {
     Assert-ReimsVmStopped
     $uplink=Resolve-ReimsPhysicalUplink $PhysicalSelection
     if (!$uplink.connected) { throw 'Connect the selected physical adapter before creating a bridge.' }
+    if ($uplink['kind'] -eq 'wifi') { throw 'Use PrepareWifi for Wi-Fi IPv4 compatibility; no Windows bridge was created.' }
     $taps=@((Get-ReimsNetworkInventory).tap_adapters | Where-Object name -EQ $TapName)
     if ($taps.Count -ne 1) { throw 'Select the dedicated internal TAP adapter; no physical NIC is passed to QEMU.' }
     $before=@(Get-ReimsHostBridgeIds)
@@ -143,10 +144,19 @@ function New-ReimsHostBridge([string]$TapName,[string]$PhysicalSelection) {
 }
 
 function Get-ReimsSavedNetwork($Config,[string]$Mode,[string]$TapName,[string]$GuestHost,[string]$PhysicalSelection) {
+    $isWifi=$Config.PSObject.Properties['network'] -and $Config.network.PSObject.Properties['forwarder'] -and $Config.network.forwarder -eq 'macnat-ipv4'
+    if($Mode -eq 'bridge' -and $PhysicalSelection -and (Resolve-ReimsPhysicalUplink $PhysicalSelection)['kind'] -eq 'wifi'){
+        return Get-ReimsWifiSavedNetwork $Config $TapName $PhysicalSelection $GuestHost
+    }
+    if($isWifi){
+        if($Mode -eq 'bridge' -and !$PhysicalSelection){return Get-ReimsWifiSavedNetwork $Config $TapName $Config.network.physical_adapter_id $GuestHost}
+        throw 'Disable Wi-Fi IPv4 compatibility before switching network mode, to restore its owned TAP binding.'
+    }
     $network=@{mode=$Mode;adapter=$TapName;guest_host=$GuestHost}
     if ($PhysicalSelection) {
         $uplink=Resolve-ReimsPhysicalUplink $PhysicalSelection
         if ($Mode -eq 'bridge') {
+            if ($uplink['kind'] -eq 'wifi') { throw 'Use Wi-Fi IPv4 compatibility instead of a Windows bridge for this uplink.' }
             $path=Join-Path $VmRoot 'state/host-bridge.json'
             if (!(Test-Path -LiteralPath $path)) { throw 'Run CreateBridge for the selected physical uplink before saving bridged mode. NAT was not changed.' }
             $bridge=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json

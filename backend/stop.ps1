@@ -3,7 +3,7 @@
 param([ValidateRange(1, 300)][int]$TimeoutSeconds = 60, [switch]$Exit, [switch]$Force)
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
 $runtime = Get-ReimsRuntime
-if (!$runtime -or !(Get-ReimsVmProcess $runtime)) { 'The recorded VM is stopped.'; return }
+if (!$runtime -or !(Get-ReimsVmProcess $runtime)) { Stop-ReimsWifiForwarder; 'The recorded VM is stopped.'; return }
 try {
     $quitRequested = [bool]$runtime.diagnostic_only
     if ($quitRequested) {
@@ -13,7 +13,7 @@ try {
     }
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     do {
-        if (!(Get-ReimsVmProcess $runtime)) { 'QEMU stopped.'; return }
+        if (!(Get-ReimsVmProcess $runtime)) { Stop-ReimsWifiForwarder; 'QEMU stopped.'; return }
         if (!$quitRequested -and (Invoke-ReimsQmp $runtime 'query-status').status -eq 'shutdown') {
             if (!$Exit) { "Guest powered off; QEMU PID $($runtime.pid) retained. Run start.ps1 to power on."; return }
             Invoke-ReimsQmp $runtime 'quit' | Out-Null
@@ -30,4 +30,5 @@ try { Invoke-ReimsQmp $runtime 'quit' | Out-Null } catch { Write-Warning $_.Exce
 Start-Sleep -Milliseconds 500
 $owned = Get-ReimsVmProcess $runtime
 if ($owned) { Stop-Process -InputObject $owned -Force }
+Stop-ReimsWifiForwarder
 'Powered off the recorded VM.'
