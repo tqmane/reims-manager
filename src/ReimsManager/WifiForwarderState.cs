@@ -19,7 +19,7 @@ internal sealed record WifiForwarderState(string? Kind, bool Installed, bool Con
             value.GetProperty("configured").GetBoolean(), value.GetProperty("running").GetBoolean(), value.GetProperty("ready").GetBoolean(),
             value.GetProperty("pid").ValueKind == JsonValueKind.Null ? null : value.GetProperty("pid").GetInt32(),
             value.GetProperty("error").GetString(), value.GetProperty("ipv4_only").GetBoolean(), value.GetProperty("ipv6_enabled").GetBoolean());
-        if (result.Pid <= 0 || result.Ready && !result.Running || result.Ipv4Only == result.Ipv6Enabled ||
+        if (result.Pid <= 0 || result.Ready && (!result.Configured || !result.Running || !result.Pid.HasValue) || result.Ipv4Only == result.Ipv6Enabled ||
             result.Kind==LegacyMacNat && result.Ipv6Enabled || result.Kind==MacNat && result.Configured && !result.Ipv6Enabled)
             throw new InvalidDataException("転送プロセス・IPv6 設定の状態を確認できません。");
         return result;
