@@ -5,7 +5,7 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','EnableCursorAid','DisableCursorAid','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId,
@@ -81,7 +81,7 @@ function Get-GuestEndpoint($Config) {
     return @{host=$Config.network.guest_host;port=22}
 }
 
-function Invoke-GuestControl([string]$Operation, [string]$Command) {
+function Invoke-GuestControl([string]$Operation, [string]$Command, [string]$InputJson) {
     $runtime = Get-ReimsRuntime
     if (!$runtime -or !(Get-ReimsVmProcess $runtime)) { throw 'VM は停止しています。' }
     $state = (Invoke-ReimsQmp $runtime 'query-status').status
@@ -99,9 +99,13 @@ function Invoke-GuestControl([string]$Operation, [string]$Command) {
     $endpoint = Get-GuestEndpoint (Get-ReimsVmConfig)
     $guest = if (Test-Path $guestPath) { Get-Content $guestPath -Raw | ConvertFrom-Json } else { $null }
     $alias = if ($guest -and $guest.PSObject.Properties['host_key_alias']) { @('-o', "HostKeyAlias=$($guest.host_key_alias)") } else { @() }
-    $output = @(& "$env:SystemRoot/System32/OpenSSH/ssh.exe" -F NUL -n -o ConnectTimeout=5 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes `
-        -o (Get-ReimsSshKnownHostsOption $known) -o KexAlgorithms=curve25519-sha256 @alias -p $endpoint.port -i $key `
-        "$account@$($endpoint.host)" $(if ($Command) {$Command} else {"sudo -n /sbin/shutdown $Operation now"}) 2>&1 | ForEach-Object ToString)
+    $inputSupplied = $PSBoundParameters.ContainsKey('InputJson')
+    if ($inputSupplied -and (!$Command -or [Text.Encoding]::UTF8.GetByteCount($InputJson) -gt 32MB)) { throw 'Invalid bounded guest input.' }
+    $sshArguments = @('-F','NUL') + $(if($inputSupplied){@('-T')}else{@('-n')}) + @('-o','ConnectTimeout=5','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes',
+        '-o',(Get-ReimsSshKnownHostsOption $known),'-o','KexAlgorithms=curve25519-sha256') + $alias + @('-p',$endpoint.port,'-i',$key,
+        "$account@$($endpoint.host)",$(if ($Command) {$Command} else {"sudo -n /sbin/shutdown $Operation now"}))
+    $ssh = "$env:SystemRoot/System32/OpenSSH/ssh.exe"
+    $output = @(if($inputSupplied){$InputJson | & $ssh @sshArguments 2>&1 | ForEach-Object ToString}else{& $ssh @sshArguments 2>&1 | ForEach-Object ToString})
     $exitCode = $LASTEXITCODE
     if ($Command) {
         if ($exitCode -ne 0) { throw "macOS の操作に失敗しました ($exitCode): $($output -join ' ')" }
@@ -159,6 +163,14 @@ if ($Action -eq 'Status') {
     return
 }
 switch ($Action) {
+    EnableCursorAid {
+        . "$PSScriptRoot/cursor-aid.ps1"
+        Invoke-ReimsCursorAid 'enable'
+    }
+    DisableCursorAid {
+        . "$PSScriptRoot/cursor-aid.ps1"
+        Invoke-ReimsCursorAid 'disable'
+    }
     GetWifiMacNat { Get-ReimsWifiStatus $VmRoot | ConvertTo-Json -Depth 6 -Compress }
     InstallWifiDriver {
         Assert-ReimsVmStopped
