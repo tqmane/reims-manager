@@ -3,13 +3,26 @@ using System.Text.Json;
 
 namespace ReimsManager;
 
-internal sealed record VmEntry(string Name, string File, string Directory)
+internal sealed record VmEntry(string Name, string File, string Directory, string? Problem = null)
 {
+    public bool IsAvailable => Problem is null;
+    public string Subtitle => IsAvailable ? "macOS 仮想マシン" : "見つからない / 読み込めない";
     public override string ToString() => Name;
 }
 
 internal static class VmLibrary
 {
+    internal static VmEntry Registered(string file)
+    {
+        try { return Open(file); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException or FormatException) {
+            string name = file, directory = "";
+            try { name = Path.GetFileNameWithoutExtension(file); directory = Path.GetDirectoryName(Path.GetFullPath(file))!; }
+            catch (ArgumentException) { }
+            return new(name, file, directory, error.Message);
+        }
+    }
+
     private static VmEntry Validate(string file, string name, string directory)
     {
         file = Path.GetFullPath(file);

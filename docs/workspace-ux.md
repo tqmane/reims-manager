@@ -6,7 +6,8 @@ The native WPF/Fluent application keeps the existing engine, VM descriptor and
 QEMU console integration. The layout uses a desktop workstation hierarchy rather
 than a dashboard of cards:
 
-- The left sidebar contains only the searchable VM library and engine settings.
+- The left sidebar contains the searchable VM library, engine settings and
+  registration recovery controls.
   The machine list gets the remaining vertical space and scrolls independently.
   A native splitter changes its width between 200 and 340 device-independent
   units, using dragging or keyboard arrows. Width is session-local, not persisted.
@@ -17,7 +18,7 @@ than a dashboard of cards:
 - The selected VM's name, configuration and state appear above its page tabs.
   Console, Hardware, Clipboard and Snapshots are horizontal page tabs, not
   separate VM sessions. SSH pairing, OpenCore identity, installation and bridge
-  setup remain under the advanced menu. Filtering the library does not switch
+  setup are categories of the dedicated settings page. Filtering the library does not switch
   or stop the active machine.
 - The console has a thin frame and compact input-release/pop-out footer. Hardware
   settings use a device list on the left and an editor on the right, with save,
@@ -62,10 +63,10 @@ or snapshots.
   are not rewritten. This is not an atomic lease across multiple manager processes;
   simultaneous provisioning in separate instances still requires coordination.
 
-The workstation redesign is declarative UI plus isolated render/geometry checks.
-It does not change disk formats, engine paths, QEMU arguments, guest state policies
-or VM selection/unsaved-edit handling. The new console command binds its enabled
-state to the existing console connection control rather than bypassing the policy.
+The workstation layout uses isolated render/geometry checks and the existing
+guest action policy. Preference persistence and unavailable library entries are
+described below; they do not change guest disks or QEMU arguments. The console
+command binds its enabled state to the same connection policy as its handler.
 
 ## Automated validation
 
@@ -91,7 +92,7 @@ are subject to the runner's desktop bounds; these are not large-monitor or
 physical high-DPI acceptance tests. The PNGs contain synthetic VM metadata and
 do not represent a running macOS guest.
 
-The `ReimsManager-ui-checks` artifact preserves the 32 current PNG captures plus
+The `ReimsManager-ui-checks` artifact preserves the native PNG captures plus
 `result.json` or `error.txt` even when validation fails. The build manifest in the
 packaged application identifies the exact checked-out revision; a pull-request
 workflow can use GitHub's merge revision rather than its head commit.
@@ -109,3 +110,50 @@ This revision does not introduce multiple simultaneous VM session tabs, live
 thumbnail previews, live performance charts or persistent splitter preferences.
 The goal is a Fluent workstation layout using the already implemented VM features,
 not a claim of VMware feature parity.
+
+## Library persistence and recovery
+
+The application stores its library, engine and last selection in
+`%LOCALAPPDATA%\Reims\Manager\settings.json`, independently of the executable,
+engine directory and working directory. Updating or moving the application does
+not create a new library. `REIMS_MANAGER_HOME` explicitly selects an alternate
+profile for isolated checks; a normal shortcut does not inherit a temporary
+profile used by a development shell.
+
+The sidebar's **登録・保存先** section shows the exact active settings file, opens
+its directory and imports another profile's `settings.json`. Import adds VM
+registrations without dropping the existing library or replacing an already
+configured engine. When switching from a development launch or another profile,
+use this import instead of re-creating VM disks.
+
+Settings saves hold a per-profile cross-process mutex, merge registrations and
+only update fields this instance changed. A stale instance cannot overwrite a
+newer engine/selection with its startup snapshot. Writes flush a temporary file
+and replace the destination atomically; the previous good file is retained as
+`settings.json.backup.json`. If the current JSON is damaged, loading attempts that
+backup and displays a warning. Before a replacement, unreadable original JSON is
+preserved separately. I/O errors are surfaced rather than silently replacing an
+unreadable file with an empty library.
+
+Disconnected or invalid VM descriptors remain visible with an unavailable state
+and their original path. Guest operations stay disabled for these entries.
+Reconnect the drive and choose **ライブラリを更新**, or use **VM を開く** to register a
+moved descriptor. This refresh also discovers registrations saved by another
+manager instance. Library operations do not move, delete or recreate guest data.
+
+The isolated self-check launches new application processes with a different
+working directory and no inherited profile override. It verifies engine, selected
+VM and disconnected registrations after restart; overlapping stale-instance
+saves; JSON backup recovery across another restart; and additive profile import.
+An unrelated save keeps the current window's active engine/selection fixed while
+preserving newer values on disk, including on a second stale save. Library refresh
+adopts another window's engine only when fully stopped; otherwise it explains why
+the current connection is retained.
+WPF checks cover the unavailable row/action state and compact recovery controls.
+These checks do not simulate a host power failure or physical disk loss.
+
+The OpenCore page exposes boot-profile reapplication and guest GPU bridge
+enable/disable as separate, fully-stopped-only operations. The legacy Tahoe 26.4
+Apple Account patch remains labelled separately. Installing a bridge is not a
+qualification result for an OS version; missing backend status is shown as
+unconfirmed. These UI checks do not install a bridge or assert Tahoe compatibility.

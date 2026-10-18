@@ -33,10 +33,11 @@ public partial class MainWindow
         SettingsPage.Visibility = settingsVisible ? Visibility.Visible : Visibility.Collapsed;
         ManagementCommands.Visibility = manager ? Visibility.Visible : Visibility.Collapsed;
         LibraryPane.Visibility = LibrarySplitter.Visibility = manager ? Visibility.Visible : Visibility.Collapsed;
-        VmHeader.Visibility = WorkspaceNavSection.Visibility = manager && HasVm ? Visibility.Visible : Visibility.Collapsed;
+        VmHeader.Visibility = manager && selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
+        WorkspaceNavSection.Visibility = manager && HasVm ? Visibility.Visible : Visibility.Collapsed;
         OperationLog.Visibility = WorkspaceStatusBar.Visibility = manager ? Visibility.Visible : Visibility.Collapsed;
-        Welcome.Visibility = HasVm ? Visibility.Collapsed : Visibility.Visible;
-        WorkspaceContent.Visibility = HasVm ? Visibility.Visible : Visibility.Collapsed;
+        Welcome.Visibility = selectedEntry is not null ? Visibility.Collapsed : Visibility.Visible;
+        WorkspaceContent.Visibility = selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
         MainWorkspace.Margin = focus ? new Thickness(0) : new Thickness(8, 14, 14, 10);
         ConsolePage.Margin = focus ? new Thickness(0) : new Thickness(8);
         ConsoleFooter.Visibility = focus ? Visibility.Collapsed : Visibility.Visible;
@@ -46,7 +47,7 @@ public partial class MainWindow
         SessionCommands.Visibility = focus ? Visibility.Visible : Visibility.Collapsed;
         ApplicationBrand.Visibility = focus ? Visibility.Collapsed : Visibility.Visible;
         SessionTitle.Visibility = HasVm ? Visibility.Visible : Visibility.Collapsed;
-        Title = HasVm ? $"{selectedEntry!.Name} — Reims Manager" : "Reims Manager";
+        Title = selectedEntry is not null ? $"{selectedEntry.Name} — Reims Manager" : "Reims Manager";
 
         // Progress and errors have a separate layout row, never an overlay on HwndHost.
         StatusDetail.Visibility = !string.IsNullOrWhiteSpace(StatusDetail.Text) &&

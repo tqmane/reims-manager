@@ -17,7 +17,7 @@ public partial class MainWindow : Window
     private bool busy, refreshing, loadedHardware;
     private readonly ManagerSettings settings;
     private string currentState = "unprepared";
-    private bool HasVm => selectedEntry is not null;
+    private bool HasVm => selectedEntry?.IsAvailable == true;
     private bool HasEngine => Directory.Exists(Root.Text) && File.Exists(settings.QemuExecutable);
     private JsonElement latest;
     private readonly DispatcherTimer timer = new() { Interval=TimeSpan.FromSeconds(5) };
@@ -32,6 +32,7 @@ public partial class MainWindow : Window
         InitializeWorkspace();
         clipboardTimer.Tick += async (_,_) => await SyncClipboard();
         Root.Text = settings.EngineRoot;
+        PreferencesLocation.Text = ManagerSettings.SettingsFile;
         UpdatePowerControls();
         Devices.SelectedIndex = 0;
         if (warning is not null) ShowError(warning);
@@ -119,8 +120,8 @@ public partial class MainWindow : Window
                 refreshFull = false;
                 if (!HasVm || !HasEngine) {
                     currentState = "unprepared";
-                    State.Text = !HasVm ? "未選択" : "エンジン未設定";
-                    StatusDetail.Text = !HasEngine ? "Reims エンジンを設定してセットアップを始めます。" : "VM を作成するか、既存の VM を開いてください。";
+                    State.Text = selectedEntry?.IsAvailable == false ? "保存先を確認" : !HasVm ? "未選択" : "エンジン未設定";
+                    StatusDetail.Text = selectedEntry?.IsAvailable == false ? selectedEntry.Problem! : !HasEngine ? "Reims エンジンを設定してセットアップを始めます。" : "VM を作成するか、既存の VM を開いてください。";
                     UpdatePowerControls(); continue;
                 }
                 long version = contextVersion;
@@ -279,7 +280,7 @@ public partial class MainWindow : Window
         EngineNotice.Visibility = HasEngine ? Visibility.Collapsed : Visibility.Visible;
         EngineSummary.Text = HasEngine ? "エンジン設定済み" : "未設定";
         RefreshButton.IsEnabled = HasVm && HasEngine && !busy && !refreshing;
-        RevealButton.IsEnabled = HasVm;
+        RevealButton.IsEnabled = selectedEntry is not null;
         foreach (var button in LogicalChildren<Button>(Tabs)) {
             if (button.Tag is string action && !int.TryParse(action, out _)) button.IsEnabled = CanOperate(action);
         }
@@ -288,6 +289,10 @@ public partial class MainWindow : Window
         foreach (var button in LogicalChildren<Button>(Tabs).Where(x => x.Tag?.ToString() is "AttachUsb" or "DetachUsb")) button.IsEnabled &= UsbDevices.SelectedItem is not null;
         ConsoleHeading.Text = currentState switch { "stopped" => "起動する準備ができました", "unprepared" => "macOS をセットアップ", "shutdown" => "macOS は電源オフです", "unknown" => "VM の状態を確認してください", _ => consoleDetached ? "別ウィンドウで表示中" : "VM の画面を待っています" };
         ConsoleDescription.Text = currentState switch { "stopped" => "上の「起動」から macOS を開始できます。", "unprepared" => "設定画面の「macOS のインストール」からインストーラーを選んでください。", "unknown" => "「更新」で状態を取得してから操作を再試行できます。", _ => "入力の解放は Ctrl + Alt + Win。画面は別ウィンドウにも切り替えられます。" };
+        if (selectedEntry?.IsAvailable == false) {
+            ConsoleHeading.Text = "VM の保存先を確認してください";
+            ConsoleDescription.Text = "登録は保持しています。保存先を接続してライブラリを更新するか、「VM を開く」で移動先の .reimsvm を選択してください。";
+        }
         UpdateWorkspacePresentation();
     }
 

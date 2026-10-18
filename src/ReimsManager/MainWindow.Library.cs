@@ -16,21 +16,22 @@ public partial class MainWindow
     private void LoadLibrary()
     {
         machines.Clear();
-        int unavailable = 0;
         foreach (string path in settings.VirtualMachines.Distinct(StringComparer.OrdinalIgnoreCase)) {
-            try { machines.Add(VmLibrary.Open(path)); }
-            catch (Exception error) { unavailable++; AppendLog($"VM を読み込めません: {path}\n{error.Message}\n"); }
+            var entry = VmLibrary.Registered(path);
+            machines.Add(entry);
+            if (!entry.IsAvailable) AppendLog($"VM を読み込めません: {path}\n{entry.Problem}\n");
         }
         UpdateLibraryView();
         if (machines.Count > 0) Library.SelectedItem = machines.FirstOrDefault(x => string.Equals(x.File, settings.SelectedVm, StringComparison.OrdinalIgnoreCase)) ?? machines[0];
+        else if (selectedEntry is not null) { selectedEntry = null; ResetVmContext(); }
         // Disconnected drives and malformed descriptors must not disappear on the next save.
-        if (unavailable > 0) ShowError($"{unavailable} 件の VM を読み込めませんでした。登録は保持しています。保存先を接続して開き直してください。詳細は操作ログにあります。");
         UpdatePowerControls();
     }
 
     private void AddVm(VmEntry entry)
     {
-        if (!machines.Any(x => string.Equals(x.File, entry.File, StringComparison.OrdinalIgnoreCase))) machines.Add(entry);
+        int existing = machines.FindIndex(x => string.Equals(x.File, entry.File, StringComparison.OrdinalIgnoreCase));
+        if (existing < 0) machines.Add(entry); else machines[existing] = entry;
         settings.VirtualMachines = settings.VirtualMachines.Append(entry.File).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         SavePreferences();
         LibrarySearch.Clear();
@@ -54,7 +55,7 @@ public partial class MainWindow
         SavePreferences();
         if (!selfTest) {
             await RefreshState();
-            if (entry == selectedEntry && !closing && HasEngine && currentState != "unprepared") await ReadIdentity();
+            if (entry.IsAvailable && entry == selectedEntry && !closing && HasEngine && currentState != "unprepared") await ReadIdentity();
         }
     }
 
@@ -74,6 +75,45 @@ public partial class MainWindow
         if (IsUiBusy) return;
         var dialog = new OpenFileDialog { Filter = "Reims 仮想マシン|*.reimsvm", Title = "保存済みの VM を開く" };
         if (dialog.ShowDialog(this) == true) OpenVmFile(dialog.FileName);
+    }
+
+    private async void ReloadLibrary(object sender, RoutedEventArgs e)
+    {
+        if (IsUiBusy || !DiscardPendingChanges()) return;
+        hardwareDirty = identityDirty = false;
+        var saved = ManagerSettings.Load(out var warning);
+        if (saved.EngineRoot != settings.EngineRoot || saved.QemuExecutable != settings.QemuExecutable) {
+            if (!HasVm || currentState is "stopped" or "unprepared") {
+                settings.EngineRoot = saved.EngineRoot; settings.QemuExecutable = saved.QemuExecutable;
+                Root.Text = settings.EngineRoot; ResetVmContext();
+            } else ShowError("別のウィンドウでエンジンの設定が変わりました。現在の接続を維持しています。VM の完全終了後にライブラリを更新すると反映します。");
+        }
+        settings.VirtualMachines = settings.VirtualMachines.Concat(saved.VirtualMachines).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        LoadLibrary();
+        if (warning is not null) ShowError(warning);
+        await RefreshState();
+    }
+
+    private void OpenPreferencesFolder(object sender, RoutedEventArgs e)
+    {
+        try {
+            Directory.CreateDirectory(ManagerSettings.DataDirectory);
+            Process.Start(new ProcessStartInfo(ManagerSettings.DataDirectory) { UseShellExecute = true });
+        } catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private async void ImportPreferences(object sender, RoutedEventArgs e)
+    {
+        if (IsUiBusy || !DiscardPendingChanges()) return;
+        var dialog = new OpenFileDialog { Filter = "Reims Manager の設定|*.json", FileName = "settings.json", Title = "以前のアプリ設定を取り込む" };
+        if (dialog.ShowDialog(this) != true) return;
+        try {
+            settings.Import(dialog.FileName);
+            hardwareDirty = identityDirty = false;
+            Root.Text = settings.EngineRoot;
+            LoadLibrary();
+            await RefreshState();
+        } catch (Exception error) { ShowError(error.Message); }
     }
 
     private VmEntry? CreateVm()
@@ -105,7 +145,7 @@ public partial class MainWindow
 
     private void RevealVm(object sender, RoutedEventArgs e)
     {
-        if (!HasVm) return;
+        if (selectedEntry is null) return;
         string? folder = Directory.Exists(VmDirectory) ? VmDirectory : Path.GetDirectoryName(selectedEntry!.File);
         try {
             if (Directory.Exists(folder)) Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });

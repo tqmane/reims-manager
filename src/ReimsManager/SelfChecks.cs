@@ -58,7 +58,7 @@ internal static class SelfChecks
                 if (VmActionPolicy.CanRun(action, state, true, false) || VmActionPolicy.CanRun(action, state, false, true))
                     throw new Exception("An operation bypassed its engine/VM prerequisite");
             }
-            foreach (string action in new[] { "SetHardware", "SnapshotRestore", "SetIdentity", "ExpandDisk" })
+            foreach (string action in new[] { "SetHardware", "SnapshotRestore", "SetIdentity", "ExpandDisk", "ApplyBootProfile", "EnableGuestBridge", "DisableGuestBridge" })
                 if (VmActionPolicy.CanRun(action, state, true, true) != (state == "stopped")) throw new Exception("An offline operation is enabled for " + state);
         }
         if (VmActionPolicy.CanRun("PowerOff", "paused", true, true) || VmActionPolicy.CanRun("Restart", "paused", true, true) ||

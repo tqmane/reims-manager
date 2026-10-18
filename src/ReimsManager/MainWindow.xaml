@@ -252,7 +252,7 @@
         </Grid.ColumnDefinitions>
         <Border Padding="12,16,10,12" x:Name="LibraryPane">
           <ScrollViewer x:Name="SidebarScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Grid Height="{Binding ViewportHeight, ElementName=SidebarScroll}" MinHeight="460">
+            <Grid x:Name="SidebarLayout" Height="{Binding ViewportHeight, ElementName=SidebarScroll}" MinHeight="460">
               <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -306,7 +306,7 @@
                         <TextBlock Text="" Style="{StaticResource CommandIcon}" FontSize="20"/>
                         <StackPanel Grid.Column="1">
                           <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
-                          <TextBlock Text="macOS 仮想マシン" FontSize="11" Style="{StaticResource MutedText}" Margin="0,4,0,0"/>
+                          <TextBlock Text="{Binding Subtitle}" FontSize="11" Style="{StaticResource MutedText}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                       </Grid>
                     </DataTemplate>
@@ -314,15 +314,24 @@
                 </ListBox>
                 <TextBlock x:Name="LibraryEmpty" Text="「新規」または「開く」から追加" Style="{StaticResource MutedText}" FontSize="12" Margin="10,14" VerticalAlignment="Top" IsHitTestVisible="False"/>
               </Grid>
-              <Border Grid.Row="4" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+              <Border Grid.Row="4" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,0" SizeChanged="SidebarSectionsSizeChanged">
                 <StackPanel>
                   <Button Content="VM を開く…" Click="OpenVm" Style="{StaticResource CommandButton}" HorizontalContentAlignment="Left" Margin="0,0,0,8" ToolTip="Ctrl+O"/>
+                  <Button Content="ライブラリを更新" Click="ReloadLibrary" Style="{StaticResource CommandButton}" HorizontalContentAlignment="Left" Margin="0,0,0,8" ToolTip="接続し直した保存先や、別のアプリで追加した VM を再確認"/>
                   <Expander x:Name="EngineSettingsExpander" Header="エンジン設定">
                     <StackPanel Margin="0,10,0,0">
                       <TextBlock x:Name="EngineSummary" Text="未設定" Style="{StaticResource MutedText}"/>
                       <TextBox x:Name="Root" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="62" VerticalScrollBarVisibility="Auto" Margin="0,6,0,8" AutomationProperties.Name="エンジンの保存先"/>
                       <Button Content="エンジンをセットアップ…" Click="SetupEngine" Padding="10,8" Margin="0,0,0,6"/>
                       <Button x:Name="SelectExistingEngineButton" Content="既存のエンジンを選択…" Click="BrowseRoot" Padding="10,8" Margin="0"/>
+                    </StackPanel>
+                  </Expander>
+                  <Expander x:Name="PreferencesExpander" Header="登録・保存先" Margin="0,10,0,0">
+                    <StackPanel Margin="0,10,0,0">
+                      <TextBlock Text="VM の登録とエンジンの保存先はアプリ更新後も保持します。" Style="{StaticResource MutedText}" FontSize="12"/>
+                      <TextBox x:Name="PreferencesLocation" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="62" VerticalScrollBarVisibility="Auto" Margin="0,8" AutomationProperties.Name="アプリ設定の保存先"/>
+                      <Button Content="設定の保存先を開く" Click="OpenPreferencesFolder" Padding="10,8" Margin="0,0,0,6"/>
+                      <Button x:Name="ImportPreferencesButton" Content="以前の設定を取り込む…" Click="ImportPreferences" Padding="10,8" Margin="0" ToolTip="別の設定フォルダーの settings.json から登録を追加。現在の登録は保持します。"/>
                     </StackPanel>
                   </Expander>
                 </StackPanel>
@@ -720,7 +729,7 @@
               </ScrollViewer>
             </TabItem>
             <TabItem Header="OpenCore">
-              <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <ScrollViewer x:Name="OpenCoreScroll" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="28,24,28,28" MaxWidth="680" HorizontalAlignment="Stretch">
                   <TextBlock Text="Mac の識別情報" Style="{StaticResource PageHeading}"/>
                   <TextBlock Text="Apple Account にログイン済みの場合、識別情報を変更すると再認証が必要になることがあります。" Style="{StaticResource MutedText}"/>
@@ -761,11 +770,21 @@
                     <Button Content="現在の設定を読み込む" Click="LoadIdentityClick" Tag="GetIdentity"/>
                     <Button Content="新しく生成…" Click="GenerateIdentity" Tag="GenerateIdentity"/>
                   </WrapPanel>
-                  <TextBlock Text="Apple Account" Style="{StaticResource SectionHeading}"/>
+                  <TextBlock Text="OpenCore の起動設定" Style="{StaticResource SectionHeading}"/>
+                  <TextBlock Text="起動プロファイルを再適用します。VM の完全終了後に操作してください。" Style="{StaticResource MutedText}"/>
+                  <Button x:Name="ApplyBootProfileButton" Content="起動プロファイルを再適用" Tag="ApplyBootProfile" Click="ActionClick" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+                  <TextBlock Text="GPU 互換ブリッジ" Style="{StaticResource SectionHeading}"/>
+                  <TextBlock Text="WebGL 用のゲスト互換ブリッジを適用・解除します。macOS のバージョンごとの動作確認が必要です。" Style="{StaticResource MutedText}"/>
+                  <TextBlock x:Name="GuestBridgeStatus" Text="適用状況は未確認です。" Style="{StaticResource MutedText}" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
+                  <WrapPanel Margin="0,16,0,0">
+                    <Button x:Name="EnableGuestBridgeButton" Content="GPU 互換ブリッジを適用" Tag="EnableGuestBridge" Click="ActionClick"/>
+                    <Button x:Name="DisableGuestBridgeButton" Content="GPU 互換ブリッジを解除" Tag="DisableGuestBridge" Click="ActionClick"/>
+                  </WrapPanel>
+                  <TextBlock Text="26.4 向け Apple Account 設定（従来）" Style="{StaticResource SectionHeading}"/>
                   <TextBlock Text="Tahoe 26.4 のサインイン互換設定を適用・解除できます。操作前に VM を完全終了してください。" Style="{StaticResource MutedText}"/>
                   <WrapPanel Margin="0,16,0,0">
-                    <Button Content="互換設定を適用" Tag="EnableAppleAccount" Click="ActionClick"/>
-                    <Button Content="互換設定を解除" Tag="DisableAppleAccount" Click="ActionClick"/>
+                    <Button Content="26.4 用の設定を適用" Tag="EnableAppleAccount" Click="ActionClick"/>
+                    <Button Content="26.4 用の設定を解除" Tag="DisableAppleAccount" Click="ActionClick"/>
                   </WrapPanel>
                   <TextBlock Text="休止状態は使用しないでください。macOS 更新後は対応確認が必要です。" Style="{StaticResource MutedText}"/>
                   <Button Content="macOS の更新検出を修復" Tag="PrepareUpdates" Click="ActionClick" HorizontalAlignment="Left" Margin="0,18,0,0"/>

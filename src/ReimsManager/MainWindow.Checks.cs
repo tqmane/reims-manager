@@ -67,12 +67,24 @@ public partial class MainWindow
                     throw new Exception("Settings shows multiple hardware editors");
                 SaveImage(Path.Combine(folder, $"settings-category-{category:00}.png"));
             }
+            Tabs.SelectedIndex = 3;
+            foreach (var button in new[] { ApplyBootProfileButton, EnableGuestBridgeButton, DisableGuestBridgeButton }) {
+                button.BringIntoView(); await ArrangeCheck();
+                RequireInside(button, OpenCoreScroll, "OpenCore reapply controls");
+                if (!button.IsEnabled) throw new Exception("An offline OpenCore control is disabled");
+            }
+            SaveImage(Path.Combine(folder, "opencore-bridge-controls.png")); OpenCoreScroll.ScrollToTop();
             Tabs.SelectedIndex = 0; Width = MinWidth; Height = MinHeight;
             EngineSettingsExpander.IsExpanded = true; await ArrangeCheck();
             SidebarScroll.ScrollToEnd(); await ArrangeCheck();
             RequireInside(SelectExistingEngineButton, SidebarScroll, "Engine controls");
             SaveImage(Path.Combine(folder, "compact-engine-settings.png"));
             EngineSettingsExpander.IsExpanded = false; SidebarScroll.ScrollToTop();
+            PreferencesExpander.IsExpanded = true;
+            await Task.Delay(500); await ArrangeCheck(); SidebarScroll.ScrollToEnd(); await ArrangeCheck();
+            RequireInside(ImportPreferencesButton, SidebarScroll, "Preferences recovery controls");
+            SaveImage(Path.Combine(folder, "compact-preferences.png"));
+            PreferencesExpander.IsExpanded = false; SidebarScroll.ScrollToTop();
             // Native Fluent expanders animate; dispatcher-idle is not animation completion.
             await Task.Delay(500); await ArrangeCheck();
             VmTitle.Text = string.Concat(Enumerable.Repeat("日本語の長い仮想マシン名・", 10));
@@ -277,6 +289,11 @@ public partial class MainWindow
         if (Library.Items.Count != 0 || selectedEntry != second || !HasVm)
             throw new Exception("Library filtering changed the active VM");
         LibrarySearch.Clear(); Library.SelectedItem = first;
+        var unavailable = VmLibrary.Registered(Path.Combine(Path.GetDirectoryName(first.File)!, "disconnected.reimsvm"));
+        machines.Add(unavailable); UpdateLibraryView(); Library.SelectedItem = unavailable;
+        if (selectedEntry != unavailable || HasVm || StartButton.IsEnabled || WorkspaceContent.Visibility != Visibility.Visible || !Library.Items.Contains(unavailable))
+            throw new Exception("An unavailable VM disappeared or permits guest operations");
+        Library.SelectedItem = first; machines.Remove(unavailable); UpdateLibraryView();
         foreach (string state in new[] { "unknown", "paused", "shutdown", "stopped", "running", "unprepared", "suspended" }) {
             currentState = state; UpdatePowerControls();
             if (StartButton.IsEnabled != VmActionPolicy.CanRun("Start", state, true, true) ||

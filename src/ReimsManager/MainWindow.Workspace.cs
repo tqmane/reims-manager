@@ -122,7 +122,7 @@ public partial class MainWindow
     private void ResetVmContext()
     {
         InvalidateReadRequests();
-        currentState = "unknown"; latest = default; loadedHardware = false;
+        currentState = HasVm ? "unknown" : "unprepared"; latest = default; loadedHardware = false;
         hardwareDirty = identityDirty = false;
         committedHardware = null; committedIdentity = null;
         Tabs.SelectedIndex = 0;
@@ -148,6 +148,13 @@ public partial class MainWindow
     {
         if (Library is null || LibraryEmpty is null) return;
         UpdateLibraryView();
+    }
+
+    private void SidebarSectionsSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Expanded recovery controls must increase the scroll extent, not overflow a fixed-height grid.
+        if (SidebarLayout is not null)
+            SidebarLayout.MinHeight = Math.Max(460, SidebarLayout.RowDefinitions.Where(x => x.Height.IsAuto).Sum(x => x.ActualHeight) + 80);
     }
 
     private void UpdateLibraryView()
