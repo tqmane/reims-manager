@@ -1,5 +1,12 @@
 name: macOS guest bridge package
 on:
+  pull_request:
+    paths:
+      - .github/workflows/guest-bridge.yml
+      - backend/guest-bridge-lock.json
+      - backend/opencore/guest-bridge.py
+      - tools/build_guest_bridge.py
+      - docs/guest-bridge*.md
   workflow_dispatch:
     inputs:
       publish:
