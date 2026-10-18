@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "guest-bridge-d8b9c2af-candidate-1",
+  "release_repository": "tqmane/reims-manager",
+  "asset": "ReimsGuestBridge.zip",
+  "required_engine_id": "engine-d8b9c2af-7100064d-1",
+  "min_kernel": "25.4.0",
+  "max_kernel": "25.4.0",
+  "macos": "26.x",
+  "abi_family": "Darwin25",
+  "scope": "browser-scoped-candidate",
+  "runtime_validation": "pending-generic-abi-validation",
+  "release_ready": false,
+  "qualified_kernels": ["25.4.0"],
+  "sources": {
+    "reims": { "repository": "https://github.com/tqmane/reims-vgpu", "commit": "d8b9c2afb778d456069bf54cb4cd40e4cc77a0e7" },
+    "lilu": { "repository": "https://github.com/acidanthera/Lilu", "commit": "e4748cc081bf060302c7d3c44a643ce1d11b7e1d" },
+    "kernel_sdk": { "repository": "https://github.com/acidanthera/MacKernelSDK", "commit": "3f750085caa17ec3a7880f11c11bf4f48cd6a164" }
+  },
+  "lilu_release": {
+    "version": "1.7.2",
+    "url": "https://github.com/acidanthera/Lilu/releases/download/1.7.2/Lilu-1.7.2-RELEASE.zip",
+    "sha256": "53967d7dcfaab01023a33df2e969a89522f13d6654a6a56ac4711b62dabf3ab8"
+  }
+}

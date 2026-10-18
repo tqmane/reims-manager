@@ -93,10 +93,14 @@ The authored configuration changes are kept as executable source:
 binary patch. Its complete source/build checks remain at the pinned Reims
 revision under `guest/metal-compat`. Existing VM configurations keep that
 plugin and its version bounds when rebuilt. The Windows engine job does
-**not** build or silently install this macOS-compiled guest plugin. A fresh
-VM therefore needs separately qualified guest bridge installation for the
-stock-browser WebGL fix. OS updates require testing the plugin against the
-new kernel before expanding its compatibility bounds.
+**not** build or silently install this macOS-compiled guest plugin. The
+manager's OpenCore page fetches and applies the separate [guest bridge
+addon](guest-bridge.md), built by its own macOS CI job from those exact
+sources. Its release does not rebuild or replace the Windows engine.
+Application is optional and requires a qualified generic implementation and
+runtime ABI validation. The current candidate remains disabled with its
+previous 25.4.0 bounds. OS updates require
+testing the plugin against the new kernel before expanding its bounds.
 
 ## Build and publication
 

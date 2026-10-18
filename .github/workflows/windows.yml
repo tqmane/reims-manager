@@ -28,6 +28,8 @@ jobs:
           if ($LASTEXITCODE) { throw 'DLL closure fixtures failed.' }
           python ./backend/tests/opencore-patches.py
           if ($LASTEXITCODE) { throw 'OpenCore patch fixtures failed.' }
+          python ./backend/tests/guest-bridge.py
+          if ($LASTEXITCODE) { throw 'Guest bridge fixtures failed.' }
       - name: Build manager and run native self-checks
         shell: pwsh
         run: ./tools/build.ps1
