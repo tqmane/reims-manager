@@ -103,6 +103,20 @@ clipboard and snapshot pages are immediate operations; the footer states that
 Cancel does not undo them. Unknown state and guest-only shutdown are not treated
 as permission to write offline configuration.
 
+## OpenCore controls
+
+The macOS 26.x boot profile controls APFS/HFS disk scanning. It rebuilds the
+recorded EFI configuration while retaining SMBIOS, saved identity and writable
+NVRAM. Identity editing/generation remains a separate explicit operation. This
+profile is not an Apple Account authentication patch or a sign-in guarantee.
+
+The retired version-specific Apple Account patch is not exposed or allowed as
+a Manager UI action. Its backend API remains for compatibility with older
+automation and retains its original bounds; renaming it would not make it a
+generic macOS 26.x feature. GPU bridge controls use the common ABI/runtime checks
+and do not select a point release. Recorded historical kernel acceptance remains
+evidence of those checks rather than a version-selection gate in the UI.
+
 ## Wi-Fi compatibility connection
 
 `LAN 接続の準備` reuses the physical Wi-Fi / wired adapter selector. When

@@ -152,9 +152,10 @@ the current connection is retained.
 WPF checks cover the unavailable row/action state and compact recovery controls.
 These checks do not simulate a host power failure or physical disk loss.
 
-The OpenCore page exposes boot-profile reapplication and guest GPU bridge
-enable/disable as separate, fully-stopped-only operations. The legacy Tahoe 26.4
-Apple Account patch remains labelled separately. Installing a bridge is not a
+The OpenCore page exposes the macOS 26.x boot-profile and guest GPU bridge
+controls as separate, fully-stopped-only operations. The boot profile changes
+APFS/HFS scanning and preserves SMBIOS and saved identity. The version-specific
+legacy Apple Account patch is not a Manager UI action. Installing a bridge is not a
 qualification result for an OS version; missing backend status is shown as
 unconfirmed. These UI checks do not install a bridge or assert Tahoe compatibility.
 

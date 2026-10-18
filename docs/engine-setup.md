@@ -137,9 +137,10 @@ The authored configuration changes are kept as executable source:
   applies this scan profile, preserving identity and auxiliary visibility;
   the previous configuration is backed up first. Rebuilds follow the active
   configuration/image recorded in the VM's OpenCore manifest.
-- `backend/opencore/apple-account.py`: the existing reversible Apple
-  Account kernel-string compatibility patch, limited to Darwin **25.4.0**.
-  It does not change SIP or blindly extend the OS version bounds.
+- `backend/opencore/apple-account.py`: retained backend compatibility for an
+  older reversible kernel-string patch. It is not exposed in the Manager UI
+  and is not a macOS 26.x sign-in feature. Its original Darwin **25.4.0**
+  bounds remain unchanged; they are not broadened into a generic patch.
 - `backend/prepare-opencore.ps1`: identity editing/generation, backup,
   `ocvalidate`, and FAT16 EFI image creation. No personal identity is shipped.
 - `backend/prepare-update-compatibility.ps1`: existing pinned official Lilu
