@@ -51,7 +51,7 @@ def main():
     run('bash', snapshot/'build.sh', work/'lilu', work/'kernel_sdk', work/'build')
     bundle = work/'build/ReimsMetalCompat.kext'
     run('codesign', '--verify', '--strict', bundle)
-    run('xcrun', 'lipo', '-verify_arch', 'x86_64', bundle/'Contents/MacOS/ReimsMetalCompat')
+    run('xcrun', 'lipo', bundle/'Contents/MacOS/ReimsMetalCompat', '-verify_arch', 'x86_64')
     package = work/'package'; (package/'Kexts').mkdir()
     shutil.copytree(bundle, package/'Kexts/ReimsMetalCompat.kext')
     archive = work/'Lilu.zip'
@@ -72,7 +72,7 @@ def main():
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(entries.read(entry))
-    run('xcrun', 'lipo', '-verify_arch', 'x86_64', package/'Kexts/Lilu.kext/Contents/MacOS/Lilu')
+    run('xcrun', 'lipo', package/'Kexts/Lilu.kext/Contents/MacOS/Lilu', '-verify_arch', 'x86_64')
     licenses = package/'licenses'; licenses.mkdir()
     for name in ('lilu', 'kernel_sdk'):
         shutil.copy2(work/name/'LICENSE.txt', licenses/(name+'.txt'))
