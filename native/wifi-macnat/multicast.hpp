@@ -38,10 +38,15 @@ struct multicast_memberships {
             ",\"joined_groups\":"+std::to_string(groups_.size())+",\"joins\":"+std::to_string(joins_)+
             ",\"evictions\":"+std::to_string(evictions_)+",\"released\":"+(released_?"true":"false")+"}";
     }
-    bool close(){
+    bool close(decltype(&::closesocket) close_socket=::closesocket,decltype(&::WSACleanup) cleanup_winsock=::WSACleanup){
         bool ok=true;
-        if(socket_!=INVALID_SOCKET){ok=closesocket(socket_)==0;if(ok){socket_=INVALID_SOCKET;released_=true;}}
-        if(winsock_){ok=(WSACleanup()==0)&&ok;winsock_=false;}
+        if(socket_!=INVALID_SOCKET){
+            const auto owned=socket_;socket_=INVALID_SOCKET;
+            ok=close_socket(owned)==0;if(ok)released_=true;
+        }
+        // Final WSACleanup may deallocate a socket even after closesocket fails.
+        // Both handles become terminal; preserve failure instead of retrying it.
+        if(winsock_){winsock_=false;ok=(cleanup_winsock()==0)&&ok;}
         cleanup_=ok&&cleanup_;saved_=receipt();return ok;
     }
     ~multicast_memberships(){close();}
