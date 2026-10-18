@@ -85,10 +85,11 @@ public partial class MainWindow : Window
             success = true;
             if (action == "SetHardware") hardwareDirty = false;
             if (action is "SetIdentity" or "GenerateIdentity") identityDirty = false;
-            if (action is "SetHardware" or "Setup" or "ImportDisk" or "SnapshotRestore" or "ExpandDisk") loadedHardware = false;
+            if (action is "SetHardware" or "Setup" or "ImportDisk" or "SnapshotRestore" or "ExpandDisk" or "RemoveBridge") loadedHardware = false;
             if (action == "SnapshotRestore") hardwareDirty = identityDirty = false;
         } catch (Exception error) { AppendLog(error.Message + "\n"); ShowError(error.Message); }
         finally {
+            if (action == "RemoveBridge") loadedHardware = false;
             busy = false; currentState = "unknown"; Tabs.IsEnabled = true;
             OperationProgress.Visibility = Visibility.Collapsed; UpdatePowerControls();
         }
@@ -383,6 +384,12 @@ public partial class MainWindow : Window
             StatusDetail.Text="ブリッジを準備しました。ネットワーク設定でブリッジを選び、適用してください。VM の通信状態は未確認です。";
             UpdatePowerControls();
         }
+    }
+    private async void RemoveBridge(object sender,RoutedEventArgs e) {
+        if (!RequireAction("RemoveBridge")) return;
+        if (hardwareDirty || identityDirty) { ShowError("未保存の設定を適用またはキャンセルしてから、ブリッジを解除してください。"); return; }
+        if (Confirm("この VM に記録されたブリッジを解除し、VM を NAT に戻します。Windows の通信が一時的に切れる場合があります。続けますか？"))
+            await Operate("RemoveBridge",[],true);
     }
     private async void Pair(object sender,RoutedEventArgs e) => await Operate("Pair",["-User",GuestUser.Text,"-Fingerprint",Fingerprint.Text]);
     private async void GenerateIdentity(object sender,RoutedEventArgs e) { if (Confirm("シリアル・MLB・ROM を更新します。SystemUUID は保持します。") && await Operate("GenerateIdentity")) await ReadIdentity(); }

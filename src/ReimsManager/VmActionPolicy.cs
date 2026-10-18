@@ -23,7 +23,7 @@ internal static class VmActionPolicy
             "ForceExit" => state is "running" or "paused" or "prelaunch" or "suspended" or "shutdown" or "io-error" or "internal-error" or "guest-panicked" or "watchdog",
             "Console" => state is "running" or "paused" or "prelaunch" or "suspended",
             "GetIdentity" => state is "stopped" or "running" or "paused" or "shutdown" or "prelaunch" or "suspended",
-            "SetHardware" or "ExpandDisk" or "OptimizeDisk" or "SnapshotCreate" or "SnapshotRestore" or "SetIdentity" or "GenerateIdentity" or "EnableAppleAccount" or "DisableAppleAccount" or "ApplyBootProfile" or "EnableGuestBridge" or "DisableGuestBridge" or "PrepareUpdates" or "BuildEngine" or "SetResolution" or "SetNetwork" => state == "stopped",
+            "SetHardware" or "ExpandDisk" or "OptimizeDisk" or "SnapshotCreate" or "SnapshotRestore" or "SetIdentity" or "GenerateIdentity" or "EnableAppleAccount" or "DisableAppleAccount" or "ApplyBootProfile" or "EnableGuestBridge" or "DisableGuestBridge" or "PrepareUpdates" or "BuildEngine" or "SetResolution" or "SetNetwork" or "RemoveBridge" => state == "stopped",
             _ => false
         };
     }
@@ -45,6 +45,7 @@ internal static class VmActionPolicy
         "SetIdentity" => "Mac の識別情報を保存", "GenerateIdentity" => "Mac の識別情報を生成", "CollectLogs" => "診断ログを収集",
         "ApplyBootProfile" => "OpenCore の起動プロファイルを再適用",
         "EnableGuestBridge" => "GPU 互換ブリッジを適用", "DisableGuestBridge" => "GPU 互換ブリッジを解除",
+        "RemoveBridge" => "ブリッジを解除して NAT に復帰",
         "ApplyResolution" => "ゲストの解像度を変更", _ => action
     };
 }

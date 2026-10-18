@@ -62,3 +62,39 @@ TAP-only configurations remain saveable, and an unavailable saved physical ID
 is displayed as missing instead of silently dropping the selection. Cancel
 restores the staged GUID along with the other hardware fields. Inventory
 failures preserve the current configuration and do not mark the VM itself dead.
+
+## Remove an owned bridge
+
+`RemoveBridge` takes the selected `VmDirectory` and no adapter/GUID arguments.
+It requires a fully stopped QEMU process and administrator privileges. The
+Manager exposes **ブリッジを解除して NAT に戻す** with a separate host-interruption
+confirmation; pending settings must be saved or cancelled first.
+
+The backend accepts only one live Windows bridge matching the VM's active
+`state/host-bridge.json`, with matching recorded TAP/uplink identities and VM
+network settings. Missing, removed, foreign or multiple/ambiguous bridge
+topologies are refused. Native destroy receives only that recorded braced GUID;
+unrelated bridge/VMware interfaces, TAP devices and IP/metric settings are not
+explicitly altered. Link membership/IP/DHCP restoration is not inferred from
+the GUID inventory, and connectivity must be checked separately.
+
+Before changing anything, original config/record bytes are retained under a
+unique `backups/network-remove-*` directory with `transaction.json`. NAT config
+is written before native destroy. A native failure restores the exact previous
+configuration only if the same owned bridge remains and the NAT file has not
+been changed by another writer. If the bridge is gone, topology is uncertain or
+another writer changed config, recovery preserves NAT/the newer file and emits
+a failure with the audit location rather than overwriting data or guessing a
+host rollback. Metadata-write failures after native removal also keep NAT.
+
+Success keeps the ownership record marked `state=removed`, with a removal time
+and relative audit reference; it clears the VM's bridge adapter/uplink fields
+while preserving unrelated VM settings. A new explicit CreateBridge can then
+record another uplink. Removed ownership records cannot be reused to save bridge
+mode. None of this qualifies Wi-Fi forwarding or guarantees DHCP recovery.
+
+CPU-only checks run with synthetic files, inventory and native calls:
+`pwsh -NoProfile -File backend/tests/network-uplinks.ps1` includes the focused
+`remove-bridge.ps1` ownership/rollback cases. The affected WPF page can be checked
+with `ReimsManager.exe --network-page-check <private-output-directory>`; it
+does not invoke the host network backend or boot a VM.
