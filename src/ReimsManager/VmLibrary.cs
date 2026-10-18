@@ -6,7 +6,7 @@ namespace ReimsManager;
 internal sealed record VmEntry(string Name, string File, string Directory, string? Problem = null)
 {
     public bool IsAvailable => Problem is null;
-    public string Subtitle => IsAvailable ? "macOS 仮想マシン" : "見つからない / 読み込めない";
+    public string Subtitle => IsAvailable ? Directory : "見つからない / 読み込めない · " + Directory;
     public override string ToString() => Name;
 }
 

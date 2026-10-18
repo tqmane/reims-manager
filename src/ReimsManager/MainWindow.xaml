@@ -295,7 +295,13 @@
                 </StackPanel>
               </StackPanel>
               <Grid Grid.Row="3" Margin="0,0,0,12">
-                <ListBox x:Name="Library" ItemContainerStyle="{StaticResource NavigationItem}" BorderThickness="0" Background="Transparent" SelectionChanged="VmChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="仮想マシン一覧" MouseDoubleClick="OpenLibraryConsole">
+                <ListBox x:Name="Library" BorderThickness="0" Background="Transparent" SelectionChanged="VmChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="仮想マシン一覧" MouseDoubleClick="OpenLibraryConsole">
+                  <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource NavigationItem}">
+                      <Setter Property="AutomationProperties.Name" Value="{Binding Name}"/>
+                      <Setter Property="AutomationProperties.HelpText" Value="{Binding Directory}"/>
+                    </Style>
+                  </ListBox.ItemContainerStyle>
                   <ListBox.ItemTemplate>
                     <DataTemplate>
                       <Grid Margin="0,3" ToolTip="{Binding File}">
@@ -306,7 +312,7 @@
                         <TextBlock Text="" Style="{StaticResource CommandIcon}" FontSize="20"/>
                         <StackPanel Grid.Column="1">
                           <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
-                          <TextBlock Text="{Binding Subtitle}" FontSize="11" Style="{StaticResource MutedText}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
+                          <TextBlock x:Name="VmPathLabel" Text="{Binding Subtitle}" ToolTip="{Binding Directory}" FontSize="11" Style="{StaticResource MutedText}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
                         </StackPanel>
                       </Grid>
                     </DataTemplate>

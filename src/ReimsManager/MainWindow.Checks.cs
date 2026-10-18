@@ -87,6 +87,7 @@ public partial class MainWindow
             PreferencesExpander.IsExpanded = false; SidebarScroll.ScrollToTop();
             // Native Fluent expanders animate; dispatcher-idle is not animation completion.
             await Task.Delay(500); await ArrangeCheck();
+            await CheckDuplicateVmPaths(folder);
             VmTitle.Text = string.Concat(Enumerable.Repeat("日本語の長い仮想マシン名・", 10));
             for (int i = 0; i < 50; i++) machines.Add(new VmEntry($"検証用 macOS {i:00}", Path.Combine(folder, $"fixture-{i}.reimsvm"), Path.Combine(folder, $"fixture-{i}.data")));
             UpdateLibraryView(); await ArrangeCheck();
@@ -121,6 +122,46 @@ public partial class MainWindow
         }
     }
 #pragma warning restore WPF0001
+
+    private async Task CheckDuplicateVmPaths(string folder)
+    {
+        string name = "macOS Tahoe（同名の確認）", query = LibrarySearch.Text;
+        double width = Width, height = Height;
+        int count = machines.Count;
+        var entries = new[] { "Existing VMs", "Virtual Machines" }.Select(location => {
+            string directory = Path.Combine(Path.GetPathRoot(folder)!, location, "日本語 macOS Tahoe");
+            return new VmEntry(name, Path.Combine(directory, "macOS Tahoe.reimsvm"), directory);
+        }).ToArray();
+        try {
+            Width = 1380; Height = 880;
+            machines.AddRange(entries); LibrarySearch.Text = name; UpdateLibraryView(); await ArrangeCheck();
+            foreach (var entry in entries) {
+                Library.ScrollIntoView(entry); await ArrangeCheck();
+                if (Library.ItemContainerGenerator.ContainerFromItem(entry) is not ListBoxItem row)
+                    throw new Exception("Duplicate VM row did not render");
+                var path = FindPath(row) ?? throw new Exception("VM path subtitle is missing");
+                if (entry.Name != name || path.Text != entry.Directory || path.ToolTip?.ToString() != entry.Directory ||
+                    path.TextTrimming != TextTrimming.CharacterEllipsis || path.TextWrapping != TextWrapping.NoWrap ||
+                    System.Windows.Automation.AutomationProperties.GetName(row) != name ||
+                    System.Windows.Automation.AutomationProperties.GetHelpText(row) != entry.Directory)
+                    throw new Exception("Duplicate VM paths are indistinguishable or inaccessible");
+                RequireInside(path, row, "Single-line VM path");
+            }
+            if (entries[0].Subtitle == entries[1].Subtitle) throw new Exception("Duplicate names hide distinct locations");
+            SaveImage(Path.Combine(folder, "duplicate-vm-paths.png"));
+        } finally {
+            machines.RemoveRange(count, machines.Count - count); LibrarySearch.Text = query; UpdateLibraryView();
+            Width = width; Height = height;
+        }
+        static TextBlock? FindPath(DependencyObject root) {
+            if (root is TextBlock { Name: "VmPathLabel" } path) return path;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) {
+                var found = FindPath(VisualTreeHelper.GetChild(root, i));
+                if (found is not null) return found;
+            }
+            return null;
+        }
+    }
 
     private async Task ArrangeCheck()
     {
