@@ -28,6 +28,7 @@ internal static class OnboardingChecks
     {
         Directory.CreateDirectory(folder);
         TapInstallChecks.Run(Path.Combine(folder,"tap-result-checks"));
+        WifiUiChecks.Run(Path.Combine(folder,"wifi-ui-checks"));
         foreach (string state in new[] { "unknown", "running", "shutdown", "paused", "suspended", "prelaunch", "unprepared", "stopped" })
             foreach(string action in new[]{"RemoveBridge","InstallTap"})
             if (VmActionPolicy.CanRun(action,state,true,true) != (state == "stopped") ||

@@ -595,10 +595,10 @@
                   <TextBlock Text="macOS のインストール"/>
                 </StackPanel>
               </ListBoxItem>
-              <ListBoxItem Tag="7" AutomationProperties.Name="ブリッジの準備">
+              <ListBoxItem Tag="7" AutomationProperties.Name="LAN 接続の準備">
                 <StackPanel Orientation="Horizontal">
                   <TextBlock Text="" Style="{StaticResource DeviceIcon}"/>
-                  <TextBlock Text="ブリッジの準備"/>
+                  <TextBlock Text="LAN 接続の準備"/>
                 </StackPanel>
               </ListBoxItem>
               <ListBoxItem Tag="4" AutomationProperties.Name="スナップショット">
@@ -665,8 +665,8 @@
                     <TextBlock Text="ネットワーク" Style="{StaticResource PageHeading}"/>
                     <RadioButton x:Name="Nat" Content="NAT（通常はこちら）" IsChecked="True" Margin="0,18,0,6"/>
                     <TextBlock Text="Windows のインターネット接続を共有します。Apple Account も使用できます。" Style="{StaticResource MutedText}" Margin="24,0,0,20"/>
-                    <RadioButton x:Name="Bridge" Content="ブリッジ" Margin="0,0,0,6"/>
-                    <TextBlock Text="VM を LAN 上の独立した機器として接続します。" Style="{StaticResource MutedText}" Margin="24,0,0,8"/>
+                    <RadioButton x:Name="Bridge" Content="LAN に直接接続" Margin="0,0,0,6"/>
+                    <TextBlock Text="Wi-Fi は互換接続（IPv4）、有線 LAN は Windows ブリッジを使用します。" Style="{StaticResource MutedText}" Margin="24,0,0,8"/>
                     <TextBlock Text="ホストの接続先" Style="{StaticResource FieldLabel}"/>
                     <ComboBox x:Name="Uplink" DisplayMemberPath="DisplayName" SelectedValuePath="Id" ToolTip="{Binding SelectedItem.Description, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="物理 Wi-Fi・有線 LAN の接続先"/>
                     <TextBlock x:Name="NetworkNotice" Style="{StaticResource MutedText}" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
@@ -677,7 +677,7 @@
                     </Expander>
                     <TextBlock Text="macOS の IP アドレス / ホスト名" Style="{StaticResource FieldLabel}"/>
                     <TextBox x:Name="GuestHost"/>
-                    <Button Content="ブリッジの準備" Click="OpenBridgeTab" HorizontalAlignment="Left" Margin="0,18,0,0"/>
+                    <Button Content="LAN 接続の準備" Click="OpenBridgeTab" HorizontalAlignment="Left" Margin="0,18,0,0"/>
                   </StackPanel>
                   <StackPanel x:Name="UsbPage" Visibility="Collapsed">
                     <TextBlock Text="USB デバイス" Style="{StaticResource PageHeading}"/>
@@ -863,12 +863,23 @@
             <TabItem Header="ブリッジ">
               <ScrollViewer x:Name="BridgeScroll" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="28,24,28,28" MaxWidth="680" HorizontalAlignment="Stretch">
-                  <TextBlock Text="ブリッジ接続を準備" Style="{StaticResource PageHeading}"/>
+                  <TextBlock Text="LAN 接続を準備" Style="{StaticResource PageHeading}"/>
                   <TextBlock Text="接続する Wi-Fi・有線 LAN を選びます。通常のインターネット利用には NAT を使用できます。選択だけでは Windows の接続を変更しません。" Style="{StaticResource MutedText}"/>
                   <TextBlock Text="ホストの接続先" Style="{StaticResource FieldLabel}"/>
-                  <ComboBox x:Name="Physical" DisplayMemberPath="DisplayName" SelectedValuePath="Id" ToolTip="{Binding SelectedItem.Description, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="ブリッジする物理接続先"/>
+                  <ComboBox x:Name="Physical" DisplayMemberPath="DisplayName" SelectedValuePath="Id" ToolTip="{Binding SelectedItem.Description, RelativeSource={RelativeSource Self}}" SelectionChanged="WifiSelectionChanged" AutomationProperties.Name="LAN に接続する物理 Wi-Fi・有線 LAN"/>
                   <Button Content="接続先を更新" Click="ReloadNetworkChoices" HorizontalAlignment="Left" Margin="0,12,0,0"/>
-                  <TextBlock Text="Wi-Fi の対応は未確認です。作成すると Windows の通信が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>
+                  <Border x:Name="WifiCompatCard" Style="{StaticResource NoticeCard}" Margin="0,16,0,0" Visibility="Collapsed"><StackPanel>
+                    <TextBlock Text="Wi-Fi 互換接続（IPv4）" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock Text="専用 TAP を自動で準備します。外部 IPv6 には対応していません。" Style="{StaticResource MutedText}" Margin="0,8,0,12"/>
+                    <TextBlock x:Name="WifiForwarderSummary" Text="転送状態は未確認です" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/>
+                    <ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="WifiForwarderDetail" Style="{StaticResource MutedText}" Margin="0,6,0,12"/></ScrollViewer>
+                    <TextBlock Text="外部ドライバーは非商用の個人・学術用途、商用評価向けです。商用運用・再配布には配布元の別ライセンスが必要です。導入時は Windows 全体の通信が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>
+                    <TextBlock Margin="0,8,0,8"><Hyperlink NavigateUri="https://www.ntkernel.com/windows-packet-filter/download/" RequestNavigate="OpenPacketFilterTerms">配布元の利用条件</Hyperlink><Run Text="  ·  "/><Hyperlink NavigateUri="https://www.ntkernel.com/windows-packet-filter/licensing/" RequestNavigate="OpenPacketFilterTerms">商用ライセンス</Hyperlink></TextBlock>
+                    <CheckBox x:Name="PacketFilterTerms" Click="WifiTermsChanged" Margin="0,0,0,12"><TextBlock Text="配布元の個人利用・評価用の利用条件を確認し、同意します（未導入時に必要）。" TextWrapping="Wrap"/></CheckBox>
+                    <WrapPanel><Button x:Name="PrepareWifiButton" Content="Wi-Fi 互換接続を準備" Click="PrepareWifi" Tag="PrepareWifi"/><Button x:Name="DisableWifiButton" Content="解除して NAT に戻す" Click="DisableWifi" Tag="DisableWifi"/></WrapPanel>
+                  </StackPanel></Border>
+                  <StackPanel x:Name="WiredBridgeControls">
+                  <TextBlock Text="有線 LAN は Windows ブリッジで接続します。作成時に Windows の通信が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>
                   <Button x:Name="InstallTapButton" Content="専用 TAP ドライバーを自動導入…" Click="InstallTap" Tag="InstallTap" HorizontalAlignment="Left" Margin="0,16,0,0"/>
                   <TextBlock Text="署名を確認した公式ドライバーを取得します。ブリッジの作成は別の操作です。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
                   <Expander Header="詳細: 既存の専用 TAP を選択" Margin="0,16,0,0"><StackPanel>
@@ -879,6 +890,7 @@
                   <Button Content="ブリッジを作成…" Click="CreateBridge" Tag="CreateBridge" HorizontalAlignment="Left" Margin="0,20,0,12"/>
                   <Button x:Name="RemoveBridgeButton" Content="ブリッジを解除して NAT に戻す…" Click="RemoveBridge" Tag="RemoveBridge" HorizontalAlignment="Left" Margin="0,0,0,12"/>
                   <TextBlock Text="Windows の管理者権限が必要です。作成時はネットワーク接続が一時的に切れる場合があります。" Style="{StaticResource MutedText}"/>
+                  </StackPanel>
                 </StackPanel>
               </ScrollViewer>
             </TabItem>

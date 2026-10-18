@@ -6,7 +6,7 @@ namespace ReimsManager;
 internal sealed record NetworkUplink(string Id, string Name, string Description, string Kind, string Status, bool Connected)
 {
     public string DisplayName => Name + " · " + (Kind switch { "wifi" => "Wi-Fi", "ethernet" => "有線 LAN", _ => "その他" }) +
-        " · " + (Connected ? "接続中" : Status);
+        " · " + (Connected ? "物理リンクあり" : Status);
 }
 
 internal sealed record NetworkInventory(NetworkUplink[] Uplinks, string[] Taps)
