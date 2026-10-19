@@ -118,33 +118,38 @@ try {
     $backend = [scriptblock]::Create((Get-Content -Raw "$PSScriptRoot/../manager-backend.ps1")).Ast
     $actions = $backend.Find({ param($node) $node -is [Management.Automation.Language.SwitchStatementAst] }, $true)
     $apply = $actions.Clauses | Where-Object { $_.Item1.Value -eq 'ApplyResolution' }
-    [IO.File]::WriteAllText((Join-Path $scripts 'apply-resolution.ps1'), '& ' + $apply.Item2.Extent.Text)
+    # Extracted functions resolve script: state in each generated entrypoint.
+    $scriptState = '$script:ReimsEngine = $null' + [Environment]::NewLine
+    [IO.File]::WriteAllText((Join-Path $scripts 'apply-resolution.ps1'), $scriptState + '& ' + $apply.Item2.Extent.Text)
     Copy-Item -LiteralPath "$PSScriptRoot/../guest-display.js" -Destination $scripts
     $Resolution = '2560x1440'
-    $script:GuestReply = '{"display_applied":"2560x1440"}'
-    $script:GuestFailure = $false; $script:GuestUpdatesUsb = $false; $script:CommitFailure = $false
+    # Share mock controls by reference across generated script scopes.
+    $fixture = @{
+        GuestReply = '{"display_applied":"2560x1440"}'
+        GuestFailure = $false; GuestUpdatesUsb = $false; CommitFailure = $false
+    }
     function Invoke-GuestControl($Command) {
-        if ($script:GuestFailure) { throw 'Authored guest failure' }
-        if ($script:GuestUpdatesUsb) {
+        if ($fixture.GuestFailure) { throw 'Authored guest failure' }
+        if ($fixture.GuestUpdatesUsb) {
             $updated = Get-ReimsVmConfig
             $updated.usb_devices = @([pscustomobject]@{ id = 'usb-saved-during-ssh' })
             & $realWriter $configPath $updated
         }
-        $script:GuestReply
+        $fixture.GuestReply
     }
     function Write-ReimsJson($Path, $Value) {
-        if ($script:CommitFailure -and $Path -eq $configPath) { throw 'Authored persistence failure' }
+        if ($fixture.CommitFailure -and $Path -eq $configPath) { throw 'Authored persistence failure' }
         & $realWriter $Path $Value
     }
-    $script:GuestFailure = $true
+    $fixture.GuestFailure = $true
     Reject { & "$scripts/apply-resolution.ps1" } 'Authored guest failure'
-    $script:GuestFailure = $false; $script:GuestReply = '{"display_applied":"1280x720"}'
+    $fixture.GuestFailure = $false; $fixture.GuestReply = '{"display_applied":"1280x720"}'
     Reject { & "$scripts/apply-resolution.ps1" } '確認できません'
     Assert-True ([IO.File]::ReadAllText($configPath) -ceq $before) 'Unconfirmed display change modified boot preferences'
-    $script:GuestReply = '{"display_applied":"2560x1440"}'; $script:CommitFailure = $true
+    $fixture.GuestReply = '{"display_applied":"2560x1440"}'; $fixture.CommitFailure = $true
     Reject { & "$scripts/apply-resolution.ps1" } '次回起動用の設定を保存できません'
     Assert-True ([IO.File]::ReadAllText($configPath) -ceq $before) 'Failed display persistence lost the old profile'
-    $script:CommitFailure = $false; $script:GuestUpdatesUsb = $true
+    $fixture.CommitFailure = $false; $fixture.GuestUpdatesUsb = $true
     & "$scripts/apply-resolution.ps1" | Out-Null
     $saved = Get-ReimsVmConfig
     Assert-True ($saved.resolution -eq $Resolution -and $saved.cpus -eq 7 -and $saved.audio -eq 'dsound' -and $saved.microphone) 'Live resolution did not persist independently of other hardware'
@@ -155,9 +160,9 @@ try {
         $node -is [Management.Automation.Language.IfStatementAst] -and
         $node.Clauses[0].Item1.Extent.Text -eq '$Action -eq ''Status'''
     }, $true)
-    [IO.File]::WriteAllText((Join-Path $scripts 'status.ps1'), '& ' + $status.Clauses[0].Item2.Extent.Text)
+    [IO.File]::WriteAllText((Join-Path $scripts 'status.ps1'), $scriptState + '& ' + $status.Clauses[0].Item2.Extent.Text)
     Copy-Item -LiteralPath "$PSScriptRoot/../snapshot.ps1" -Destination $scripts
-    [IO.File]::WriteAllText((Join-Path $scripts 'start.ps1'), 'param([switch]$FunctionsOnly)')
+    [IO.File]::WriteAllText((Join-Path $scripts 'start.ps1'), 'param([switch]$FunctionsOnly)' + [Environment]::NewLine + $scriptState)
     function Get-NetAdapter { @() }
     function Get-ReimsTapAdapters { @() }
     function Get-ReimsHostCursorHidden { $false }
@@ -183,12 +188,12 @@ try {
         if ($Arguments[0] -eq 'create') { [IO.File]::WriteAllText($Arguments[-1], 'authored overlay') }
         elseif ($Arguments[0] -ne 'check') { throw 'Unexpected fixture disk operation' }
     }
-    $script:CommitFailure = $true
+    $fixture.CommitFailure = $true
     Reject { & "$scripts/snapshot.ps1" -Action Create -Name failed } 'Authored persistence failure'
     Assert-True ((Get-ReimsVmConfig).active_disk -eq $saved.active_disk) 'Failed checkpoint commit changed the active disk'
     Assert-True (@(& "$scripts/snapshot.ps1" -Action List).Count -eq 0) 'An unfrozen checkpoint was exposed after save failure'
     Assert-True (!(Test-Path (Join-Path $VmRoot 'snapshots/failed/snapshot.json'))) 'Failed checkpoint published restore metadata'
-    $script:CommitFailure = $false
+    $fixture.CommitFailure = $false
     & "$scripts/snapshot.ps1" -Action Create -Name committed | Out-Null
     $checkpoint = @(& "$scripts/snapshot.ps1" -Action List)
     Assert-True ($checkpoint.Count -eq 1 -and $checkpoint[0].disk -eq $saved.active_disk -and (Get-ReimsVmConfig).active_disk -ne $checkpoint[0].disk) 'Committed checkpoint was not frozen before publication'

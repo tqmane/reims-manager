@@ -69,6 +69,12 @@ public partial class MainWindow : Window
     private async Task<bool> Operate(string action, string[]? args = null, bool elevate = false, string? input = null)
     {
         if (!RequireAction(action)) return false;
+        if (action == "Start" && (hardwareDirty || identityDirty)) {
+            Tabs.SelectedIndex = hardwareDirty ? 1 : 3;
+            ShowError("保存していない設定があります。「変更を保存」または「変更を破棄」で確定してから起動してください。");
+            UpdatePowerControls();
+            return false;
+        }
         if (action == "SnapshotRestore" && !DiscardPendingChanges()) return false;
         // Menus, keyboard shortcuts and buttons use exactly the same installer preference.
         if (action == "Start") { args = VmActionPolicy.StartArguments(ConnectIso.IsChecked == true); PrepareStartConsole(); }

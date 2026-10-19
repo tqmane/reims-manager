@@ -83,6 +83,8 @@ public partial class MainWindow
 
             currentState = "stopped"; UpdatePowerControls();
             Memory.Text = "12288";
+            if (await Operate("Start") || Tabs.SelectedIndex != 1 || !hardwareDirty || Memory.Text != "12288")
+                throw new Exception("Start hid pending settings and launched with different saved values.");
             Resolution.SelectedItem = Resolution.Items.Cast<ComboBoxItem>().Single(x => x.Content?.ToString() == "2560x1440");
             currentState = "running"; UpdatePowerControls(); checkCompletion = true;
             if (!await ApplyResolutionCore() || resolutionWrites != 1 || completionChecks == 0 || currentState != "running" || savedResolution != "2560x1440" ||
@@ -112,7 +114,8 @@ public partial class MainWindow
                 clipboard_vm_switch = true, clipboard_disable_retained = true, no_fixture_clipboard_io = true,
                 saved_installer_separate_from_runtime = true, live_resolution_commit = true,
                 unrelated_edits_retained = true, failed_resolution_stays_pending = true,
-                vm_selection_locked_through_completion = true
+                vm_selection_locked_through_completion = true, start_preserves_pending_settings = true,
+                explicit_refresh_reloads_clean_forms = true, explicit_refresh_preserves_drafts = true
             }));
         } finally {
             checkCompletion = false; controlFixtureBackend = previousBackend;
