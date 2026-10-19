@@ -48,6 +48,11 @@ if ($bridgeFailure) { throw 'Addon fixture failure' }
     Invoke-ReimsVmSetup $iso 300 4 4096 | Out-Null
     $c=Get-ReimsVmConfig; $marker=Get-Content "$VmRoot/state/setup-preparation.json" -Raw | ConvertFrom-Json
     if ($c.cpus -ne 4 -or $c.memory_mib -ne 4096 -or $c.disk_gib -ne 300 -or $c.opencore -ne 'qualified-addon-efi' -or !$marker.complete -or !(Test-Path "$VmRoot/tools-ready")) { throw 'Setup did not complete the requested hardware/addon/tools plan' }
+    if ($c.connect_installer -isnot [bool] -or !$c.connect_installer) { throw 'Fresh setup did not save its required installer preference' }
+    $c.connect_installer=$false
+    Write-ReimsJson "$VmRoot/state/config.json" $c
+    Invoke-ReimsVmSetup $iso 300 4 4096 | Out-Null
+    if ((Get-ReimsVmConfig).connect_installer -ne $false) { throw 'Repeated setup reset the saved installer preference' }
     $hashes=@{}; foreach($name in @('config.json','opencore.json','setup-preparation.json','opencore-identity.json')) { $hashes[$name]=(Get-FileHash "$VmRoot/state/$name").Hash }
     $bridgeFailure=$true
     $caught=$false;try { Invoke-ReimsVmSetup $iso 300 2 6144 | Out-Null } catch { $caught=$true }

@@ -8,16 +8,50 @@ public partial class MainWindow
 {
     private readonly DispatcherTimer clipboardTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private CancellationTokenSource clipboardCancel = new();
-    private bool clipboardBusy;
+    private bool clipboardBusy, loadingClipboard;
     private string? lastClipboard;
 
     private void ResetClipboard() { clipboardCancel.Cancel(); clipboardCancel.Dispose(); clipboardCancel = new(); lastClipboard = null; }
     private void ClipboardChanged(object sender, RoutedEventArgs e)
     {
-        if (ClipboardStatus is null || selfTest) return;
-        if (ClipboardSharing.IsChecked == true) {
-            lastClipboard = null; clipboardTimer.Start(); ClipboardStatus.Text = "テキスト共有を開始します。";
-        } else { clipboardTimer.Stop(); ResetClipboard(); ClipboardStatus.Text = "自動共有はオフです。"; }
+        if (ClipboardStatus is null || loadingClipboard || selectedEntry is null) return;
+        string file = selectedEntry.File;
+        bool hadPreference = settings.ClipboardByVm.TryGetValue(file, out bool previous);
+        settings.SetClipboardEnabled(file, ClipboardSharing.IsChecked == true);
+        if (!SavePreferences()) {
+            if (hadPreference) settings.SetClipboardEnabled(file, previous);
+            else settings.ClipboardByVm.Remove(file);
+            RestoreClipboardPreference();
+            return;
+        }
+        ResetClipboard();
+        UpdateClipboardAvailability();
+    }
+
+    private void RestoreClipboardPreference()
+    {
+        clipboardTimer.Stop(); ResetClipboard();
+        loadingClipboard = true;
+        try { ClipboardSharing.IsChecked = selectedEntry is not null && settings.ClipboardEnabled(selectedEntry.File); }
+        finally { loadingClipboard = false; }
+        UpdateClipboardAvailability();
+    }
+
+    private void UpdateClipboardAvailability()
+    {
+        if (ClipboardSharing is null || ClipboardStatus is null) return;
+        // The preference belongs to the VM and can be set before it is running.
+        ClipboardSharing.IsEnabled = !IsUiBusy && HasVm;
+        if (ClipboardSharing.IsChecked != true) {
+            if (clipboardTimer.IsEnabled) { clipboardTimer.Stop(); ResetClipboard(); }
+            ClipboardStatus.Text = "自動共有はオフです。この VM の設定として保存されます。";
+        } else if (!HasVm || !HasEngine || currentState != "running" || closing) {
+            if (clipboardTimer.IsEnabled) { clipboardTimer.Stop(); ResetClipboard(); }
+            ClipboardStatus.Text = "自動共有はオンです。VM が実行中になり、SSH に接続できると共有を再開します。";
+        } else if (!clipboardTimer.IsEnabled) {
+            ClipboardStatus.Text = "自動共有はオンです。SSH の接続を確認しています。";
+            if (!selfTest) clipboardTimer.Start();
+        }
     }
 
     private async Task SyncClipboard()

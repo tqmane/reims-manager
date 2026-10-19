@@ -130,6 +130,13 @@ function Assert-Administrator {
 
 . "$PSScriptRoot/manager-ports.ps1"
 
+$managerMutation = $null
+try {
+    # Separate Manager processes must recheck runtime/config under the same lock.
+    # Read-only status and diagnostics remain available during long operations.
+    if ($Action -notin @('Status', 'GetIdentity', 'ListUsb', 'GetWifiMacNat', 'CollectLogs')) {
+        $managerMutation = Enter-ReimsVmMutation
+    }
 if ($Action -eq 'Status') {
     $runtime = Get-ReimsRuntime
     $prepared = Test-Path (Join-Path $VmRoot 'state/config.json')
@@ -139,8 +146,8 @@ if ($Action -eq 'Status') {
     $config = if ($prepared) { Get-ReimsVmConfig } else { $null }
     $adapters = @(Get-NetAdapter | ForEach-Object { @{Name=[string]$_.Name; InterfaceDescription=[string]$_.InterfaceDescription; Status=[string]$_.Status; HardwareInterface=[bool]$_.HardwareInterface} })
     $taps = @(Get-ReimsTapAdapters | ForEach-Object Name)
-    $installerAttached = $false
-    if ($config -and $config.PSObject.Properties['connect_installer']) { $installerAttached = [bool]$config.connect_installer }
+    $connectInstaller = [bool]($config -and $config.PSObject.Properties['connect_installer'] -and $config.connect_installer)
+    $installerAttached = $connectInstaller
     if ($runtime -and (Get-ReimsVmProcess $runtime)) {
         $launch = Get-Content -Raw (Join-Path $runtime.run_directory 'command.json') | ConvertFrom-Json
         $installerAttached = [bool]($launch.arguments | Where-Object { $_ -like 'id=installer,*' })
@@ -154,7 +161,8 @@ if ($Action -eq 'Status') {
         cpus=$(if ($config) {$config.cpus} else {8}); memory_mib=$(if ($config) {$config.memory_mib} else {8192});
         disk_gib=$(if ($config) {$config.disk_gib} else {128}); disk=$(if ($config) {$config.active_disk} else {''});
         audio=$(if ($config -and $config.PSObject.Properties['audio']) {$config.audio} else {'none'});
-        with_installer=$installerAttached; network_adapter=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.adapter} else {''});
+        connect_installer=$connectInstaller; with_installer=$installerAttached;
+        network_adapter=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.adapter} else {''});
         guest_host=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.guest_host} else {''});
         network_uplink_id=$(if ($config -and $config.PSObject.Properties['network'] -and $config.network.PSObject.Properties['physical_adapter_id']) {$config.network.physical_adapter_id} else {''});
         resolution=$(if ($config) {$config.resolution} else {'1920x1080'});
@@ -322,7 +330,22 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     ApplyResolution {
         $js = Get-Content -Raw -LiteralPath "$PSScriptRoot/guest-display.js"
-        Invoke-GuestControl -Command "/usr/bin/osascript -l JavaScript - $Resolution <<'REIMS_DISPLAY'`n$js`nREIMS_DISPLAY"
+        [void](Get-ReimsVmConfig)
+        $result = Invoke-GuestControl -Command "/usr/bin/osascript -l JavaScript - $Resolution <<'REIMS_DISPLAY'`n$js`nREIMS_DISPLAY"
+        $confirmed = $result | ConvertFrom-Json -AsHashtable
+        if ($confirmed -isnot [Collections.IDictionary] -or !$confirmed.Contains('display_applied') -or
+            $confirmed.display_applied -isnot [string] -or $confirmed.display_applied -cne $Resolution) {
+            throw 'macOS の解像度変更を確認できませんでした。起動時の設定は変更していません。'
+        }
+        try {
+            # Reload after SSH so unrelated settings saved while it ran survive.
+            $config = Get-ReimsVmConfig
+            $config.resolution = $Resolution
+            Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
+        } catch {
+            throw "macOS の解像度は変更済みですが、次回起動用の設定を保存できませんでした。再試行してください。$($_.Exception.Message)"
+        }
+        $result
     }
     SetNetwork {
         Assert-ReimsVmStopped
@@ -420,4 +443,10 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         'SSH ホスト鍵を照合し、接続設定を保存しました。'
     }
     CollectLogs { & "$PSScriptRoot/collect-logs.ps1" -Screenshot }
+}
+} finally {
+    if ($managerMutation) {
+        $managerMutation.ReleaseMutex()
+        $managerMutation.Dispose()
+    }
 }

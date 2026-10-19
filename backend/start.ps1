@@ -41,8 +41,37 @@ function Assert-ReimsArtifactPath([string]$Path) {
 function Write-ReimsJson([string]$Path, $Value) {
     $Path = Assert-ReimsArtifactPath $Path
     New-Item -ItemType Directory -Force -Path (Split-Path $Path) | Out-Null
-    ConvertTo-Json -InputObject $Value -Depth 20 | Set-Content -LiteralPath "$Path.new" -Encoding utf8NoBOM
-    Move-Item -LiteralPath "$Path.new" -Destination $Path -Force
+    # Each writer owns its staging file. A failed/concurrent save must not consume
+    # another writer's .new file or leave the published JSON partially written.
+    $json = ConvertTo-Json -InputObject $Value -Depth 20 -WarningAction Stop
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
+    $temporary = $Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    $stream = $null
+    try {
+        $stream = [IO.File]::Open($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+        $stream.Dispose(); $stream = $null
+        [IO.File]::Move($temporary, $Path, $true)
+    } finally {
+        if ($stream) { $stream.Dispose() }
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
+}
+
+function Enter-ReimsVmMutation([ValidateRange(0,300000)][int]$TimeoutMilliseconds = 5000) {
+    $canonical = [IO.Path]::GetFullPath($VmRoot).TrimEnd('\','/').ToUpperInvariant()
+    $identity = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($canonical)))
+    $mutex = [Threading.Mutex]::new($false, "Local\ReimsManager.VmMutation.$identity")
+    try {
+        try { $locked = $mutex.WaitOne($TimeoutMilliseconds) }
+        catch [Threading.AbandonedMutexException] { $locked = $true }
+        if (!$locked) { throw 'Another VM operation is in progress. Wait for it to finish, then retry.' }
+        return $mutex
+    } catch {
+        $mutex.Dispose()
+        throw
+    }
 }
 
 function Get-ReimsTool([string]$Name, [string]$ExplicitPath) {
@@ -97,12 +126,23 @@ function Get-ReimsVmConfig {
 }
 
 function Get-ReimsVmProcess($Runtime) {
-    $process = Get-Process -Id $Runtime.pid -ErrorAction SilentlyContinue
-    if (!$process) { return $null }
-    if ($process.StartTime.ToUniversalTime().Ticks -ne [long]$Runtime.start_ticks -or
-        ![string]::Equals($process.Path, $Runtime.executable, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "PID $($Runtime.pid) belongs to another process; refusing to control it."
+    $lookupErrors = @()
+    $process = Get-Process -Id $Runtime.pid -ErrorAction SilentlyContinue -ErrorVariable lookupErrors
+    if (!$process) {
+        if (@($lookupErrors | Where-Object { $_.FullyQualifiedErrorId -notlike 'NoProcessFoundForGivenId,*' }).Count) {
+            throw "Cannot verify the recorded VM process $($Runtime.pid): $($lookupErrors -join ' ')"
+        }
+        return $null
     }
+    # runtime.json survives Manager/Windows restarts. A reused PID proves the
+    # recorded VM has exited; it must not make every status/settings call fail.
+    # Unreadable identity remains an error, never permission to start another VM.
+    $started = $process.StartTime
+    if ($null -eq $started) { throw "Cannot verify the start time of VM process $($Runtime.pid)." }
+    if ($started.ToUniversalTime().Ticks -ne [long]$Runtime.start_ticks) { return $null }
+    $executable = $process.Path
+    if ([string]::IsNullOrWhiteSpace($executable)) { throw "Cannot verify the executable of VM process $($Runtime.pid)." }
+    if (![string]::Equals($executable, $Runtime.executable, [StringComparison]::OrdinalIgnoreCase)) { return $null }
     return $process
 }
 

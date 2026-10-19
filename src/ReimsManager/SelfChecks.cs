@@ -27,10 +27,15 @@ internal static class SelfChecks
         File.WriteAllText(Path.Combine(runtimeDirectory,"runtime.json"),JsonSerializer.Serialize(new {
             pid=self.Id,start_ticks=self.StartTime.ToUniversalTime().Ticks+1,executable=Environment.ProcessPath,qmp_port=4444
         }));
-        try {
-            await LiveVmStatus.Read(Path.GetDirectoryName(runtimeDirectory)!);
-            throw new Exception("A reused PID was accepted");
-        } catch (InvalidDataException) { }
+        var stale = await LiveVmStatus.Read(Path.GetDirectoryName(runtimeDirectory)!);
+        if (stale.State != "stopped" || stale.Runtime is not null)
+            throw new Exception("A reused PID did not recover to a stopped VM");
+        File.WriteAllText(Path.Combine(runtimeDirectory,"runtime.json"),JsonSerializer.Serialize(new {
+            pid=self.Id,start_ticks=self.StartTime.ToUniversalTime().Ticks,executable="unrelated.exe",qmp_port=4444
+        }));
+        stale = await LiveVmStatus.Read(Path.GetDirectoryName(runtimeDirectory)!);
+        if (stale.State != "stopped" || stale.Runtime is not null || self.HasExited)
+            throw new Exception("An unrelated process was contacted or affected by stale VM metadata");
 
         string? previous=Environment.GetEnvironmentVariable("REIMS_MANAGER_HOME");
         Environment.SetEnvironmentVariable("REIMS_MANAGER_HOME",Path.Combine(folder,"settings-check"));

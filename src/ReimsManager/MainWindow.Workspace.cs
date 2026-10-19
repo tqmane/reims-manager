@@ -30,19 +30,19 @@ public partial class MainWindow
             field.Unchecked += (_, _) => MarkHardwareDirty();
         }
         foreach (TextBox field in new[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityUuid, IdentityRom })
-            field.TextChanged += (_, _) => { if (!loadingIdentity && HasVm) { identityDirty = CaptureIdentityDraft() != committedIdentity; UpdatePowerControls(); } };
+            field.TextChanged += (_, _) => { if (!loadingIdentity && HasVm) { ClearSettingsFeedback(); identityDirty = CaptureIdentityDraft() != committedIdentity; UpdatePowerControls(); } };
         Snapshots.SelectionChanged += (_, _) => UpdatePowerControls();
         UsbDevices.SelectionChanged += (_, _) => UpdatePowerControls();
         Closing += ConfirmWindowClose;
         SyncNavigation();
     }
 
-    private bool CanOperate(string action) => !busy && !closing && VmActionPolicy.CanRun(action, currentState, HasVm, HasEngine);
+    private bool CanOperate(string action) => !busy && !completingOperation && !closing && VmActionPolicy.CanRun(action, currentState, HasVm, HasEngine);
 
     private bool RequireAction(string action)
     {
         if (CanOperate(action)) return true;
-        string reason = busy ? "別の操作を処理しています。" : !HasEngine ? "先に Reims エンジンを設定してください。" :
+        string reason = busy || completingOperation ? "別の操作を処理しています。" : !HasEngine ? "先に Reims エンジンを設定してください。" :
             !HasVm ? "操作する VM を選択してください。" : currentState == "unknown" ? "VM の状態を確認できません。更新してから再試行してください。" :
             currentState is "paused" or "suspended" or "prelaunch" ? "先に VM を再開してください。設定変更には、その後の完全終了が必要です。" :
             currentState == "shutdown" ? "macOS は電源オフですが QEMU は残っています。「••• → 完全終了」を選択してください。" :
@@ -72,7 +72,13 @@ public partial class MainWindow
     private bool SavePreferences()
     {
         if (selfTest) return true;
-        try { settings.Save(); return true; }
+        try {
+            settings.Save();
+            if (selectedEntry is not null && (ClipboardSharing.IsChecked == true) != settings.ClipboardEnabled(selectedEntry.File))
+                RestoreClipboardPreference();
+            if (settings.LastSaveWarning is { } warning) ShowError(warning);
+            return true;
+        }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) {
             ShowError("アプリ設定を保存できませんでした。VM のディスクは変更していません。\n" + error.Message);
             AppendLog(error.Message + "\n"); return false;
@@ -82,6 +88,7 @@ public partial class MainWindow
     private void MarkHardwareDirty()
     {
         if (loadingHardware || !loadedHardware || !HasVm) return;
+        ClearSettingsFeedback();
         hardwareDirty = CaptureHardwareDraft() != committedHardware;
         UpdatePowerControls();
     }
@@ -124,11 +131,12 @@ public partial class MainWindow
         InvalidateReadRequests();
         currentState = HasVm ? "unknown" : "unprepared"; latest = default; loadedHardware = false;
         hardwareDirty = identityDirty = false;
+        ClearSettingsFeedback();
         committedHardware = null; committedIdentity = null;
         Tabs.SelectedIndex = 0;
         ConsoleView.Detach(); ConsoleView.Visibility = Visibility.Hidden; ConsolePlaceholder.Visibility = Visibility.Visible;
         consoleDetached = false;
-        ClipboardSharing.IsChecked = false; ResetClipboard();
+        RestoreClipboardPreference();
         loadingIdentity = loadingHardware = true;
         try {
             foreach (TextBox field in new[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityRom, IdentityUuid, Iso, HardwareIsoPath, GuestHost, GuestUser, Fingerprint }) field.Clear();
@@ -184,6 +192,30 @@ public partial class MainWindow
             Tabs.SelectedIndex = page;
     }
 
+    private void ResetSettingsScroll()
+    {
+        // Hardware categories share one ScrollViewer. Its old offset must not hide
+        // the title and first fields when moving from a long editor to another one.
+        if (Devices.SelectedIndex >= 0 && Devices.SelectedIndex < Editors.Children.Count)
+            HardwareScroll.ScrollToTop();
+        UpdateSettingsWorkflow();
+    }
+
+    private void DiscardSettingsEdits(object sender, RoutedEventArgs e)
+    {
+        if (IsUiBusy || !DiscardPendingChanges() || !RestoreSettingsDrafts()) return;
+        ClearSettingsFeedback();
+        UpdatePowerControls();
+    }
+
+    private async void SettingsStateAction(object sender, RoutedEventArgs e)
+    {
+        if (IsUiBusy || sender is not Button { Tag: string action }) return;
+        if (action == "SetupEngine") { SetupEngine(sender, e); return; }
+        if (action == "SetupPage") { if (HasVm) Tabs.SelectedIndex = 5; return; }
+        await Operate(action);
+    }
+
     private void SyncNavigation()
     {
         if (WorkspaceNavigation is null || Tabs is null || Tabs.SelectedIndex < 0) return;
@@ -203,7 +235,7 @@ public partial class MainWindow
     {
         // Do not consume guest Ctrl+N/O/S or F5 while the focused console is active.
         if (IsUiBusy || ConsoleFocused) return;
-        if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None) { e.Handled = true; await RefreshState(); }
+        if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None) { e.Handled = true; await RefreshDisplayedState(); }
         else if (Keyboard.Modifiers == ModifierKeys.Control) {
             if (e.Key == Key.N) { e.Handled = true; NewVm(sender, e); }
             else if (e.Key == Key.O) { e.Handled = true; OpenVm(sender, e); }
@@ -253,7 +285,12 @@ public partial class MainWindow
         // Reveal the failing editor instead of focusing an invisible field on another page.
         for (int i = 0; i < Editors.Children.Count; i++)
             if (ReferenceEquals(Editors.Children[i], field) || LogicalChildren<Control>(Editors.Children[i]).Contains(field)) { Tabs.SelectedIndex = 1; Devices.SelectedIndex = i; break; }
-        ShowError(message); field.Focus();
+        ShowError(message);
+        // The selected tab may not have been arranged yet. Reveal the actual
+        // failing field after layout so a validation error never focuses off-screen.
+        field.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() => {
+            if (!closing && field.IsVisible) { field.BringIntoView(); field.Focus(); }
+        }));
         return false;
     }
 }

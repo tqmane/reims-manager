@@ -32,9 +32,15 @@ between official OpenCore binaries and authored configuration patches.
   remains intact and a managed copy is created separately.
 - **Console:** operate macOS inside the manager or detach its window.
 - **Settings:** manage CPU, memory, storage, ISO, networking, USB, audio and
-  display. Disk and firmware changes require a fully stopped VM.
+  display. **Save changes** commits pending fields; **Discard changes** restores
+  those fields while keeping the current page open. Disk and firmware changes
+  require a fully stopped VM; the settings page offers the required power action.
+  Applying a live resolution also saves it for the next VM launch, and leaves
+  unrelated pending edits intact.
 - **Sharing:** pair SSH with the guest to share text clipboard contents.
-  Clipboard contents and guest passwords are not stored in logs.
+  The automatic-sharing preference is saved separately for each VM and resumes
+  when that VM is running and SSH is available. Clipboard contents and guest
+  passwords are not stored in logs.
 - **OpenCore:** manage generated SMBIOS identity and supported Apple Account
   compatibility settings. Identity changes can require reauthentication.
   The same page can fetch/apply or disable the separately built
@@ -51,6 +57,12 @@ the footer, with a button to open it.
 The library and preferences live in local app data, independently of the
 engine folder. A `.reimsvm` file identifies its VM data directory. Changing
 engines does not delete VM disks.
+
+The CD/DVD page saves whether the installer should be connected on future
+starts. The installation page's temporary override only controls launches
+from the current Manager session. Current media attachment does not replace
+the saved preference. An explicit refresh reloads saved settings when there
+are no pending edits; periodic status updates preserve the form.
 
 ## Build and CI
 
