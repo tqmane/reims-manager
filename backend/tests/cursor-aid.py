@@ -238,10 +238,38 @@ class CursorAid(unittest.TestCase):
         self.assertEqual(self.receipt.read_bytes(), before)
 
     def test_failed_inspection_is_not_missing_service(self):
+        for code in (5, 125):
+            def denied(args, **kwargs):
+                return subprocess.CompletedProcess(args, code, '', 'inspection failed')
+            with self.subTest(code=code), self.assertRaisesRegex(RuntimeError, 'inspect'):
+                aid.LaunchAgent(0, self.control.agent, self.control.executable, denied).loaded()
+
+    def test_loginwindow_domain_125_has_actionable_message_without_mutation(self):
+        calls = []
+        uid = os.getuid() if hasattr(os, 'getuid') else 0
+        def loginwindow(args, **kwargs):
+            calls.append(args)
+            self.assertEqual(args, ['/bin/launchctl', 'print', f'gui/{uid}'])
+            return subprocess.CompletedProcess(args, 125, '',
+                'Could not print domain: 125: Domain does not support specified action')
+        with patch.object(aid, 'write_file') as write:
+            with self.assertRaisesRegex(RuntimeError, 'macOSにログインしてから'):
+                aid.apply(request(), self.home, uid, loginwindow)
+            write.assert_not_called()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(list(self.home.rglob('*')), [])
+
+    def test_other_domain_permission_failure_keeps_inspection_error(self):
+        calls = []
         def denied(args, **kwargs):
-            return subprocess.CompletedProcess(args, 5, '', 'inspection failed')
-        with self.assertRaisesRegex(RuntimeError, 'inspect'):
-            aid.LaunchAgent(0, self.control.agent, self.control.executable, denied).loaded()
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 5, '', 'Operation not permitted')
+        with patch.object(aid, 'write_file') as write:
+            with self.assertRaisesRegex(RuntimeError, 'launchctl print failed: Operation not permitted'):
+                aid.apply(request(), self.home, os.getuid() if hasattr(os, 'getuid') else 0, denied)
+            write.assert_not_called()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(list(self.home.rglob('*')), [])
 
     def test_no_gui_changes_nothing(self):
         self.control.gui = False

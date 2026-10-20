@@ -82,6 +82,8 @@ class LaunchAgent:
     def require(self, *args):
         result = self.call(*args)
         if result.returncode:
+            if args == ('print', self.domain) and result.returncode == 125:
+                raise RuntimeError('macOSにログインしてから、カーソル補助をもう一度有効にしてください。GUIセッションを確認できませんでした。')
             raise RuntimeError(f'launchctl {args[0]} failed: {result.stderr.strip()[:512]}')
         return result.stdout
 
