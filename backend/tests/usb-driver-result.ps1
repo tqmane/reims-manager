@@ -6,9 +6,9 @@ $work=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp/usb-driver-result-"+
 $scripts=Join-Path $work 'backend'; $cache=Join-Path $work 'installer cache'
 $caller=Join-Path $work 'caller profile/日本語 support'; $selected=Join-Path $work 'selected VM'
 foreach ($path in @($scripts,$caller,$selected)) { [void][IO.Directory]::CreateDirectory($path) }
-$fixture=@{Administrator=$true;ExitCode=0;HashValid=$true;SignatureValid=$true;PublisherValid=$true;Msis=0;Downloads=0;AdminChecks=0;VmChecks=0;VmRunning=$false;EnvLoads=0;ExpectedReceipt='';ReceiptLocked=$false;Dispatch=[Collections.Generic.List[object]]::new()}
-$script:checks=0
-function Assert($Condition,[string]$Message) { if (!$Condition) { throw $Message }; $script:checks++ }
+$fixture=@{Administrator=$true;ExitCode=0;HashValid=$true;SignatureValid=$true;PublisherValid=$true;Msis=0;Downloads=0;AdminChecks=0;VmChecks=0;VmRunning=$false;EnvLoads=0;ExpectedReceipt='';ReceiptLocked=$false;Dispatch=[Collections.Generic.List[object]]::new();Checks=0}
+# Mocks execute from child scripts, so their counters belong to the shared fixture.
+function Assert($Condition,[string]$Message) { if (!$Condition) { throw $Message }; $fixture.Checks++ }
 function Reject([scriptblock]$Action,[string]$Pattern) {
     try { & $Action | Out-Null } catch {
         Assert ($_.Exception.Message -match $Pattern) "Expected '$Pattern'; got '$($_.Exception.Message)'"
@@ -149,7 +149,7 @@ $fixture.Dispatch.Add([pscustomobject]@{cache=$CacheDirectory;result=$ResultPath
     Assert (!$fixture.Dispatch[-1].receipt_supplied) 'Legacy global dispatch must omit the new optional parameter'
     & "$scripts/manager-backend.ps1" -Root "$work/no-engine" -VmDirectory $selected -Action InstallUsbDk
     Assert (!$fixture.Dispatch[-1].receipt_supplied) 'Legacy selected dispatch must omit the new optional parameter'
-    "$script:checks USB driver receipt checks passed."
+    "$($fixture.Checks) USB driver receipt checks passed."
 } finally {
     $prefix=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")+[IO.Path]::DirectorySeparatorChar
     if ($work.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $work -Recurse -Force }
