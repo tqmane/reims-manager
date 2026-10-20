@@ -3,6 +3,7 @@
   "id": "engine-18f8c615-b17ae091-3",
   "release_repository": "tqmane/reims-manager",
   "asset": "ReimsEngine-win-x64.zip",
+  "bytes": 96739879,
   "sources": {
     "reims": { "repository": "https://github.com/tqmane/reims-vgpu", "commit": "18f8c6156c0c9885aa6c7fb0d0dcdb7d3200a658" },
     "qemu": { "repository": "https://github.com/tqmane/qemu-reims-vgpu", "commit": "b17ae0919ec29f7989a568b27651c32400fb4504" },
