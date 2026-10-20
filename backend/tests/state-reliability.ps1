@@ -172,11 +172,17 @@ try {
     Write-ReimsJson (Join-Path $runtime.run_directory 'command.json') @{ arguments = @('-drive', 'id=installer,if=none') }
     $reported = & "$scripts/status.ps1" | ConvertFrom-Json
     Assert-True ($reported.with_installer -and !$reported.connect_installer) 'Live attached media replaced saved false'
+    Assert-True ($null -eq $reported.usb_backend_active -and $reported.usb_usbdk_installed -is [bool]) 'An older runtime claimed an unrecorded USB backend'
+    $runtime | Add-Member -Force usb_backend 'winusb'; Write-ReimsJson $runtimePath $runtime
+    $saved | Add-Member -Force usb_backend 'usbdk'
     $saved.connect_installer = $true; Write-ReimsJson $configPath $saved
     Write-ReimsJson (Join-Path $runtime.run_directory 'command.json') @{ arguments = @() }
     $reported = & "$scripts/status.ps1" | ConvertFrom-Json
     Assert-True (!$reported.with_installer -and $reported.connect_installer) 'Live detached media replaced saved true'
+    Assert-True ($reported.usb_backend -eq 'usbdk' -and $reported.usb_backend_active -eq 'winusb') 'Saved USB backend replaced the running QEMU backend'
     Remove-Item -LiteralPath $runtimePath
+    $reported = & "$scripts/status.ps1" | ConvertFrom-Json
+    Assert-True ($null -eq $reported.usb_backend_active -and $reported.usb_backend -eq 'usbdk') 'A stopped VM reported an active USB backend'
 
     # A failed active-overlay save must not publish a checkpoint of a writable disk.
     foreach ($path in @($saved.active_disk, $saved.base_disk, $saved.firmware_vars, $saved.firmware_code, $saved.opencore)) {

@@ -56,7 +56,7 @@ public partial class MainWindow : Window
         if (!File.Exists(pwsh)) throw new Exception("PowerShell 7 をインストールしてください。");
         var info = new ProcessStartInfo(pwsh) { UseShellExecute=elevate, CreateNoWindow=true, WorkingDirectory=root };
         foreach (string arg in new[] {"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",backend,"-Root",root,"-Action",action}.Concat(arguments)) info.ArgumentList.Add(arg);
-        if (HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx" or "InstallUsbDk")) { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
+        if (HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx")) { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
         info.ArgumentList.Add("-Qemu"); info.ArgumentList.Add(settings.QemuExecutable);
         info.ArgumentList.Add("-ToolsRoot"); info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"runtimes"));
         if (input is not null) info.RedirectStandardInput=true;
@@ -319,7 +319,7 @@ public partial class MainWindow : Window
         }
         UpdateClipboardAvailability();
         foreach (var button in LogicalChildren<Button>(Tabs).Where(x => x.Tag?.ToString() == "SnapshotRestore")) button.IsEnabled &= Snapshots.SelectedIndex >= 0;
-        foreach (var button in LogicalChildren<Button>(Tabs).Where(x => x.Tag?.ToString() is "AttachUsb" or "DetachUsb")) button.IsEnabled &= UsbDevices.SelectedItem is not null;
+        UpdateUsbControls();
         ConsoleHeading.Text = currentState switch { "stopped" => "起動する準備ができました", "unprepared" => "macOS をセットアップ", "shutdown" => "macOS は電源オフです", "unknown" => "VM の状態を確認してください", _ => consoleDetached ? "別ウィンドウで表示中" : "VM の画面を待っています" };
         ConsoleDescription.Text = currentState switch { "stopped" => "上の「起動」から macOS を開始できます。", "unprepared" => "設定画面の「macOS のインストール」からインストーラーを選んでください。", "unknown" => "「更新」で状態を取得してから操作を再試行できます。", _ => "入力の解放は Ctrl + Alt + Win。画面は別ウィンドウにも切り替えられます。" };
         if (selectedEntry?.IsAvailable == false) {

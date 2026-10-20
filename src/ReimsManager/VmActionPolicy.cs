@@ -9,7 +9,7 @@ internal static class VmActionPolicy
     internal static bool CanRun(string action, string state, bool hasVm, bool hasEngine)
     {
         if (!hasEngine) return false;
-        if (action == "InstallUsbDk") return true;
+        if (action == "InstallUsbDk") return !hasVm || state is "stopped" or "unprepared";
         if (action is "EnableWhpx" or "CreateBridge") return !hasVm || state is "stopped" or "unprepared";
         if (!hasVm) return false;
         return action switch {
@@ -53,7 +53,9 @@ internal static class VmActionPolicy
         "MoveCursorToMainDisplay" => "カーソルを VM 本体の画面へ移動", "MoveCursorToExtendedDisplay" => "カーソルを拡張画面へ移動",
         "HideHostCursor" => "Windows 側のカーソルを隠す", "ShowHostCursor" => "Windows 側のカーソルを表示",
         "LightenExtendedDisplay" => "拡張画面を軽量化", "RestoreExtendedDisplay" => "拡張画面の画質を戻す",
-        "ApplyResolution" => "ゲストの解像度を変更", _ => action
+        "ApplyResolution" => "ゲストの解像度を変更",
+        "ListUsb" => "USB デバイスを取得", "AttachUsb" => "USB の接続を確認", "DetachUsb" => "USB の登録を解除",
+        "InstallUsbDk" => "USB 転送ドライバーを導入", _ => action
     };
 }
 

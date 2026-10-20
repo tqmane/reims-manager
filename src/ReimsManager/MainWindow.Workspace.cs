@@ -146,7 +146,7 @@ public partial class MainWindow
             Tap.ItemsSource = BridgeTap.ItemsSource = Physical.ItemsSource = Uplink.ItemsSource = Snapshots.ItemsSource = null;
             NetworkNotice.Text = "";
             wifiForwarder=null;wifiStatusError=null;hardwareForwarder="";PacketFilterTerms.IsChecked=false;
-            UsbDevices.ItemsSource = null;
+            ResetUsbInventory();
         } finally { loadingIdentity = loadingHardware = false; }
         RememberHardwareDraft(); RememberIdentityDraft();
         State.Text = "確認中"; StatusDetail.Text = "選択した VM の状態を取得しています。";

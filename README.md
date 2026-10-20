@@ -48,8 +48,21 @@ between official OpenCore binaries and authored configuration patches.
   ABI range. Candidates remain disabled until the generic implementation is
   qualified.
 
-USB transfer requires the appropriate Windows driver. Only selected devices
-are registered for reconnection. NAT is the default; bridging needs a TAP
+USB transfer requires the appropriate Windows driver. Installing UsbDk does
+not select it automatically: fully stop the VM, choose **UsbDk** on its USB
+page, save, and start the VM again. The page distinguishes the saved backend
+from the running QEMU backend. Before changing backends, unregister existing
+USB selections and select the devices again after restarting; their bus/port
+identifiers are specific to the backend.
+
+The USB list reports registration and actual QEMU attachment separately. A
+pending device can be retried without deleting its registration. Unregistering
+waits for QEMU to release the device before reporting completion. Only selected
+devices are registered for reconnection; moving a device to another port or
+changing the host USB topology can require reselection. Windows input devices
+and the host/VM storage devices are excluded from forwarding.
+
+NAT is the default; bridging needs a TAP
 adapter and explicit bridge setup. Audio uses the host's default devices
 and normal OS permissions. The current VM directory is always visible in
 the footer, with a button to open it.
@@ -81,7 +94,9 @@ runtime tools onto the build host.
 The output is `artifacts/ReimsManager-win-x64.zip`, a SHA256 file and a
 self-check result. Windows CI runs the same commands. Checks cover QMP
 response correlation/errors, stale process identities, settings/profile
-handling, argument quoting, settings-page rendering and backend syntax.
+handling, argument quoting, settings-page rendering and backend syntax. USB
+fixtures cover failed attachment, reconnect retries, asynchronous removal,
+save-failure recovery, stale list responses and transfer-backend changes.
 
 Startup options are `--root <engine-root> --qemu <qemu-executable>` and
 `--open <machine.reimsvm>`. A `.reimsvm` path can also be passed alone.

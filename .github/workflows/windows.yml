@@ -60,6 +60,10 @@ jobs:
           if ($LASTEXITCODE) { throw 'Manager port fixtures failed.' }
           pwsh -NoProfile -File ./backend/tests/state-reliability.ps1
           if ($LASTEXITCODE) { throw 'VM state reliability fixtures failed.' }
+          pwsh -NoProfile -File ./backend/tests/usb.ps1
+          if ($LASTEXITCODE) { throw 'USB selection fixtures failed.' }
+          pwsh -NoProfile -File ./backend/tests/usb-reliability.ps1
+          if ($LASTEXITCODE) { throw 'USB connection and recovery fixtures failed.' }
           pwsh -NoProfile -File ./backend/tests/ssh-paths.ps1
           if ($LASTEXITCODE) { throw 'SSH path fixtures failed.' }
           pwsh -NoProfile -File ./backend/tests/cursor-aid.ps1
@@ -93,6 +97,7 @@ jobs:
             .work/checks-*/result.json
             .work/checks-*/ssh-config.json
             .work/checks-*/settings-reliability-result.json
+            .work/checks-*/usb-workflow-result.json
             .work/checks-*/error.txt
           include-hidden-files: true
           if-no-files-found: warn

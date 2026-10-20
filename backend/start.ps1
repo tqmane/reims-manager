@@ -290,6 +290,7 @@ function Get-ReimsQemuArguments($Config, [string]$RunDirectory, [switch]$Paused,
 
 if ($FunctionsOnly) { return }
 $config = Get-ReimsVmConfig
+$selectedUsbBackend = if ($config.PSObject.Properties['usb_backend'] -and $config.usb_backend -eq 'usbdk') { 'usbdk' } else { 'winusb' }
 if (!$Qemu) { $Qemu = Get-ReimsEnginePath 'qemu' 'build/qemu/qemu-system-x86_64.exe' }
 $Qemu = [IO.Path]::GetFullPath($Qemu)
 if ($script:ReimsEngine -and $Qemu -ne (Get-ReimsEnginePath 'qemu' '')) { throw 'Selected QEMU does not belong to the installed engine package.' }
@@ -338,6 +339,7 @@ $whpx = Get-ReimsWhpxStatus
 $launch = [ordered]@{
     executable = $Qemu; arguments = $qemuArgs; whpx = $whpx
     headless = [bool]$Headless; diagnostic_only = [bool]$DiagnosticTcg
+    usb_backend = $selectedUsbBackend
 }
 if ($DryRun) {
     Write-ReimsJson (Join-Path $ReimsWorkRoot 'diagnostics/vm-launch.json') $launch
@@ -375,7 +377,7 @@ New-Item -ItemType Directory -Force -Path $run | Out-Null
 Write-ReimsJson (Join-Path $run 'command.json') $launch
 $env:REIMS_VGPU_LOG = 'info'
 $env:REIMS_VGPU_STATS = '1'
-if ($config.PSObject.Properties['usb_backend'] -and $config.usb_backend -eq 'usbdk') { $env:REIMS_USB_BACKEND = 'usbdk' }
+if ($selectedUsbBackend -eq 'usbdk') { $env:REIMS_USB_BACKEND = 'usbdk' }
 else { Remove-Item Env:REIMS_USB_BACKEND -ErrorAction SilentlyContinue }
 if ($Headless) { $env:REIMS_VGPU_WINDOW = '0' } else { Remove-Item Env:REIMS_VGPU_WINDOW -ErrorAction SilentlyContinue }
 $process = Start-Process -FilePath $Qemu -ArgumentList (($qemuArgs | ForEach-Object { ConvertTo-ReimsWindowsArgument $_ }) -join ' ') -WorkingDirectory $ProjectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $run 'stdout.log') -RedirectStandardError (Join-Path $run 'stderr.log') -PassThru
@@ -383,6 +385,7 @@ $runtime = [ordered]@{
     pid = $process.Id; start_ticks = $process.StartTime.ToUniversalTime().Ticks; executable = $Qemu
     qmp_port = $config.qmp_port; run_directory = $run; disk = $config.active_disk
     diagnostic_only = [bool]$DiagnosticTcg
+    usb_backend = $selectedUsbBackend
 }
 Write-ReimsJson (Join-Path $VmRoot 'state/runtime.json') $runtime
 try {

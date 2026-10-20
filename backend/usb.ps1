@@ -22,6 +22,14 @@ function Get-ReimsUsbArgument($Device) {
         productid=[Convert]::ToInt32($Device.product,16); 'guest-reset'=$false}
 }
 
+function Assert-ReimsUsbBackendChange($Config, [string]$Backend) {
+    $current=if ($Config.PSObject.Properties['usb_backend']) { [string]$Config.usb_backend } else { 'winusb' }
+    if ($Backend -ne $current -and @(Get-ReimsUsbSelections $Config).Count) {
+        # libusb's Windows backends do not share physical bus/port numbering.
+        throw 'USB の転送方式を変更する前に、登録済み USB の自動接続を解除してください。変更を保存して VM を起動した後、新しい方式の一覧から選び直してください。'
+    }
+}
+
 function Remove-ReimsUsbLaunchArguments([string[]]$Arguments) {
     for ($i=0; $i -lt $Arguments.Count; $i++) {
         if ($Arguments[$i] -eq '-device' -and $i+1 -lt $Arguments.Count -and $Arguments[$i+1].StartsWith('{')) {
@@ -32,10 +40,12 @@ function Remove-ReimsUsbLaunchArguments([string[]]$Arguments) {
     }
 }
 
-function Get-ReimsPnpProperties([string[]]$Instances, [string]$Key) {
+function Get-ReimsPnpProperties([string[]]$Instances, [string]$Key, [switch]$Optional) {
     # WMI rejects large OR queries, so batch within its quota.
     for ($offset=0; $offset -lt $Instances.Count; $offset+=24) {
-        Get-PnpDeviceProperty -InstanceId $Instances[$offset..([math]::Min($offset+23,$Instances.Count-1))] -KeyName $Key -ErrorAction Stop
+        try {
+            Get-PnpDeviceProperty -InstanceId $Instances[$offset..([math]::Min($offset+23,$Instances.Count-1))] -KeyName $Key -ErrorAction $(if ($Optional) {'SilentlyContinue'} else {'Stop'})
+        } catch { if (!$Optional) { throw } }
     }
 }
 
@@ -97,18 +107,69 @@ function ConvertFrom-ReimsUsbInventory([string]$Text, $Names, $Blocked) {
     }
 }
 
+function Get-ReimsUsbObjectStates($Runtime) {
+    $states=@{}
+    $objects=Invoke-ReimsQmp $Runtime qom-list @{path='/machine/peripheral'}
+    foreach ($object in $objects) {
+        if ($object.name -cnotmatch '^hostusb-[0-9]+-[0-9_]+-[0-9a-f]{8}$') { continue }
+        try {
+            # A realized usb-host object can be waiting for a device or have
+            # exhausted its retries. Only USBDevice.attached confirms attachment.
+            $attached=Invoke-ReimsQmp $Runtime qom-get @{path="/machine/peripheral/$($object.name)";property='attached'}
+            if ($attached -isnot [bool]) { throw 'QEMU から USB の接続状態を取得できません。' }
+            $states[$object.name]=[bool]$attached
+        } catch {
+            $failure=$_
+            # Listing is read-only and can race a different Manager's removal.
+            if (!(Get-ReimsVmProcess $Runtime)) { return @{} }
+            $current=Invoke-ReimsQmp $Runtime qom-list @{path='/machine/peripheral'}
+            if ($current | Where-Object name -EQ $object.name) { throw $failure }
+        }
+    }
+    return $states
+}
+
+function Remove-ReimsUsbObject($Runtime, [string]$Id) {
+    Invoke-ReimsQmp $Runtime device_del @{id=$Id} | Out-Null
+    # device_del acknowledges a request; it does not guarantee that the object
+    # has gone. Do not remove its saved registration or reuse its ID until then.
+    for ($attempt=0; $attempt -lt 20; $attempt++) {
+        if (!(Get-ReimsVmProcess $Runtime)) { return }
+        $objects=Invoke-ReimsQmp $Runtime qom-list @{path='/machine/peripheral'}
+        if (!($objects | Where-Object name -EQ $Id)) { return }
+        if ($attempt -lt 19) { Start-Sleep -Milliseconds 100 }
+    }
+    throw 'USB の切断完了を確認できません。登録は保持しています。一覧を更新してから再試行してください。'
+}
+
+function Wait-ReimsUsbAttachment($Runtime, [string]$Id) {
+    # QEMU scans for reconnects every two seconds. Allow one scan, then report
+    # pending honestly instead of turning a driver/open failure into success.
+    for ($attempt=0; $attempt -lt 12; $attempt++) {
+        if (!(Get-ReimsVmProcess $Runtime)) { return $false }
+        $attached=Invoke-ReimsQmp $Runtime qom-get @{path="/machine/peripheral/$Id";property='attached'}
+        if ($attached -isnot [bool]) { throw 'QEMU から USB の接続状態を取得できません。' }
+        if ($attached) { return $true }
+        if ($attempt -lt 11) { Start-Sleep -Milliseconds 250 }
+    }
+    return $false
+}
+
 function Get-ReimsUsbDevices {
     $config = Get-ReimsVmConfig
     $saved = @(Get-ReimsUsbSelections $config)
     $runtime = Get-ReimsRuntime
     $devices = @()
-    if ($runtime -and (Get-ReimsVmProcess $runtime)) {
+    $states=@{}
+    $running=$runtime -and (Get-ReimsVmProcess $runtime)
+    if ($running) {
         $text = Invoke-ReimsQmp $runtime human-monitor-command @{'command-line'='info usbhost'}
         if ($text -match 'not available|unknown command') { throw 'USB 転送に対応した QEMU へ更新してください。' }
+        $states=Get-ReimsUsbObjectStates $runtime
         $names = @{}
         $pnp = @(Get-PnpDevice -PresentOnly | Where-Object InstanceId -Like 'USB\VID_*')
         $descriptions = @{}
-        foreach ($property in Get-ReimsPnpProperties @($pnp | ForEach-Object InstanceId) DEVPKEY_Device_BusReportedDeviceDesc) {
+        foreach ($property in Get-ReimsPnpProperties @($pnp | ForEach-Object InstanceId) DEVPKEY_Device_BusReportedDeviceDesc -Optional) {
             if ($property.PSObject.Properties['Data']) { $descriptions[$property.InstanceId]=$property.Data }
         }
         foreach ($device in $pnp) {
@@ -122,11 +183,34 @@ function Get-ReimsUsbDevices {
     }
     foreach ($device in $saved) {
         $row = $devices | Where-Object id -EQ $device.id | Select-Object -First 1
-        if ($row) { $row.selected=$true; $row.label += ' ［自動接続］' }
+        if ($row) { $row.selected=$true }
         else {
             $devices += [pscustomobject]@{id=$device.id;bus=$device.bus;address=0;port=$device.port;
                 vendor=$device.vendor;product=$device.product;present=$false;selected=$true;
-                label="$($device.label) ［登録済み・接続待ち］"}
+                label=$device.label}
+        }
+    }
+    # A failed save plus failed rollback can leave a live, unsaved watcher.
+    # Keep it visible and removable even if its physical device was unplugged.
+    foreach ($id in $states.Keys) {
+        if ($devices | Where-Object id -EQ $id) { continue }
+        if ($id -cmatch '^hostusb-([1-9][0-9]*)-([1-9][0-9]*(?:_[1-9][0-9]*){0,6})-([0-9a-f]{4})([0-9a-f]{4})$') {
+            $bus=[int]$Matches[1]; $port=$Matches[2].Replace('_','.'); $vendor=$Matches[3]; $product=$Matches[4]
+            $devices += [pscustomobject]@{id=$id;bus=$bus;address=0;port=$port;vendor=$vendor;product=$product;
+                present=$false;selected=$false;label="${vendor}:${product} — USB $bus / $port"}
+        }
+    }
+    foreach ($device in $devices) {
+        $active=$states.ContainsKey($device.id)
+        $attached=$active -and $states[$device.id]
+        $device | Add-Member -Force active ([bool]$active)
+        $device | Add-Member -Force attached ([bool]$attached)
+        if ($attached) { $device.label += $(if ($device.selected) {' ［接続中・自動接続］'} else {' ［接続中・未登録］'}) }
+        elseif ($device.selected -or $active) {
+            $device.label += $(if (!$running) {' ［登録済み・VM 起動待ち］'}
+                elseif ($device.present) {' ［未接続・再接続できます］'}
+                elseif ($active) {' ［自動接続・接続待ち］'}
+                else {' ［登録済み・再接続が必要］'})
         }
     }
     return $devices
@@ -138,25 +222,58 @@ function Set-ReimsUsbSelection([string]$Id, [bool]$Connect) {
     $existing=$saved | Where-Object id -EQ $Id | Select-Object -First 1
     $runtime=Get-ReimsRuntime
     $running=$runtime -and (Get-ReimsVmProcess $runtime)
+    $states=if ($running) { Get-ReimsUsbObjectStates $runtime } else { @{} }
+    $active=$states.ContainsKey($Id)
     if ($Connect) {
-        if ($existing) { 'この USB は自動接続に登録済みです。'; return }
-        $device=Get-ReimsUsbDevices | Where-Object { $_.id -eq $Id -and $_.present } | Select-Object -First 1
+        if (!$running) { throw 'USB を接続するには VM を起動してください。' }
+        if ($existing -and $active -and $states[$Id]) { 'この USB は VM に接続され、自動接続にも登録済みです。'; return }
+        $device=Get-ReimsUsbDevices | Where-Object { $_.id -eq $Id -and ($_.present -or $_.attached) } | Select-Object -First 1
         if (!$device) { throw '選択した USB がありません。一覧を更新してください。' }
         Assert-ReimsUsbSafe @($device)
-        $entry=[pscustomobject]@{id=$device.id;bus=$device.bus;port=$device.port;vendor=$device.vendor;product=$device.product;label=$device.label}
-        Invoke-ReimsQmp $runtime device_add (Get-ReimsUsbArgument $entry) | Out-Null
-        $config | Add-Member -Force usb_devices @($saved + $entry)
-        try { Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config }
-        catch { Invoke-ReimsQmp $runtime device_del @{id=$Id} | Out-Null; throw }
-        '自動接続に登録しました。同じ USB ポートへの再接続と VM の次回起動にも適用します。'
-    } else {
-        if (!$existing) { throw 'この USB は登録されていません。' }
-        if ($running) {
-            $objects=Invoke-ReimsQmp $runtime qom-list @{path='/machine/peripheral'}
-            if ($objects | Where-Object name -EQ $Id) { Invoke-ReimsQmp $runtime device_del @{id=$Id} | Out-Null }
+        $entry=if ($existing) { $existing } else {
+            [pscustomobject]@{id=$device.id;bus=$device.bus;port=$device.port;vendor=$device.vendor;product=$device.product;
+                label=($device.label -replace ' ［[^］]+］$','')}
         }
-        $config | Add-Member -Force usb_devices @($saved | Where-Object id -NE $Id)
-        Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
-        'USB の自動接続を解除しました。Windows に返却します。'
+        $added=$false
+        if (!$active -or !$states[$Id]) {
+            # usb-host stops retrying after three open failures. Explicit Retry
+            # replaces the disconnected watcher so fixing its driver can recover.
+            if ($active) { Remove-ReimsUsbObject $runtime $Id }
+            Invoke-ReimsQmp $runtime device_add (Get-ReimsUsbArgument $entry) | Out-Null
+            $added=$true
+        }
+        if (!$existing) {
+            $config | Add-Member -Force usb_devices @($saved + $entry)
+            try { Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config }
+            catch {
+                $saveFailure=$_
+                if ($added) {
+                    try { Remove-ReimsUsbObject $runtime $Id }
+                    catch { throw "自動接続の保存に失敗し、USB の接続解除も完了していません。一覧を更新して解除してください。保存: $($saveFailure.Exception.Message) / 解除: $($_.Exception.Message)" }
+                }
+                throw $saveFailure
+            }
+        }
+        try { $attached=Wait-ReimsUsbAttachment $runtime $Id }
+        catch { "自動接続の登録は保存済みですが、USB の接続状態を確認できません。一覧を更新してください: $($_.Exception.Message)"; return }
+        if ($attached) { 'USB を VM に接続し、自動接続に登録しました。同じ USB ポートへの再接続と VM の次回起動にも適用します。' }
+        else { '自動接続の登録は保存済みですが、ゲストへの接続は未完了です。転送方式とドライバーを確認し、一覧の「再接続」を試してください。' }
+    } else {
+        if (!$existing -and !$active) { throw 'この USB は登録されていません。' }
+        if ($active) { Remove-ReimsUsbObject $runtime $Id }
+        if ($existing) {
+            $config | Add-Member -Force usb_devices @($saved | Where-Object id -NE $Id)
+            try { Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config }
+            catch {
+                $saveFailure=$_
+                if ($active -and (Get-ReimsVmProcess $runtime)) {
+                    try { Invoke-ReimsQmp $runtime device_add (Get-ReimsUsbArgument $existing) | Out-Null }
+                    catch { throw "USB は切断しましたが、登録解除を保存できず、自動接続も復元できません。登録は残っています。一覧を更新して再試行してください。保存: $($saveFailure.Exception.Message) / 復元: $($_.Exception.Message)" }
+                    throw "USB の登録解除を保存できないため、自動接続を復元しました: $($saveFailure.Exception.Message)"
+                }
+                throw $saveFailure
+            }
+        }
+        'USB の自動接続を解除しました。VM からの切断を確認しました。'
     }
 }

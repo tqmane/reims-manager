@@ -22,4 +22,4 @@ $log = Join-Path $ReimsWorkRoot 'diagnostics/usbdk-install.log'
 $process = Start-Process -FilePath "$env:SystemRoot/System32/msiexec.exe" -ArgumentList "/i `"$installer`" /qn /norestart /L*v `"$log`"" -WindowStyle Hidden -PassThru -Wait
 if ($process.ExitCode -notin @(0,3010)) { throw "USB 転送ドライバーの導入に失敗しました ($($process.ExitCode))。ログ: $log" }
 if ($process.ExitCode -eq 3010) { '導入しました。USB 転送を使用する前に Windows を再起動してください。' }
-else { 'USB 転送ドライバーを導入しました。次回 VM 起動時に使用します。' }
+else { 'USB 転送ドライバーを導入しました。VM の USB 転送方式で UsbDk を選んで保存し、VM を完全終了してから起動してください。' }

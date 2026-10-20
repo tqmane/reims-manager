@@ -158,6 +158,9 @@ if ($Action -eq 'Status') {
         host_cursor_hidden=(Get-ReimsHostCursorHidden);
         microphone=[bool]($config -and $config.PSObject.Properties['microphone'] -and $config.microphone);
         usb_backend=$(if ($config -and $config.PSObject.Properties['usb_backend']) {$config.usb_backend} else {'winusb'});
+        usb_backend_active=$(if ($runtime -and (Get-ReimsVmProcess $runtime) -and $runtime.PSObject.Properties['usb_backend']) {$runtime.usb_backend} else {$null});
+        usb_usbdk_installed=[bool]((Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\UsbDk') -and
+            (Test-Path -LiteralPath "$env:SystemRoot/System32/UsbDkHelper.dll" -PathType Leaf));
         cpus=$(if ($config) {$config.cpus} else {8}); memory_mib=$(if ($config) {$config.memory_mib} else {8192});
         disk_gib=$(if ($config) {$config.disk_gib} else {128}); disk=$(if ($config) {$config.active_disk} else {''});
         audio=$(if ($config -and $config.PSObject.Properties['audio']) {$config.audio} else {'none'});
@@ -358,12 +361,14 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     SetHardware {
         Assert-ReimsVmStopped
+        $savedConfig = Get-ReimsVmConfig
+        Assert-ReimsUsbBackendChange $savedConfig $UsbBackend
         if ($MemoryMiB % 4 -ne 0) { throw 'メモリは 4 MiB 単位で指定してください。' }
         $hostInfo = Get-CimInstance Win32_ComputerSystem
         if ($Cpus -gt $hostInfo.NumberOfLogicalProcessors -or [long]$MemoryMiB * 1MB -ge $hostInfo.TotalPhysicalMemory) { throw 'ホストの CPU / メモリ容量以内で設定してください。' }
         if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
         if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid guest address.' }
-        $selectedNetwork=Get-ReimsSavedNetwork (Get-ReimsVmConfig) $Network $Adapter $GuestHost $PhysicalAdapter
+        $selectedNetwork=Get-ReimsSavedNetwork $savedConfig $Network $Adapter $GuestHost $PhysicalAdapter
         if ($WithInstaller -and !$Iso) { throw 'インストーラーを接続する場合は ISO を選択してください。' }
         if ($Iso) { & "$PSScriptRoot/prepare-vm.ps1" -Iso $Iso | Out-Null }
         $config = Get-ReimsVmConfig

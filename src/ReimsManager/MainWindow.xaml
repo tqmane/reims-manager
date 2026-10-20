@@ -709,24 +709,28 @@
                     <TextBox x:Name="GuestHost" AutomationProperties.Name="macOS の IP アドレスまたはホスト名"/>
                     <Button Content="LAN 接続の準備" Click="OpenBridgeTab" HorizontalAlignment="Left" Margin="0,18,0,0"/>
                   </StackPanel>
-                  <StackPanel x:Name="UsbPage" Visibility="Collapsed">
+                  <StackPanel x:Name="UsbPage" Visibility="Collapsed" IsVisibleChanged="UsbPageVisibilityChanged">
                     <TextBlock Text="USB デバイス" Style="{StaticResource PageHeading}"/>
                     <TextBlock Text="Windows に接続したデバイスを、この VM に接続します。接続中は Windows 側から使用できません。" Style="{StaticResource MutedText}"/>
                     <WrapPanel Margin="0,18,0,12">
-                      <Button Content="デバイス一覧を更新" Click="RefreshUsb" Tag="ListUsb"/>
-                      <Button Content="USB 転送ドライバーを導入…" Click="InstallUsbDk"/>
+                      <Button x:Name="UsbRefreshButton" Content="デバイス一覧を更新" Click="RefreshUsb" Tag="ListUsb"/>
+                      <Button x:Name="InstallUsbDkButton" Content="UsbDk を導入…" Click="InstallUsbDk" Tag="InstallUsbDk"/>
                     </WrapPanel>
-                    <ListBox x:Name="UsbDevices" MinHeight="140" MaxHeight="280" DisplayMemberPath="Label"/>
+                    <ListBox x:Name="UsbDevices" MinHeight="140" MaxHeight="220" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" AutomationProperties.Name="USB デバイスの登録と接続状態">
+                      <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Margin="0,3"/></DataTemplate></ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock x:Name="UsbSelectionHint" Style="{StaticResource MutedText}" Margin="0,10,0,0" Text="一覧を更新してから操作してください。"/>
                     <WrapPanel Margin="0,12,0,0">
-                      <Button Content="自動接続に登録" Click="AttachUsb" Tag="AttachUsb"/>
-                      <Button Content="登録を解除して Windows に戻す" Click="DetachUsb" Tag="DetachUsb"/>
+                      <Button x:Name="UsbAttachButton" Content="接続して自動接続に登録" Click="AttachUsb" Tag="AttachUsb"/>
+                      <Button x:Name="UsbDetachButton" Content="登録を解除して Windows に戻す" Click="DetachUsb" Tag="DetachUsb"/>
                     </WrapPanel>
                     <TextBlock Text="転送方式（変更は次回起動時）" Style="{StaticResource FieldLabel}"/>
                     <ComboBox x:Name="UsbBackend" SelectedIndex="0" AutomationProperties.Name="USB 転送方式">
-                      <ComboBoxItem>WinUSB（対応する機器）</ComboBoxItem>
+                      <ComboBoxItem>WinUSB（機器ごとに対応ドライバーが必要）</ComboBoxItem>
                       <ComboBoxItem>UsbDk（汎用転送・ドライバー導入後）</ComboBoxItem>
                     </ComboBox>
-                    <TextBlock x:Name="UsbHint" Style="{StaticResource MutedText}" Text="USB 転送には Windows 側の対応ドライバーが必要です。"/>
+                    <TextBlock x:Name="UsbBackendHint" Style="{StaticResource MutedText}" Margin="0,8,0,12"/>
+                    <TextBlock x:Name="UsbHint" Style="{StaticResource MutedText}" Text="「デバイス一覧を更新」で、この VM の USB 登録と接続状態を確認します。"/>
                   </StackPanel>
                   <StackPanel x:Name="AudioPage" Visibility="Collapsed">
                     <TextBlock Text="マイク・スピーカー" Style="{StaticResource PageHeading}"/>

@@ -72,6 +72,9 @@ internal static class SelfChecks
                 if (VmActionPolicy.CanRun(action, state, true, true) != expected)
                     throw new Exception("USB listing/removal/attachment policy failed: " + action + " in " + state);
             }
+            if (VmActionPolicy.CanRun("InstallUsbDk", state, true, true) != (state is "stopped" or "unprepared") ||
+                !VmActionPolicy.CanRun("InstallUsbDk", state, false, true) || VmActionPolicy.CanRun("InstallUsbDk", state, true, false))
+                throw new Exception("USB driver installation bypassed the stopped VM policy or required a VM.");
             foreach (string action in new[] { "SetHardware", "SnapshotRestore", "SetIdentity", "ExpandDisk", "ApplyBootProfile", "EnableGuestBridge", "DisableGuestBridge", "RemoveBridge", "InstallTap", "PrepareWifi", "DisableWifi" })
                 if (VmActionPolicy.CanRun(action, state, true, true) != (state == "stopped")) throw new Exception("An offline operation is enabled for " + state);
             foreach (string action in new[] { "EnableCursorAid", "DisableCursorAid", "MoveCursorToMainDisplay", "MoveCursorToExtendedDisplay", "HideHostCursor", "LightenExtendedDisplay", "RestoreExtendedDisplay" })
