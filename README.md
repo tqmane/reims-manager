@@ -58,6 +58,12 @@ The elevated installer returns its result to the Manager, including whether
 Windows must be restarted. If that notice appears, restart Windows before
 using USB transfer; the Manager never restarts the host automatically.
 
+The USB page automatically reads the list after VM status becomes available.
+It also lists Windows devices while the VM is fully stopped, using a bounded,
+device-free QEMU inventory probe with the saved backend. This starts no guest,
+opens no VM disk, and forwards no device. Attachment still requires a running
+VM. A failed lookup reports its error and offers a manual refresh.
+
 The USB list reports registration and actual QEMU attachment separately. A
 pending device can be retried without deleting its registration. Unregistering
 waits for QEMU to release the device before reporting completion. Only selected
