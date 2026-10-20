@@ -34,6 +34,7 @@ public partial class MainWindow
                     Tabs.SelectedIndex = 0; UpdatePowerControls(); await ArrangeCheck();
                     RequireManagementGeometry();
                     SaveImage(Path.Combine(folder, prefix + "-powered-off.png"));
+                    await CheckCommandMenu(PowerMoreButton, Path.Combine(folder, prefix + "-power-more-menu.png"));
                     Tabs.SelectedIndex = 1; Devices.SelectedIndex = 0; UpdatePowerControls(); await ArrangeCheck();
                     RequireSettingsGeometry();
                     if (SettingsSurface.Background is SolidColorBrush card &&
@@ -45,6 +46,8 @@ public partial class MainWindow
                     presentation.ShowConsole(); UpdatePowerControls(); await ArrangeCheck();
                     RequireFocusedGeometry();
                     SaveImage(Path.Combine(folder, prefix + "-powered-on.png"));
+                    await CheckCommandMenu(SessionPowerButton, Path.Combine(folder, prefix + "-session-power-menu.png"));
+                    await CheckCommandMenu(SessionCursorMenuButton, Path.Combine(folder, prefix + "-cursor-menu.png"));
                     currentState = "paused"; State.Text = "一時停止"; UpdatePowerControls(); await ArrangeCheck();
                     RequireFocusedGeometry();
                     if (SessionPauseButton.Tag?.ToString() != "Resume" || !SessionPauseButton.IsEnabled)
@@ -128,6 +131,29 @@ public partial class MainWindow
         }
     }
 #pragma warning restore WPF0001
+
+    private async Task CheckCommandMenu(Button button, string image)
+    {
+        var menu = button.ContextMenu ?? throw new Exception("Command menu is missing");
+        var iconFont = button.FontFamily;
+        double iconSize = button.FontSize;
+        ShowPowerMenu(button, new RoutedEventArgs());
+        try {
+            await ArrangeCheck(); menu.UpdateLayout();
+            if (!menu.IsOpen || !menu.IsVisible || PresentationSource.FromVisual(menu) is null ||
+                menu.ActualWidth <= 0 || menu.ActualHeight <= 0 || menu.ActualWidth > Width || menu.ActualHeight > Height)
+                throw new Exception("Command popup is not realized within the fixture bounds");
+            var items = menu.Items.OfType<MenuItem>().ToArray();
+            if (items.Length is 0 or > 16) throw new Exception("Command popup has an unexpected item count");
+            foreach (Control text in new Control[] { menu }.Concat(items)) {
+                if (text.FontFamily.Source != FontFamily.Source || Math.Abs(text.FontSize - FontSize) > 0.01)
+                    throw new Exception("Command menu text inherited the icon font or size");
+            }
+            if (!button.FontFamily.Equals(iconFont) || button.FontSize != iconSize)
+                throw new Exception("Opening a text menu changed the toolbar icon font");
+            SaveImage(image, menu);
+        } finally { menu.IsOpen = false; await ArrangeCheck(); }
+    }
 
     private async Task CheckCursorAidCard(string folder)
     {
