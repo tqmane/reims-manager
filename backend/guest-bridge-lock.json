@@ -4,7 +4,7 @@
   "release_repository": "tqmane/reims-manager",
   "asset": "ReimsGuestBridge.zip",
   "required_engine_id": "engine-b8b4486c-7100064d-2",
-  "compatible_engine_ids": ["engine-b8b4486c-7100064d-2", "engine-18f8c615-b17ae091-3"],
+  "compatible_engine_ids": ["engine-b8b4486c-7100064d-2", "engine-18f8c615-b17ae091-3", "engine-bf36211a-b17ae091-4"],
   "min_kernel": "25.0.0",
   "max_kernel": "25.99.99",
   "macos": "26.x",
