@@ -54,6 +54,9 @@ page, save, and start the VM again. The page distinguishes the saved backend
 from the running QEMU backend. Before changing backends, unregister existing
 USB selections and select the devices again after restarting; their bus/port
 identifiers are specific to the backend.
+The elevated installer returns its result to the Manager, including whether
+Windows must be restarted. If that notice appears, restart Windows before
+using USB transfer; the Manager never restarts the host automatically.
 
 The USB list reports registration and actual QEMU attachment separately. A
 pending device can be retried without deleting its registration. Unregistering
@@ -96,7 +99,8 @@ self-check result. Windows CI runs the same commands. Checks cover QMP
 response correlation/errors, stale process identities, settings/profile
 handling, argument quoting, settings-page rendering and backend syntax. USB
 fixtures cover failed attachment, reconnect retries, asynchronous removal,
-save-failure recovery, stale list responses and transfer-backend changes.
+save-failure recovery, stale list responses, transfer-backend changes and the
+elevated driver's success/restart/failure results without installing a driver.
 
 Startup options are `--root <engine-root> --qemu <qemu-executable>` and
 `--open <machine.reimsvm>`. A `.reimsvm` path can also be passed alone.

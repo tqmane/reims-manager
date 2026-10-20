@@ -8,7 +8,7 @@ param(
     [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','HideHostCursor','ShowHostCursor','EnableCursorAid','DisableCursorAid','MoveCursorToMainDisplay','MoveCursorToExtendedDisplay','LightenExtendedDisplay','RestoreExtendedDisplay','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
-    [string]$UsbId,
+    [string]$UsbId, [string]$UsbResultPath,
     [string]$Iso,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$')][string]$Name,
     [ValidateSet('1280x720','1920x1080','2560x1440','3840x2160')][string]$Resolution = '1920x1080',
@@ -26,6 +26,7 @@ param(
     [Alias('AcceptDriverTerms')][switch]$AcceptPacketFilterTerms
 )
 $ErrorActionPreference='Stop'
+$usbResultSupplied=$PSBoundParameters.ContainsKey('UsbResultPath')
 if ($ToolsRoot) { $env:REIMS_MANAGER_TOOLS_ROOT = [IO.Path]::GetFullPath($ToolsRoot) }
 if ($Action -eq 'GetWifiMacNat' -and !$VmDirectory) {
     . "$PSScriptRoot/wifi-macnat.ps1"
@@ -58,7 +59,9 @@ if ($Action -eq 'EnableWhpx') {
 }
 if ($Action -eq 'InstallUsbDk' -and !$VmDirectory) {
     $cache=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'ReimsManager/support'
-    & "$PSScriptRoot/install-usbdk.ps1" -CacheDirectory $cache
+    $usbInstallArguments=@{CacheDirectory=$cache}
+    if ($usbResultSupplied) { $usbInstallArguments.ResultPath=$UsbResultPath }
+    & "$PSScriptRoot/install-usbdk.ps1" @usbInstallArguments
     return
 }
 if ($Action -eq 'InstallTap' -and !$VmDirectory) {
@@ -259,7 +262,11 @@ switch ($Action) {
         & "$PSScriptRoot/prepare-tools.ps1" | Out-Null
         'ディスクのコピーを新しい VM に取り込みました。元のファイルは変更していません。'
     }
-    InstallUsbDk { & "$PSScriptRoot/install-usbdk.ps1" }
+    InstallUsbDk {
+        $usbInstallArguments=@{}
+        if ($usbResultSupplied) { $usbInstallArguments.ResultPath=$UsbResultPath }
+        & "$PSScriptRoot/install-usbdk.ps1" @usbInstallArguments
+    }
     ListUsb { ConvertTo-Json -InputObject @(Get-ReimsUsbDevices) -Depth 4 -Compress }
     AttachUsb {
         if (!$UsbId) { $UsbId=(Get-ReimsUsbDevices | Where-Object { $_.bus -eq $UsbBus -and $_.address -eq $UsbAddress } | Select-Object -First 1).id }

@@ -139,7 +139,7 @@ public partial class MainWindow
 
     private sealed record UsbEntry(string Id, string Label, bool Present, bool Selected, bool Active, bool Attached);
     private long usbRequestVersion, usbInventoryContext = -1;
-    private bool refreshingUsb;
+    private bool refreshingUsb, usbDriverRestartPending;
 
     private void ResetUsbInventory()
     {
@@ -184,6 +184,8 @@ public partial class MainWindow
         if ((saved == "UsbDk" || active == "UsbDk" || UsbBackend.SelectedIndex == 1) && latest.ValueKind == JsonValueKind.Object &&
             latest.TryGetProperty("usb_usbdk_installed", out var installed) && installed.ValueKind == JsonValueKind.False)
             UsbBackendHint.Text += "\nUsbDk の導入を確認できません。VM を完全終了して「UsbDk を導入」を実行してください。";
+        if (usbDriverRestartPending)
+            UsbBackendHint.Text += "\nUsbDk の適用には Windows の再起動が必要です。作業を保存してから Windows を再起動してください。";
     }
 
     private async void UsbPageVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -194,8 +196,22 @@ public partial class MainWindow
     private async void InstallUsbDk(object sender, RoutedEventArgs e) => await InstallUsbDkCore();
     private async Task<bool> InstallUsbDkCore()
     {
-        if (IsUiBusy || refreshingUsb || !await Operate("InstallUsbDk", elevate: true)) return false;
-        UsbHint.Text = "UsbDk の導入処理が完了しました。Windows の再起動を求められた場合は再起動し、転送方式で UsbDk を選んで保存してください。";
+        if (IsUiBusy || refreshingUsb) return false;
+        if (!await Operate("InstallUsbDk", elevate: true)) {
+            UsbHint.Text = "UsbDk の導入結果を確認できません。表示されたエラーを確認し、再試行してください。";
+            return false;
+        }
+        if (usbDriverInstallResult is not { } result) {
+            ShowError("UsbDk の導入結果を確認できません。必要条件を再確認してください。");
+            return false;
+        }
+        usbDriverRestartPending |= result.RestartRequired;
+        UsbHint.Text = usbDriverRestartPending
+            ? "UsbDk の導入は完了しました。適用には Windows の再起動が必要です。作業を保存して Windows を再起動し、転送方式で UsbDk を選んで保存してください。"
+            : "UsbDk を導入しました。転送方式で UsbDk を選んで保存し、VM を完全終了してから起動してください。";
+        UpdatePowerControls();
+        if (result.RestartRequired && !selfTest)
+            MessageBox.Show(this, UsbHint.Text, "Windows の再起動が必要です", MessageBoxButton.OK, MessageBoxImage.Information);
         return true;
     }
 

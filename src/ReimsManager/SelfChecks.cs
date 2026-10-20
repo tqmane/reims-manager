@@ -18,6 +18,7 @@ internal static class SelfChecks
         await BackendPipeChecks.Run(Path.Combine(folder, "backend-pipe-checks"));
         await ManagerControlChecks.Run(Path.Combine(folder, "control-target-checks"));
         CheckSafeCreation(folder);
+        CheckUsbDriverResult(folder);
         await CheckQmp(false);
         await CheckQmp(true);
         string runtimeDirectory=Path.Combine(folder,"identity-check","state");
@@ -58,6 +59,39 @@ internal static class SelfChecks
         File.WriteAllText(escaped,"{\"schema\":1,\"name\":\"Escaped\",\"directory\":\"../outside\"}");
         try { VmLibrary.Open(escaped); throw new Exception("A VM path outside its package was accepted"); }
         catch (InvalidDataException) { }
+    }
+
+    private static void CheckUsbDriverResult(string folder)
+    {
+        string receipt = Path.Combine(folder, "usb-install-result.json");
+        void Reject(string json)
+        {
+            File.WriteAllText(receipt, json);
+            try { UsbDriverInstallResult.Read(receipt); throw new Exception("An unconfirmed USB driver result was accepted."); }
+            catch (InvalidDataException) { }
+        }
+        try {
+            foreach (bool restart in new[] { false, true }) {
+                string json = restart
+                    ? "{\"schema\":1,\"installed\":true,\"restart_required\":true,\"exit_code\":3010}"
+                    : "{\"schema\":1,\"installed\":true,\"restart_required\":false,\"exit_code\":0}";
+                File.WriteAllText(receipt, json);
+                if (UsbDriverInstallResult.Read(receipt).RestartRequired != restart || UsbDriverInstallResult.Parse(json).RestartRequired != restart)
+                    throw new Exception("The elevated USB installer reboot requirement was lost.");
+            }
+            foreach (string json in new[] {
+                "", "{}", "not JSON", "[]", new string('x', 4097),
+                "{\"schema\":1,\"installed\":true,\"restart_required\":false,\"exit_code\":3010}",
+                "{\"schema\":1,\"installed\":true,\"restart_required\":true,\"exit_code\":0}",
+                "{\"schema\":1,\"installed\":false,\"restart_required\":false,\"exit_code\":0}",
+                "{\"schema\":1,\"installed\":true,\"restart_required\":false,\"exit_code\":1603}",
+                "{\"schema\":2,\"installed\":true,\"restart_required\":false,\"exit_code\":0}",
+                "{\"schema\":1,\"installed\":true,\"restart_required\":\"false\",\"exit_code\":0}"
+            }) Reject(json);
+            File.Delete(receipt);
+            try { UsbDriverInstallResult.Read(receipt); throw new Exception("A missing USB driver result was accepted."); }
+            catch (InvalidDataException) { }
+        } finally { File.Delete(receipt); }
     }
 
     private static void CheckPolicy()

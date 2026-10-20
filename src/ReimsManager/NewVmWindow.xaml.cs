@@ -12,6 +12,7 @@ public partial class NewVmWindow : Window
     private readonly Func<string, string[], bool, CancellationToken, Task<string>> backend;
     private readonly CancellationTokenSource lifetime = new();
     private SetupRequirements? requirements;
+    private UsbDriverInstallResult? usbDriverInstallResult;
     private bool checking, changingSystem, closed, wantsStart = true;
     internal NewVmRequest? Request { get; private set; }
 
@@ -51,19 +52,30 @@ public partial class NewVmWindow : Window
 
     internal void ApplyRequirements(SetupRequirements value)
     {
+        if (usbDriverInstallResult?.RestartRequired == true)
+            value = value with { RestartRequired = true, StartReady = false };
         requirements = value;
         RequirementsList.ItemsSource = value.Checks;
         EnableWhpxButton.Visibility = value.Checks.Any(x => !x.Ready && x.Action == "EnableWhpx") ? Visibility.Visible : Visibility.Collapsed;
         InstallUsbButton.Visibility = value.Checks.Any(x => !x.Ready && x.Action == "InstallUsbDk") ? Visibility.Visible : Visibility.Collapsed;
-        RequirementsSummary.Text = value.RestartRequired
+        RequirementsSummary.Text = usbDriverInstallResult?.RestartRequired == true && value.Ready
+            ? "UsbDk の適用には Windows の再起動が必要です。VM の作成は進められますが、自動起動は保留します。"
+            : value.RestartRequired
             ? "Windows の再起動が必要です。作業を保存して再起動し、Manager でセットアップを再開してください。エンジンの保存先は記録済みです。"
             : value.Ready ? "必須の準備ができました。USB 転送など任意の機能は後から追加できます。" : "要対応の項目を確認して、再確認してください。VM はまだ作成していません。";
         MemoryPlan.Text = $"割り当て: {value.Cpus} vCPU / {value.MemoryMiB} MiB。Windows の空き RAM: {value.AvailableMemoryMiB?.ToString() ?? "未確認"} MiB。" +
             (value.StartReady ? "" : " 現在は自動起動を保留します。VM の作成はできます。");
         StartAfterCreation.IsEnabled = value.StartReady;
         StartAfterCreation.IsChecked = value.StartReady && wantsStart;
+        if (usbDriverInstallResult is not null) Notice.Text = UsbDriverNotice;
         UpdateBusy();
     }
+
+    private string UsbDriverNotice => usbDriverInstallResult?.RestartRequired == true
+        ? "UsbDk の導入は完了しました。適用には Windows の再起動が必要です。作業を保存して Windows を再起動してください。VM は作成できますが、自動起動は保留します。再起動後、VM の USB 設定で UsbDk を選んで保存してください。"
+        : usbDriverInstallResult is not null
+            ? "UsbDk を導入しました。VM の USB 設定で UsbDk を選んで保存し、VM を完全終了してから起動してください。"
+            : "";
 
     private bool ValidatePlan(out int cpus, out int memory)
     {
@@ -80,23 +92,43 @@ public partial class NewVmWindow : Window
         try {
             string json = await backend("GetPrerequisites", ["-Cpus", cpus.ToString(), "-MemoryMiB", memory.ToString()], false, lifetime.Token);
             if (closed) return false;
-            ApplyRequirements(SetupRequirements.Parse(json)); Notice.Text = "";
+            ApplyRequirements(SetupRequirements.Parse(json)); Notice.Text = UsbDriverNotice;
             return requirements!.Ready;
         } catch (Exception error) {
-            if (!closed) { requirements = null; Notice.Text = error is OperationCanceledException ? "確認が中断されました。再確認できます。" : error.Message; }
+            if (!closed) {
+                requirements = null;
+                Notice.Text = (error is OperationCanceledException ? "確認が中断されました。再確認できます。" : error.Message) +
+                    (usbDriverInstallResult?.RestartRequired == true ? "\n" + UsbDriverNotice : "");
+            }
             return false;
         } finally { checking = false; UpdateBusy(); }
     }
 
     private async void RepairRequirement(object sender, RoutedEventArgs e)
     {
-        if (checking || changingSystem || sender is not FrameworkElement { Tag: string action } ||
-            action is not ("EnableWhpx" or "InstallUsbDk") || requirements?.Checks.Any(x => !x.Ready && x.Action == action) != true) return;
+        if (sender is FrameworkElement { Tag: string action }) await RepairRequirementCore(action);
+    }
+
+    internal async Task<bool> RepairRequirementCore(string action)
+    {
+        if (checking || changingSystem || closed || action is not ("EnableWhpx" or "InstallUsbDk") ||
+            requirements?.Checks.Any(x => !x.Ready && x.Action == action) != true) return false;
         changingSystem = true; Notice.Text = "Windows の確認画面で管理者権限を許可してください。自動再起動は行いません。"; UpdateBusy();
-        try { await backend(action, [], true, CancellationToken.None); }
-        catch (Exception error) { Notice.Text = error.Message; return; }
+        try {
+            string response = await backend(action, [], true, CancellationToken.None);
+            if (action == "InstallUsbDk") {
+                var installed = UsbDriverInstallResult.Parse(response);
+                // A later probe or reinstall cannot prove that Windows restarted.
+                if (usbDriverInstallResult?.RestartRequired != true) usbDriverInstallResult = installed;
+            }
+        }
+        catch (Exception error) {
+            Notice.Text = error.Message + (usbDriverInstallResult?.RestartRequired == true ? "\n" + UsbDriverNotice : "");
+            return false;
+        }
         finally { changingSystem = false; UpdateBusy(); }
         await ReadRequirements();
+        return true;
     }
 
     private async void RefreshRequirementsClick(object sender, RoutedEventArgs e) => await ReadRequirements();

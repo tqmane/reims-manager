@@ -1,6 +1,9 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
 
 namespace ReimsManager;
 
@@ -24,11 +27,14 @@ public partial class MainWindow
         var previousItems = UsbDevices.ItemsSource; var previousSelection = UsbDevices.SelectedItem;
         string previousHint = UsbHint.Text;
         bool previousInventoryCurrent = usbInventoryContext == contextVersion;
+        var previousInstallResult = usbDriverInstallResult;
+        bool previousDriverRestart = usbDriverRestartPending;
         var second = new VmEntry("USB isolation fixture", Path.Combine(folder, "usb-second.reimsvm"), Path.Combine(folder, "usb-second.data"));
         var pending = new Queue<Task<string>>();
         var delayed = new List<TaskCompletionSource<string>>();
         int attachCalls = 0, detachCalls = 0, installCalls = 0;
-        bool failAfterDetach = false, usbdkInstalled = false;
+        bool failAfterDetach = false, usbdkInstalled = false, installRequiresRestart = false;
+        string? installReceiptOverride = null;
         string fixtureState = "running", savedBackend = "winusb", activeBackend = "winusb";
         UsbEntry[] rows = [
             new("hostusb-1-2-04b00422", "04b0:0422 Camera — USB 1 / 2", true, false, false, false),
@@ -57,7 +63,12 @@ public partial class MainWindow
             if (action == "ListUsb") return pending.Count > 0 ? pending.Dequeue() : Task.FromResult(Inventory(rows));
             if (action == "Status") return Task.FromResult(Status());
             if (action == "GetNetworkUplinks") return Task.FromResult("{\"schema\":1,\"uplinks\":[],\"tap_adapters\":[]}");
-            if (action == "InstallUsbDk") { installCalls++; usbdkInstalled = true; return Task.FromResult("Fixture: driver installation completed."); }
+            if (action == "InstallUsbDk") {
+                installCalls++; usbdkInstalled = true;
+                return Task.FromResult(installReceiptOverride ?? JsonSerializer.Serialize(new {
+                    schema = 1, installed = true, restart_required = installRequiresRestart, exit_code = installRequiresRestart ? 3010 : 0
+                }));
+            }
             if (action is "AttachUsb" or "DetachUsb") {
                 var selected = (UsbEntry)UsbDevices.SelectedItem;
                 if (action == "AttachUsb") {
@@ -74,6 +85,7 @@ public partial class MainWindow
         };
         machines.Add(second); UpdateLibraryView();
         try {
+            usbDriverInstallResult = null; usbDriverRestartPending = false;
             hardwareDirty = identityDirty = false;
             latest = JsonSerializer.Deserialize<JsonElement>(Status()); LoadHardware(); loadedHardware = true;
             currentState = fixtureState; Tabs.SelectedIndex = 1; Devices.SelectedIndex = 5; ResetUsbInventory(); UpdatePowerControls();
@@ -113,8 +125,30 @@ public partial class MainWindow
                 throw new Exception("An unplugged USB registration cannot be removed while stopped.");
 
             int selectedBackend = UsbBackend.SelectedIndex;
-            if (!await InstallUsbDkCore() || installCalls != 1 || UsbBackend.SelectedIndex != selectedBackend || hardwareDirty || !UsbHint.Text.Contains("選んで保存", StringComparison.Ordinal))
+            if (!await InstallUsbDkCore() || installCalls != 1 || UsbBackend.SelectedIndex != selectedBackend || hardwareDirty ||
+                !UsbHint.Text.Contains("選んで保存", StringComparison.Ordinal) || !UsbHint.Text.Contains("VM を完全終了", StringComparison.Ordinal) || usbDriverRestartPending)
                 throw new Exception("Installing a driver silently changed the saved USB backend or omitted the next step.");
+            installRequiresRestart = true;
+            await Execute("InstallUsbDk", [], elevate: true);
+            UpdatePowerControls();
+            if (usbDriverInstallResult?.RestartRequired != true || !usbDriverRestartPending ||
+                !UsbBackendHint.Text.Contains("Windows の再起動が必要", StringComparison.Ordinal))
+                throw new Exception("An installation through the wizard callback lost the parent window's restart requirement.");
+            if (!await InstallUsbDkCore() || installCalls != 3 || UsbBackend.SelectedIndex != selectedBackend || hardwareDirty ||
+                !UsbHint.Text.Contains("Windows の再起動が必要", StringComparison.Ordinal))
+                throw new Exception("MSI 3010 was reported without an explicit Windows restart requirement.");
+            await ArrangeCheck(); UsbHint.BringIntoView(); await ArrangeCheck();
+            RequireInside(UsbHint, HardwareScroll, "USB Windows restart requirement");
+            SaveImage(Path.Combine(folder, "usb-driver-restart-required.png"));
+            if (!await RefreshUsbCore() || !UsbBackendHint.Text.Contains("Windows の再起動が必要", StringComparison.Ordinal))
+                throw new Exception("Refreshing USB inventory erased a pending Windows restart.");
+            foreach (string invalid in new[] { "", "{}" }) {
+                installReceiptOverride = invalid;
+                if (await InstallUsbDkCore() || usbDriverInstallResult is not null || !usbDriverRestartPending ||
+                    !ErrorNotice.Text.Contains("導入結果を確認できません", StringComparison.Ordinal) || UsbBackend.SelectedIndex != selectedBackend || hardwareDirty)
+                    throw new Exception("A missing or invalid install receipt was reported as success or reset prior reboot state.");
+            }
+            installReceiptOverride = null; Feedback.Visibility = Visibility.Collapsed;
             savedBackend = "usbdk"; usbdkInstalled = false; fixtureState = currentState = "running";
             latest = JsonSerializer.Deserialize<JsonElement>(Status()); LoadHardware(); UpdatePowerControls();
             if (!UsbBackendHint.Text.Contains("保存済み: UsbDk", StringComparison.Ordinal) || !UsbBackendHint.Text.Contains("実行中: WinUSB", StringComparison.Ordinal) ||
@@ -145,10 +179,13 @@ public partial class MainWindow
             stale.SetResult(Inventory(rows));
             if (await staleRead || UsbDevices.Items.Count != 0 || UsbAttachButton.IsEnabled || UsbDetachButton.IsEnabled)
                 throw new Exception("An in-flight USB response leaked across the VM selection boundary.");
+            await CheckUsbDriverOnboarding(folder);
             File.WriteAllText(Path.Combine(folder, "usb-workflow-result.json"), JsonSerializer.Serialize(new {
                 selection_capabilities = true, actual_attachment_state = true, failed_watcher_reconnect = true,
                 disconnected_registration_removed = true, orphan_watcher_release = true, selection_preserved = true,
                 driver_install_keeps_saved_mode = true, active_mode_separate_from_saved_mode = true,
+                msi_3010_explicit_restart = true, restart_notice_survives_refresh = true,
+                wizard_callback_preserves_parent_restart = true, invalid_install_receipt_rejected = true,
                 failed_operation_reloads_actual_state = true, failed_inventory_disables_actions = true,
                 latest_inventory_wins = true, cross_vm_response_rejected = true
             }));
@@ -165,9 +202,74 @@ public partial class MainWindow
             loadedHardware = wasLoaded; hardwareDirty = wasHardwareDirty; identityDirty = wasIdentityDirty;
             ResetUsbInventory(); UsbDevices.ItemsSource = previousItems; UsbDevices.SelectedItem = previousSelection;
             usbInventoryContext = previousInventoryCurrent ? contextVersion : -1; UsbHint.Text = previousHint;
+            usbDriverInstallResult = previousInstallResult; usbDriverRestartPending = previousDriverRestart;
             currentState = previousState; State.Text = previousStateText; Width = width; Height = height;
             Devices.SelectedIndex = category; Tabs.SelectedIndex = page;
             Feedback.Visibility = Visibility.Collapsed; ClearSettingsFeedback(); UpdatePowerControls();
         }
+    }
+
+    private async Task CheckUsbDriverOnboarding(string folder)
+    {
+        string installer = Path.Combine(folder, "usb-wizard-fixture.iso");
+        File.WriteAllText(installer, "Authored UI fixture; not a bootable installer.");
+        foreach (int exit in new[] { 0, 3010, -1 }) {
+            int installations = 0, queries = 0;
+            bool installed = false;
+            string Requirements(int cpus, int memory)
+            {
+                var json = JsonNode.Parse(OnboardingChecks.Requirements(cpus, memory))!.AsObject();
+                json["checks"]!.AsArray().Single(x => x!["id"]!.GetValue<string>() == "usb")!["ready"] = installed;
+                return json.ToJsonString();
+            }
+            var wizard = new NewVmWindow((action, arguments, elevated, cancellation) => {
+                if (action == "InstallUsbDk" && elevated && !cancellation.CanBeCanceled) {
+                    installations++; installed = true;
+                    return Task.FromResult(exit < 0 ? "" : JsonSerializer.Serialize(new {
+                        schema = 1, installed = true, restart_required = exit == 3010, exit_code = exit
+                    }));
+                }
+                if (action == "GetPrerequisites" && !elevated && cancellation.CanBeCanceled) {
+                    queries++;
+                    return Task.FromResult(Requirements(int.Parse(arguments[1]), int.Parse(arguments[3])));
+                }
+                throw new Exception("Unexpected USB wizard action: " + action);
+            }, checkOnLoad: false) { Owner = this, Opacity = 0, ShowInTaskbar = false };
+            try {
+                wizard.Show();
+                wizard.ParentFolder.Text = Path.Combine(folder, "usb-wizard-" + exit);
+                wizard.Installer.Text = installer;
+                wizard.ApplyRequirements(SetupRequirements.Parse(Requirements(Math.Min(4, Environment.ProcessorCount), 4096)));
+                bool success = await wizard.RepairRequirementCore("InstallUsbDk");
+                if (installations != 1 || success != (exit >= 0)) throw new Exception("USB wizard ignored the install receipt.");
+                if (exit < 0) {
+                    if (queries != 0 || !wizard.Notice.Text.Contains("導入結果を確認できません", StringComparison.Ordinal))
+                        throw new Exception("USB wizard treated a missing result as a completed driver installation.");
+                    continue;
+                }
+                if (!wizard.NextButton.IsEnabled || wizard.InstallUsbButton.Visibility != Visibility.Collapsed ||
+                    wizard.StartAfterCreation.IsEnabled != (exit == 0) || wizard.StartAfterCreation.IsChecked != (exit == 0))
+                    throw new Exception("USB restart handling either blocked VM creation or allowed premature automatic start.");
+                if (exit == 3010) {
+                    if (!wizard.Notice.Text.Contains("Windows の再起動が必要", StringComparison.Ordinal))
+                        throw new Exception("USB wizard hid MSI 3010 after checking installed driver files.");
+                    await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); wizard.UpdateLayout();
+                    var content = (FrameworkElement)wizard.Content;
+                    RequireInside(wizard.NextButton, content, "USB wizard continue action after MSI 3010");
+                    SaveImage(Path.Combine(folder, "usb-wizard-restart-required.png"), content);
+                } else if (!wizard.Notice.Text.Contains("UsbDk を選んで保存", StringComparison.Ordinal) ||
+                    wizard.Notice.Text.Contains("Windows の再起動が必要", StringComparison.Ordinal))
+                    throw new Exception("USB wizard lost the normal install next step or invented a restart requirement.");
+                wizard.NextButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                if (!await wizard.TryCreateRequest() || wizard.Request?.AutoStart != (exit == 0) || queries != 2 ||
+                    exit == 3010 && !wizard.Notice.Text.Contains("Windows の再起動が必要", StringComparison.Ordinal))
+                    throw new Exception("A later wizard prerequisite check erased the USB reboot requirement.");
+            } finally { wizard.Close(); }
+        }
+        File.WriteAllText(Path.Combine(folder, "usb-wizard-result.json"), JsonSerializer.Serialize(new {
+            msi_zero_next_step = true, msi_3010_reboot_notice = true, restart_survives_installed_probe = true,
+            optional_usb_keeps_creation_available = true, reboot_defers_auto_start = true, invalid_receipt_rejected = true,
+            no_host_driver_or_reboot_operations = true
+        }));
     }
 }

@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private JsonElement latest;
     private readonly DispatcherTimer timer = new() { Interval=TimeSpan.FromSeconds(5) };
     private readonly bool selfTest;
+    private UsbDriverInstallResult? usbDriverInstallResult;
 
     public MainWindow(bool test = false)
     {
@@ -43,7 +44,15 @@ public partial class MainWindow : Window
 
     private async Task<string> Execute(string action, string[] arguments, bool elevate = false, string? input = null, CancellationToken cancellation = default)
     {
-        if (selfTest && controlFixtureBackend is not null) return await controlFixtureBackend(action);
+        if (action == "InstallUsbDk") usbDriverInstallResult = null;
+        if (selfTest && controlFixtureBackend is not null) {
+            string result = await controlFixtureBackend(action);
+            if (action == "InstallUsbDk") {
+                usbDriverInstallResult = UsbDriverInstallResult.Parse(result);
+                usbDriverRestartPending |= usbDriverInstallResult.RestartRequired;
+            }
+            return result;
+        }
         if (!HasEngine) throw new InvalidOperationException("先に Reims エンジンを選択してください。");
         if (!HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx" or "InstallUsbDk" or "InstallTap" or "CreateBridge"))
             throw new InvalidOperationException("操作する仮想マシンを選択してください。");
@@ -63,7 +72,32 @@ public partial class MainWindow : Window
         if (elevate) { info.Verb="runas"; info.WindowStyle=ProcessWindowStyle.Hidden; }
         else { info.RedirectStandardOutput=true; info.RedirectStandardError=true; info.StandardOutputEncoding=Encoding.UTF8; info.StandardErrorEncoding=Encoding.UTF8; }
         bool readOnly = action is "Status" or "GetIdentity" or "ListUsb" or "GetPrerequisites" or "GetNetworkUplinks";
-        return await BackendCommand.Run(info, input, readOnly, readOnly ? cancellation : CancellationToken.None);
+        string? usbResultPath = null;
+        try {
+            if (action == "InstallUsbDk") {
+                // An elevated helper cannot return stdout and may run as another user.
+                // Give it a unique, caller-owned receipt instead of guessing its profile.
+                string support = Path.Combine(ManagerSettings.DataDirectory, "support");
+                Directory.CreateDirectory(support);
+                usbResultPath = Path.Combine(support, $"usb-install-{Guid.NewGuid():N}.json");
+                using (File.Open(usbResultPath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
+                info.ArgumentList.Add("-UsbResultPath"); info.ArgumentList.Add(usbResultPath);
+            }
+            string output = await BackendCommand.Run(info, input, readOnly, readOnly ? cancellation : CancellationToken.None);
+            if (usbResultPath is not null) {
+                usbDriverInstallResult = UsbDriverInstallResult.Read(usbResultPath);
+                usbDriverRestartPending |= usbDriverInstallResult.RestartRequired;
+                return usbDriverInstallResult.ToJson();
+            }
+            return output;
+        } finally {
+            if (usbResultPath is not null) {
+                try { File.Delete(usbResultPath); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) {
+                    AppendLog("UsbDk の一時結果ファイルを削除できませんでした: " + error.Message + "\n");
+                }
+            }
+        }
     }
 
     private async Task<bool> Operate(string action, string[]? args = null, bool elevate = false, string? input = null)
