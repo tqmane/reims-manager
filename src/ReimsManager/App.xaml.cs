@@ -1,12 +1,18 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Interop;
 
 namespace ReimsManager;
 
 public partial class App : Application
 {
+    internal const int ConsoleFixtureKeys = 0x8050, ConsoleFixtureFocus = 0x8051;
+    [DllImport("user32.dll", EntryPoint = "SetFocus")] private static extern nint SetFixtureFocus(nint window);
+    [DllImport("user32.dll", EntryPoint = "GetFocus")] private static extern nint GetFixtureFocus();
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -46,7 +52,23 @@ public partial class App : Application
                         Text = "Native console test fixture — not a macOS guest", Margin = new Thickness(32), FontSize = 20
                     }
                 };
-                MainWindow = fixtureWindow; fixtureWindow.Show(); return;
+                MainWindow = fixtureWindow; fixtureWindow.Show();
+                var keys = new Dictionary<(int Message, int Key), int>();
+                ((HwndSource)PresentationSource.FromVisual(fixtureWindow)!).AddHook(Receive);
+                nint Receive(nint window, int message, nint wparam, nint lparam, ref bool handled)
+                {
+                    if (message is 0x0100 or 0x0101 or 0x0104 or 0x0105) {
+                        var key = (message, (int)wparam);
+                        keys[key] = keys.GetValueOrDefault(key) + 1;
+                        handled = true;
+                    } else if (message == ConsoleFixtureKeys) {
+                        handled = true; return keys.GetValueOrDefault(((int)wparam, (int)lparam));
+                    } else if (message == ConsoleFixtureFocus) {
+                        SetFixtureFocus(window); handled = true; return GetFixtureFocus() == window ? 1 : 0;
+                    }
+                    return 0;
+                }
+                return;
             }
             if (e.Args.Length >= 2 && e.Args[0] == "--echo-args") {
                 File.WriteAllText(e.Args[1], JsonSerializer.Serialize(e.Args.Skip(2))); Shutdown(0); return;
