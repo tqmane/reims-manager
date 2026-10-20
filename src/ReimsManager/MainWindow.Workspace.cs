@@ -113,6 +113,11 @@ public partial class MainWindow
     {
         if (IsUiBusy) { ShowError("処理中は閉じられません。ディスクへの書き込みが完了してから閉じてください。"); e.Cancel = true; return; }
         if (!selfTest && !DiscardPendingChanges()) { e.Cancel = true; return; }
+        try { ConsoleView.Detach(); }
+        catch (Exception error) {
+            ShowError("VM 画面を復元できないため、管理ウィンドウを閉じられません。" + error.Message);
+            e.Cancel = true; return;
+        }
         closing = true;
         contextVersion++;
         statusCancellation.Cancel();
