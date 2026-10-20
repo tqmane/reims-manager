@@ -45,6 +45,18 @@ def package(root, pin=READY):
 
 
 class GuestBridgeTests(unittest.TestCase):
+    def test_manager_compatibility_does_not_change_immutable_package_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package(root)
+            manifest = json.loads((root/'bridge-manifest.json').read_text())
+            self.assertNotIn('compatible_engine_ids', manifest)
+            compatible = dict(READY, compatible_engine_ids=[READY['required_engine_id'], 'engine-18f8c615-b17ae091-3'])
+            bridge.verify(root, compatible)
+            changed = dict(compatible, required_engine_id='engine-18f8c615-b17ae091-3')
+            with self.assertRaisesRegex(ValueError, 'pin mismatch: required_engine_id'):
+                bridge.verify(root, changed)
+
     def test_candidate_cannot_be_published_or_applied(self):
         candidate = dict(PIN, release_ready=False, qualified_kernels=[])
         with self.assertRaisesRegex(ValueError, 'still a candidate'):

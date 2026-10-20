@@ -62,13 +62,26 @@ download generic QEMU as a substitute: it lacks the Reims device.
 ## Components and source pins
 
 `backend/engine-lock.json` is the reviewed source of version pins. It selects
-Reims `b8b4486c`, QEMU `7100064d` and metal2vulkan `ea5d6b87`, rather than
+Reims `18f8c615`, QEMU `b17ae091` and metal2vulkan `ea5d6b87`, rather than
 following moving `windows-native-tahoe` branches. The latter runtime is the
 pin in Reims's Cargo manifest; later runtime development commits are not
-silently substituted. Engine `engine-b8b4486c-7100064d-2` is paired with the
-common Metal path. Guest bridge source, recorded qualification and limits are
+silently substituted. The build pin is `engine-18f8c615-b17ae091-3`; a pin
+does not by itself mean its release has been published or qualified.
+Guest bridge source, recorded qualification and limits are
 independently pinned in `guest-bridge-lock.json`; setup checks release readiness
 rather than assuming that any available engine/addon combination is qualified.
+
+`tools/package_engine.py` can reuse existing source-matched builds without
+copying them into a checkout. `--qemu-build` selects the directory containing
+all three QEMU executables, `--qemu-source` selects their pinned checkout, and
+`--reims-dist` selects the corresponding Release dist (`lib/`, `include/`,
+`share/`). Omitting these options preserves the CI layout under the Reims
+source tree. The packager checks clean source revisions, the Cargo runtime pin
+and the dist header, then collects recursive ordinary/delay-load DLL imports
+plus the dynamically loaded Vulkan loader. The caller must retain the actual
+Release build receipt for that source; a matching header alone does not prove
+the DLL was built in Release mode. Runtime qualification and publication are
+separate steps. Existing guest addon compatibility gates remain in effect.
 
 The engine package contains:
 
