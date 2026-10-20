@@ -9,6 +9,8 @@ namespace ReimsManager;
 
 public partial class MainWindow
 {
+    private bool checkingUsbAutoRefresh;
+
     // Real WPF controls with authored inventory/QMP results; no physical USB,
     // guest connection, Windows driver installation or elevation is performed.
     private async Task CheckUsbWorkflow(string folder)
@@ -179,6 +181,7 @@ public partial class MainWindow
             stale.SetResult(Inventory(rows));
             if (await staleRead || UsbDevices.Items.Count != 0 || UsbAttachButton.IsEnabled || UsbDetachButton.IsEnabled)
                 throw new Exception("An in-flight USB response leaked across the VM selection boundary.");
+            await CheckUsbAutoRefresh(entry, second, Status);
             await CheckUsbDriverOnboarding(folder);
             File.WriteAllText(Path.Combine(folder, "usb-workflow-result.json"), JsonSerializer.Serialize(new {
                 selection_capabilities = true, actual_attachment_state = true, failed_watcher_reconnect = true,
@@ -187,7 +190,9 @@ public partial class MainWindow
                 msi_3010_explicit_restart = true, restart_notice_survives_refresh = true,
                 wizard_callback_preserves_parent_restart = true, invalid_install_receipt_rejected = true,
                 failed_operation_reloads_actual_state = true, failed_inventory_disables_actions = true,
-                latest_inventory_wins = true, cross_vm_response_rejected = true
+                latest_inventory_wins = true, cross_vm_response_rejected = true,
+                automatic_after_state_ready = true, automatic_after_operation_complete = true,
+                automatic_after_vm_switch = true, failed_automatic_read_does_not_poll = true
             }));
         } finally {
             foreach (var completion in delayed) completion.TrySetCanceled();
@@ -206,6 +211,109 @@ public partial class MainWindow
             currentState = previousState; State.Text = previousStateText; Width = width; Height = height;
             Devices.SelectedIndex = category; Tabs.SelectedIndex = page;
             Feedback.Visibility = Visibility.Collapsed; ClearSettingsFeedback(); UpdatePowerControls();
+        }
+    }
+
+    private async Task CheckUsbAutoRefresh(VmEntry first, VmEntry second, Func<string> baseStatus)
+    {
+        var previousBackend = controlFixtureBackend;
+        string state = "running";
+        int reads = 0;
+        var responses = new Queue<Task<string>>();
+        var pending = new List<TaskCompletionSource<string>>();
+        var inFlight = new List<Task>();
+        string Inventory(VmEntry entry) => JsonSerializer.Serialize(new[] { new {
+            id = entry == first ? "automatic-first" : "automatic-second", label = "Authored USB inventory",
+            present = true, selected = true, active = false, attached = false
+        }});
+        controlFixtureBackend = action => {
+            if (action == "Status") {
+                var status = JsonNode.Parse(baseStatus())!.AsObject(); status["state"] = state;
+                return Task.FromResult(status.ToJsonString());
+            }
+            if (action == "GetNetworkUplinks") return Task.FromResult("{\"schema\":1,\"uplinks\":[],\"tap_adapters\":[]}");
+            if (action == "Restart") return Task.FromResult("Authored restart completed.");
+            if (action != "ListUsb") throw new Exception("Unexpected automatic USB action: " + action);
+            if (IsUiBusy || refreshing) throw new Exception("USB inventory started before status/operation completion.");
+            reads++;
+            return responses.Count > 0 ? responses.Dequeue() : Task.FromResult(Inventory(selectedEntry!));
+        };
+        async Task FinishAutomaticRead()
+        {
+            await ArrangeCheck();
+            await usbAutoRefreshTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        void OpenWhileUnknown()
+        {
+            currentState = "unknown"; ResetUsbInventory();
+            Tabs.SelectedIndex = 1; Devices.SelectedIndex = 5; UpdatePowerControls();
+        }
+        checkingUsbAutoRefresh = true;
+        try {
+            Library.SelectedItem = first;
+            foreach (string readyState in new[] { "running", "stopped", "shutdown", "paused", "prelaunch", "suspended" }) {
+                int before = reads;
+                OpenWhileUnknown(); await ArrangeCheck();
+                if (!UsbPage.IsVisible || reads != before || UsbDevices.Items.Count != 0)
+                    throw new Exception("Unknown VM state should defer automatic USB discovery on the visible page.");
+                state = readyState;
+                await RefreshState(); await FinishAutomaticRead();
+                if (reads != before + 1 || UsbDevices.Items.Count != 1 || !UsbPage.IsVisible ||
+                    UsbDevices.Items.Cast<UsbEntry>().Single().Id != "automatic-first")
+                    throw new Exception("USB discovery did not run once after unknown became " + readyState);
+                UsbDevices.SelectedIndex = 0; UpdatePowerControls();
+                if (UsbAttachButton.IsEnabled != (readyState == "running") ||
+                    UsbDetachButton.IsEnabled != (readyState is "running" or "stopped"))
+                    throw new Exception("Read-only USB discovery expanded attachment/removal in " + readyState);
+                if (readyState == "stopped" && (UsbAttachButton.IsEnabled || !UsbHint.Text.Contains("Windows", StringComparison.Ordinal)))
+                    throw new Exception("Offline USB discovery either permits attachment or omits the Windows inventory scope.");
+                await RefreshState(false); await FinishAutomaticRead();
+                if (reads != before + 1) throw new Exception("Ordinary status polling repeats successful USB discovery.");
+            }
+
+            currentState = state = "running"; UpdatePowerControls();
+            int beforeOperation = reads;
+            if (!await Operate("Restart")) throw new Exception("Authored operation did not complete.");
+            await FinishAutomaticRead();
+            if (reads != beforeOperation + 1 || completingOperation || busy)
+                throw new Exception("USB discovery was not scheduled once after operation flags cleared.");
+
+            // Leave an old VM's response pending while the real library changes context.
+            var delayed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            pending.Add(delayed); responses.Enqueue(delayed.Task);
+            ResetUsbInventory(); UpdatePowerControls(); await ArrangeCheck();
+            Task staleRead = usbAutoRefreshTask; inFlight.Add(staleRead);
+            int beforeSwitch = reads;
+            if (!refreshingUsb) throw new Exception("The authored old-VM USB request never started.");
+            Library.SelectedItem = second;
+            Tabs.SelectedIndex = 1; Devices.SelectedIndex = 5; UpdatePowerControls(); await ArrangeCheck();
+            if (!UsbPage.IsVisible || currentState != "unknown" || reads != beforeSwitch || UsbDevices.Items.Count != 0)
+                throw new Exception("VM switching did not defer discovery until the new state was ready.");
+            await RefreshState(); await FinishAutomaticRead();
+            delayed.SetResult(Inventory(first)); await staleRead.WaitAsync(TimeSpan.FromSeconds(5));
+            if (reads != beforeSwitch + 1 || UsbDevices.Items.Cast<UsbEntry>().Single().Id != "automatic-second")
+                throw new Exception("Automatic USB discovery leaked an old VM response or missed the new VM.");
+
+            int beforeFailure = reads;
+            OpenWhileUnknown();
+            responses.Enqueue(Task.FromException<string>(new IOException("Authored automatic USB failure.")));
+            await RefreshState(); await FinishAutomaticRead();
+            if (reads != beforeFailure + 1 || UsbDevices.Items.Count != 0 ||
+                !UsbHint.Text.Contains("Authored automatic USB failure.", StringComparison.Ordinal) ||
+                !UsbHint.Text.Contains("再試行", StringComparison.Ordinal))
+                throw new Exception("Automatic USB discovery failure is not visible and recoverable.");
+            for (int turn = 0; turn < 3; turn++) {
+                UpdatePowerControls(); await RefreshState(false); await FinishAutomaticRead();
+            }
+            if (reads != beforeFailure + 1) throw new Exception("A failed USB inventory retries on every status/dispatcher turn.");
+            if (!await RefreshUsbCore() || reads != beforeFailure + 2 || UsbDevices.Items.Count != 1)
+                throw new Exception("Manual USB discovery cannot recover after the automatic attempt failed.");
+        } finally {
+            checkingUsbAutoRefresh = false;
+            foreach (var completion in pending) completion.TrySetCanceled();
+            inFlight.Add(usbAutoRefreshTask);
+            await Task.WhenAll(inFlight).WaitAsync(TimeSpan.FromSeconds(5));
+            controlFixtureBackend = previousBackend;
         }
     }
 
