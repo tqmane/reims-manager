@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 
 
 def pe_imports(path):
@@ -82,23 +83,56 @@ def collect_dlls(seeds, destination, search, system):
     return sorted(seen)
 
 
+def validate_sources(source, qemu_source, lock):
+    for directory, name in ((source, 'reims'), (qemu_source, 'qemu')):
+        head = subprocess.run(['git', '-C', str(directory), 'rev-parse', 'HEAD'],
+                              check=True, capture_output=True, text=True).stdout.strip()
+        changes = subprocess.run(['git', '-C', str(directory), 'status', '--porcelain',
+                                  '--untracked-files=no'], check=True,
+                                 capture_output=True, text=True).stdout.strip()
+        if head != lock['sources'][name]['commit'] or changes:
+            raise ValueError(f'Source revision changed or is dirty: {name}')
+    cargo = (source/'Cargo.toml').read_text(encoding='utf-8')
+    if lock['sources']['metal2vulkan']['commit'] not in cargo:
+        raise ValueError('Reims does not pin the expected graphics runtime')
+
+
 def main():
     parser = argparse.ArgumentParser()
     for name in ('source', 'msys', 'downloads', 'sevenzip', 'output'):
         parser.add_argument('--'+name, type=Path, required=True)
+    parser.add_argument('--qemu-build', type=Path,
+                        help='Existing build of the pinned QEMU (default: SOURCE/build/qemu)')
+    parser.add_argument('--qemu-source', type=Path,
+                        help='Pinned QEMU checkout (default: SOURCE/vendor/qemu)')
+    parser.add_argument('--reims-dist', type=Path,
+                        help='Source-matched Release dist containing lib/, include/ and share/')
     args = parser.parse_args()
     lock = json.loads((Path(__file__).parent.parent/'backend/engine-lock.json').read_text())
+    package_engine(args, lock)
+
+
+def package_engine(args, lock):
+    qemu = args.qemu_build or args.source/'build/qemu'
+    qemu_source = args.qemu_source or args.source/'vendor/qemu'
+    validate_sources(args.source, qemu_source, lock)
+    library = args.reims_dist/'lib' if args.reims_dist else qemu
+    rom = args.reims_dist/'share/reims-vgpu/ReimsVgpu.rom' if args.reims_dist else qemu/'ReimsVgpu.rom'
+    if args.reims_dist:
+        expected = args.source/'crates/reims-vgpu-c/include/reims_vgpu.h'
+        if (args.reims_dist/'include/reims_vgpu.h').read_bytes() != expected.read_bytes():
+            raise ValueError('Release dist header does not match pinned Reims source')
     out = args.output
     out.mkdir(parents=True, exist_ok=False)
     for folder in ('bin', 'share/qemu', 'share/reims', 'downloads', 'licenses'):
         (out/folder).mkdir(parents=True, exist_ok=True)
-    qemu = args.source/'build/qemu'
     runtime = args.msys/'ucrt64/bin'
-    seeds = [qemu/n for n in ('qemu-system-x86_64.exe', 'qemu-img.exe', 'qemu-io.exe', 'reims_vgpu_c.dll')]
+    seeds = [qemu/n for n in ('qemu-system-x86_64.exe', 'qemu-img.exe', 'qemu-io.exe')]
+    seeds += [library/'reims_vgpu_c.dll']
     # Vulkan is loaded dynamically, so the PE import table cannot discover it.
     seeds += [runtime/'vulkan-1.dll', args.sevenzip/'7z.exe', args.sevenzip/'7z.dll']
-    collect_dlls(seeds, out/'bin', [qemu, args.sevenzip, runtime], Path(os.environ['SystemRoot'])/'System32')
-    bios = args.source/'vendor/qemu/pc-bios'
+    collect_dlls(seeds, out/'bin', [library, qemu, args.sevenzip, runtime], Path(os.environ['SystemRoot'])/'System32')
+    bios = qemu_source/'pc-bios'
     for name in ('bios.bin', 'bios-256k.bin', 'vgabios-stdvga.bin', 'kvmvapic.bin', 'efi-e1000.rom', 'efi-e1000e.rom', 'efi-virtio.rom', 'efi-vmxnet3.rom'):
         shutil.copy2(bios/name, out/'share/qemu'/name)
     for name, digest in lock['firmware']['files'].items():
@@ -107,12 +141,12 @@ def main():
             raise ValueError(f'Firmware download changed: {name}')
         target = out/'share/qemu'/name.removesuffix('.bz2')
         target.write_bytes(bz2.decompress(source.read_bytes()) if name.endswith('.bz2') else source.read_bytes())
-    shutil.copy2(qemu/'ReimsVgpu.rom', out/'share/reims/ReimsVgpu.rom')
+    shutil.copy2(rom, out/'share/reims/ReimsVgpu.rom')
     shutil.copy2(args.downloads/lock['opencore']['file'], out/'downloads'/lock['opencore']['file'])
     for name in ('GPL-2.0-or-later.txt', 'GPL-3.0-or-later.txt', 'LGPL-3.0-or-later.txt'):
         # Reims uses SPDX-named LICENSES; fail rather than omit its licenses.
         shutil.copy2(args.source/'LICENSES'/name, out/'licenses'/name)
-    shutil.copy2(args.source/'vendor/qemu/COPYING', out/'licenses/QEMU-COPYING')
+    shutil.copy2(qemu_source/'COPYING', out/'licenses/QEMU-COPYING')
     shutil.copytree(args.msys/'ucrt64/share/licenses', out/'licenses/native-dependencies')
     for name in ('License.txt', 'readme.txt'):
         shutil.copy2(args.sevenzip/name, out/'licenses'/('7zip-'+name))

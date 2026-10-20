@@ -27,7 +27,7 @@ $python=Get-ReimsTool 'python.exe'
 $patch=Join-Path $PSScriptRoot 'opencore/guest-bridge.py'
 if ($Mode -eq 'Enable') {
     Invoke-ReimsTool $python @('-X','utf8',$patch,'check-release','.',$pinPath)
-    if (!$script:ReimsEngine -or $script:ReimsEngine.id -ne $pin.required_engine_id) { throw 'Select the matching portable engine package before applying this guest bridge.' }
+    if (!(Test-ReimsGuestBridgeEngine $pin $script:ReimsEngine)) { throw 'Select the matching portable engine package before applying this guest bridge.' }
 }
 $work=Join-Path $ReimsSupportRoot ('tmp/guest-bridge-'+[guid]::NewGuid().ToString('N'))
 $slot=Join-Path $VmRoot ('firmware/guest-bridge-'+[guid]::NewGuid().ToString('N'))

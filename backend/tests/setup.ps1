@@ -37,6 +37,21 @@ Write-ReimsJson "$VmRoot/state/opencore.json" @{image='qualified-addon-efi'}
 if ($bridgeFailure) { throw 'Addon fixture failure' }
 '@)
     . "$scripts/setup.ps1"
+    . "$scripts/guest-bridge-release.ps1"
+    $bridgePin=Get-ReimsQualifiedGuestBridgeLock
+    $engine2='engine-b8b4486c-7100064d-2';$engine3='engine-18f8c615-b17ae091-3'
+    foreach($id in @($engine2,$engine3)){
+        if(!(Test-ReimsGuestBridgeEngine $bridgePin @{id=$id})){throw 'Explicit compatible engine rejected'}
+    }
+    if((Test-ReimsGuestBridgeEngine $bridgePin @{id='foreign-engine'}) -or (Test-ReimsGuestBridgeEngine $bridgePin @{}) -or (Test-ReimsGuestBridgeEngine $bridgePin @{id=@($engine3)})){throw 'Foreign or untyped engine accepted'}
+    $legacyPin=$bridgePin.Clone();$legacyPin.Remove('compatible_engine_ids')
+    if(!(Test-ReimsGuestBridgeEngine $legacyPin @{id=$engine2}) -or (Test-ReimsGuestBridgeEngine $legacyPin @{id=$engine3})){throw 'Legacy exact engine matching changed'}
+    foreach($badList in @(@{value=$null},@{value=$engine3},@{value=@()},@{value=@($engine2,$engine2)},@{value=@($engine2,$engine2.ToUpperInvariant())},@{value=@($engine3)},@{value=@($engine2,123)})){
+        $badPin=$bridgePin.Clone();$badPin.compatible_engine_ids=$badList.value
+        if(Test-ReimsGuestBridgeEngine $badPin @{id=$engine3}){throw 'Malformed compatibility list accepted'}
+    }
+    $badPin=$bridgePin.Clone();$badPin.required_engine_id='fixture-incompatible-engine'
+    if(Test-ReimsGuestBridgeEngine $badPin @{id=$engine3}){throw 'Changing required engine bypassed the original pin requirement'}
     $script:unavailable=$false; $bridgeFailure=$false; $generationLog=Join-Path $root 'identity-generations.txt'
     $script:ReimsEngine=@{id='engine-b8b4486c-7100064d-2'}
     $VmRoot=Join-Path $root '日本語 VM with spaces'
@@ -49,6 +64,11 @@ if ($bridgeFailure) { throw 'Addon fixture failure' }
     $c=Get-ReimsVmConfig; $marker=Get-Content "$VmRoot/state/setup-preparation.json" -Raw | ConvertFrom-Json
     if ($c.cpus -ne 4 -or $c.memory_mib -ne 4096 -or $c.disk_gib -ne 300 -or $c.opencore -ne 'qualified-addon-efi' -or !$marker.complete -or !(Test-Path "$VmRoot/tools-ready")) { throw 'Setup did not complete the requested hardware/addon/tools plan' }
     if ($c.connect_installer -isnot [bool] -or !$c.connect_installer) { throw 'Fresh setup did not save its required installer preference' }
+    if($marker.engine_id -ne $engine2){throw 'Original engine marker changed'}
+    $script:ReimsEngine=@{id=$engine3}
+    Invoke-ReimsVmSetup $iso 300 4 4096 | Out-Null
+    $marker=Get-Content "$VmRoot/state/setup-preparation.json" -Raw | ConvertFrom-Json
+    if($marker.engine_id -ne $engine3){throw 'Setup marker did not record the actual compatible selected engine'}
     $c.connect_installer=$false
     Write-ReimsJson "$VmRoot/state/config.json" $c
     Invoke-ReimsVmSetup $iso 300 4 4096 | Out-Null
