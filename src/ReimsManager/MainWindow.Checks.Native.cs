@@ -208,19 +208,43 @@ public partial class MainWindow
     private async Task CheckPopupOcclusion(nint window)
     {
         if (!FixtureGetWindowRect(window, out var rect)) throw new Exception("Fixture bounds could not be read");
-        nint sentry = FixtureCreateWindow(0, "static", "Owned unrelated foreground fixture", unchecked((int)0x90000000),
+        // WindowFromPoint deliberately skips static text controls; use an opaque native hit target.
+        nint sentry = FixtureCreateWindow(0, "button", "Owned unrelated foreground fixture", unchecked((int)0x90000000),
             rect.Left + 12, rect.Top + 12, 80, 60, 0, 0, 0, 0);
         if (sentry == 0) throw new Exception("Foreground occlusion fixture could not be created");
         double width = Width;
         try {
             if (!FixtureSetForeground(sentry)) throw new Exception("Occlusion fixture activation was denied");
+            RequireUncovered("before synchronization");
             Width += 8; await ArrangeCheck();
             var state = latest.GetProperty("runtime");
             ConsoleView.Attach(state.GetProperty("pid").GetInt32(), state.GetProperty("start_ticks").GetInt64(), state.GetProperty("executable").GetString()!);
             ConsoleView.UpdateWindowPos();
-            if (FixtureGetForeground() != sentry || FixtureWindowFromPoint(new FixturePoint { X = rect.Left + 20, Y = rect.Top + 20 }) != sentry)
-                throw new Exception("Passive viewport synchronization covered or activated above another foreground window");
+            RequireUncovered("after synchronization");
         } finally { Width = width; FixtureDestroyWindow(sentry); await ArrangeCheck(); }
+
+        void RequireUncovered(string stage)
+        {
+            nint foreground = FixtureGetForeground();
+            var point = new FixturePoint { X = rect.Left + 20, Y = rect.Top + 20 };
+            nint hit = FixtureWindowFromPoint(point);
+            if (foreground != sentry || hit != sentry)
+                throw new Exception("Passive viewport synchronization covered or activated above another foreground window: " +
+                    JsonSerializer.Serialize(new { stage, point = new[] { point.X, point.Y },
+                        foreground = FixtureWindowDetails(foreground), hit = FixtureWindowDetails(hit),
+                        sentry = FixtureWindowDetails(sentry), guest = FixtureWindowDetails(window),
+                        manager = FixtureWindowDetails(new WindowInteropHelper(this).Handle) }));
+        }
+    }
+
+    private static object FixtureWindowDetails(nint window)
+    {
+        var name = new System.Text.StringBuilder(256);
+        FixtureGetClassName(window, name, name.Capacity);
+        bool hasBounds = FixtureGetWindowRect(window, out var bounds);
+        return new { hwnd = (long)window, @class = name.ToString(), owner = (long)FixtureGetWindow(window, 4),
+            visible = FixtureIsWindowVisible(window),
+            bounds = hasBounds ? new[] { bounds.Left, bounds.Top, bounds.Right, bounds.Bottom } : null };
     }
 
     private async Task CheckAcceptedClose(nint window, Process child)
@@ -436,6 +460,7 @@ public partial class MainWindow
     [DllImport("user32.dll", EntryPoint = "IsWindow")] private static extern bool FixtureIsWindow(nint window);
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")] private static extern nint FixtureGetForeground();
     [DllImport("user32.dll", EntryPoint = "WindowFromPoint")] private static extern nint FixtureWindowFromPoint(FixturePoint point);
+    [DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode)] private static extern int FixtureGetClassName(nint window, System.Text.StringBuilder name, int count);
     [DllImport("user32.dll", EntryPoint = "SetForegroundWindow")] private static extern bool FixtureSetForeground(nint window);
     [DllImport("user32.dll", EntryPoint = "SetWindowPos")] private static extern bool FixtureSetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetWindowPlacement")] private static extern bool FixtureGetWindowPlacement(nint window, ref FixturePlacement placement);
