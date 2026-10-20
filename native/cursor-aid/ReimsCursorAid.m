@@ -588,7 +588,8 @@ static int RunAid(double duration) {
         panel.hidesOnDeactivate = NO;
         panel.becomesKeyOnlyIfNeeded = YES;
         panel.level = CGWindowLevelForKey(kCGCursorWindowLevelKey);
-        panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary;
+        panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary |
+            NSWindowCollectionBehaviorStationary;
         NSImageView *view = [[NSImageView alloc] initWithFrame:NSMakeRect(0,0,1,1)];
         view.imageScaling = NSImageScaleNone;
         panel.contentView = view;
