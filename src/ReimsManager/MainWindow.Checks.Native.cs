@@ -12,6 +12,15 @@ public partial class MainWindow
 {
     private bool useFixtureConsole;
 
+    internal async Task CheckOnlyNativeConsole(string folder)
+    {
+        if (!selfTest) throw new InvalidOperationException("Fixture access only");
+        ConfigureEngine(folder, Environment.ProcessPath!);
+        machines.Add(new VmEntry("Owned native console fixture", Path.Combine(folder, "native.reimsvm"), Path.Combine(folder, "native.data")));
+        Library.ItemsSource = machines; Library.SelectedIndex = 0;
+        await CheckNativeConsoleLifecycle(folder);
+    }
+
     // Runs only under --self-test against a newly created child of this executable.
     // This is not a QEMU/macOS, physical USB, GPU or guest-input acceptance test.
     internal async Task CheckNativeConsoleLifecycle(string folder)
@@ -62,6 +71,11 @@ public partial class MainWindow
             if (FixtureGetParent(window) != host || !FixtureIsWindowVisible(window)) throw new Exception("Unknown status hid an already validated console");
             currentState = "running"; UpdatePowerControls();
             PopOutConsole(this, new RoutedEventArgs()); await ArrangeCheck();
+            var popoutClock = Stopwatch.StartNew();
+            while (!FixtureIsWindowVisible(window)) {
+                if (popoutClock.Elapsed > TimeSpan.FromSeconds(5)) throw new Exception("Explicit pop-out did not show the native window");
+                await Task.Delay(10);
+            }
             if (ConsoleView.Attached || FixtureGetParent(window) != 0) throw new Exception("Explicit pop-out did not restore the native window");
             if (((IKeyboardInputSink)ConsoleView).TabInto(new TraversalRequest(FocusNavigationDirection.First)))
                 throw new Exception("A detached console still accepts keyboard focus");
@@ -120,7 +134,10 @@ public partial class MainWindow
             ConsoleView.UpdateWindowPos();
             if (FixtureGetFocus() != sentry) throw new Exception("Passive attach/resize stole focus from a Manager control");
             if (!((IKeyboardInputSink)ConsoleView).TabInto(new TraversalRequest(FocusNavigationDirection.First)))
-                throw new Exception("Tab entry did not focus the embedded console");
+                throw new Exception("Tab entry did not focus the embedded console: " + JsonSerializer.Serialize(new {
+                    visible = ConsoleView.IsVisible, enabled = ConsoleView.IsEnabled,
+                    manager = FixtureFocusState(manager), guest = FixtureFocusState(window)
+                }));
             await CheckFixtureKeyMessages(window);
 
             FixtureSetFocus(sentry); FixtureSetFocus(ConsoleView.Handle);
@@ -152,6 +169,16 @@ public partial class MainWindow
             focus.Focus != window && !FixtureIsChild(window, focus.Focus))
             throw new Exception("The OS keyboard focus is not inside the owned console process");
         return focus.Focus;
+    }
+
+    private static object FixtureFocusState(nint window)
+    {
+        uint thread = FixtureWindowThread(window, out uint pid);
+        var focus = new FixtureGuiThread { Size = (uint)Marshal.SizeOf<FixtureGuiThread>() };
+        Marshal.SetLastPInvokeError(0);
+        bool success = FixtureGetGuiThreadInfo(thread, ref focus);
+        return new { thread, pid, success, error = Marshal.GetLastPInvokeError(),
+            focus = (long)focus.Focus, active = (long)focus.Active, capture = (long)focus.Capture };
     }
 
     private static async Task CheckFixtureKeyMessages(nint window)
@@ -194,7 +221,7 @@ public partial class MainWindow
     [DllImport("user32.dll", EntryPoint = "IsWindowVisible")] private static extern bool FixtureIsWindowVisible(nint window);
     [DllImport("user32.dll", EntryPoint = "GetClientRect")] private static extern bool FixtureGetClientRect(nint window, out FixtureRect rectangle);
     [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")] private static extern uint FixtureWindowThread(nint window, out uint pid);
-    [DllImport("user32.dll", EntryPoint = "GetGUIThreadInfo")] private static extern bool FixtureGetGuiThreadInfo(uint thread, ref FixtureGuiThread info);
+    [DllImport("user32.dll", EntryPoint = "GetGUIThreadInfo", SetLastError = true)] private static extern bool FixtureGetGuiThreadInfo(uint thread, ref FixtureGuiThread info);
     [DllImport("user32.dll", EntryPoint = "GetFocus")] private static extern nint FixtureGetFocus();
     [DllImport("user32.dll", EntryPoint = "SetFocus")] private static extern nint FixtureSetFocus(nint window);
     [DllImport("user32.dll", EntryPoint = "IsChild")] private static extern bool FixtureIsChild(nint parent, nint child);

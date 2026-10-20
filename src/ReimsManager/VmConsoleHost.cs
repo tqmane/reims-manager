@@ -33,12 +33,19 @@ public sealed class VmConsoleHost : HwndHost
         if (candidate == 0) return false;
         originalStyle = GetWindowLongPtr(candidate, -16);
         GetWindowRect(candidate, out originalBounds);
+        // SetParent does not change styles; WS_CHILD must precede reparenting.
         Marshal.SetLastPInvokeError(0);
-        if (SetParent(candidate, Handle) == 0 && Marshal.GetLastPInvokeError() != 0)
-            throw new InvalidOperationException("VM 画面を接続できませんでした。別ウィンドウ表示を使用してください。");
+        if (SetWindowLongPtr(candidate, -16, (nint)(((long)originalStyle & ~0x80CF0000L) | 0x40000000L)) == 0 && Marshal.GetLastPInvokeError() != 0)
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastPInvokeError(), "VM 画面の子ウィンドウ設定に失敗しました。");
+        Marshal.SetLastPInvokeError(0);
+        if (SetParent(candidate, Handle) == 0 && Marshal.GetLastPInvokeError() != 0) {
+            int error = Marshal.GetLastPInvokeError();
+            GetWindowThreadProcessId(candidate, out uint owner);
+            if (owner == pid) SetWindowLongPtr(candidate, -16, originalStyle);
+            throw new System.ComponentModel.Win32Exception(error, "VM 画面を接続できませんでした。別ウィンドウ表示を使用してください。");
+        }
         child = candidate;
         childPid = pid;
-        SetWindowLongPtr(child, -16, (nint)(((long)originalStyle & ~0x80CF0000L) | 0x40000000L));
         ResizeGuest();
         return true;
     }
@@ -50,7 +57,8 @@ public sealed class VmConsoleHost : HwndHost
             SetWindowLongPtr(child, -16, originalStyle);
             SetWindowPos(child, 0, originalBounds.Left, originalBounds.Top,
                 originalBounds.Right-originalBounds.Left, originalBounds.Bottom-originalBounds.Top, 0x0034);
-            ShowWindow(child, 5);
+            // Queue the explicit pop-out show in the owning process, not our startup show state.
+            ShowWindowAsync(child, 5);
         }
         child = 0; childPid = 0;
     }
@@ -98,7 +106,7 @@ public sealed class VmConsoleHost : HwndHost
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(nint window);
     [DllImport("user32.dll")] private static extern nint GetParent(nint window);
     [DllImport("user32.dll")] private static extern nint GetFocus();
-    [DllImport("user32.dll")] private static extern nint SetFocus(nint window);
+    [DllImport("user32.dll", SetLastError=true)] private static extern nint SetFocus(nint window);
     [DllImport("user32.dll")] private static extern bool IsChild(nint parent, nint child);
     [DllImport("user32.dll", SetLastError=true)] private static extern nint SetParent(nint child, nint parent);
     [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);
@@ -106,7 +114,7 @@ public sealed class VmConsoleHost : HwndHost
     [DllImport("user32.dll")] private static extern bool GetWindowRect(nint window, out RectNative bounds);
     [DllImport("user32.dll")] private static extern bool GetClientRect(nint window, out RectNative bounds);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
-    [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);
+    [DllImport("user32.dll")] private static extern bool ShowWindowAsync(nint window, int command);
     [DllImport("user32.dll")] private static extern bool DestroyWindow(nint window);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern nint CreateWindowEx(int extended, string cls, string name, int style, int x, int y, int width, int height, nint parent, nint menu, nint instance, nint param);
 }
