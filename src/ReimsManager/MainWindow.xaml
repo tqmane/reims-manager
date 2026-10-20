@@ -769,7 +769,7 @@
                         <Button x:Name="HideHostCursorButton" Content="Windows 側を隠す" Tag="HideHostCursor" Click="ActionClick"/>
                         <Button x:Name="ShowHostCursorButton" Content="Windows 側を表示" Tag="ShowHostCursor" Click="ActionClick"/>
                       </WrapPanel>
-                      <TextBlock Text="Windows 側の非表示には対応エンジンが必要です。VM の画面内だけに適用します。入力を Windows に戻す: Ctrl + Alt + Home / Ctrl + Alt + Win。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                      <TextBlock Text="対応エンジンで、VM の画面内だけ Windows 側のカーソルを隠します。VM 内にカーソルを表示するには、上の「カーソル互換表示」などゲスト側で描画するカーソルが必要です。入力を Windows に戻す: Ctrl + Alt + Home / Ctrl + Alt + Win。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
                     </StackPanel></Border>
                     <Border x:Name="ExtendedDisplayCard" Style="{StaticResource NoticeCard}" Margin="0,16,0,0"><StackPanel>
                       <TextBlock Text="拡張画面の軽量化" FontSize="18" FontWeight="SemiBold"/>
