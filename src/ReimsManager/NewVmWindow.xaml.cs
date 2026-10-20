@@ -72,7 +72,7 @@ public partial class NewVmWindow : Window
     }
 
     private string UsbDriverNotice => usbDriverInstallResult?.RestartRequired == true
-        ? "UsbDk の導入は完了しました。適用には Windows の再起動が必要です。作業を保存して Windows を再起動してください。VM は作成できますが、自動起動は保留します。再起動後、VM の USB 設定で UsbDk を選んで保存してください。"
+        ? "UsbDk の導入は完了しました。適用には Windows の再起動が必要です。作業を保存して Windows を再起動してください。自動起動は保留します。再起動後、VM の USB 設定で UsbDk を選んで保存してください。"
         : usbDriverInstallResult is not null
             ? "UsbDk を導入しました。VM の USB 設定で UsbDk を選んで保存し、VM を完全終了してから起動してください。"
             : "";
@@ -85,10 +85,12 @@ public partial class NewVmWindow : Window
         return valid;
     }
 
-    private async Task<bool> ReadRequirements()
+    internal async Task<bool> ReadRequirements()
     {
         if (checking || changingSystem || closed || !ValidatePlan(out int cpus, out int memory)) return false;
-        checking = true; Notice.Text = "必要な機能と空きメモリを確認しています…"; UpdateBusy();
+        checking = true; Request = null;
+        RequirementsSummary.Text = Notice.Text = "必要な機能と空きメモリを確認しています…";
+        UpdateBusy();
         try {
             string json = await backend("GetPrerequisites", ["-Cpus", cpus.ToString(), "-MemoryMiB", memory.ToString()], false, lifetime.Token);
             if (closed) return false;
@@ -96,8 +98,16 @@ public partial class NewVmWindow : Window
             return requirements!.Ready;
         } catch (Exception error) {
             if (!closed) {
-                requirements = null;
-                Notice.Text = (error is OperationCanceledException ? "確認が中断されました。再確認できます。" : error.Message) +
+                requirements = null; Request = null;
+                RequirementsList.ItemsSource = null;
+                EnableWhpxButton.Visibility = InstallUsbButton.Visibility = Visibility.Collapsed;
+                StartAfterCreation.IsEnabled = false; StartAfterCreation.IsChecked = false;
+                MemoryPlan.Text = "CPU と空きメモリを確認できていません。再確認が完了するまで自動起動を保留します。";
+                RequirementsSummary.Text = error is OperationCanceledException
+                    ? "必要条件の確認を中断しました。「再確認」でやり直してください。"
+                    : "Windows の準備を確認できませんでした。「再確認」でやり直してください。";
+                Notice.Text = (error is OperationCanceledException ? "必要条件の確認を中断しました。" : "必要条件の確認結果を取得・読み取りできませんでした。") +
+                    "\n詳細: " + error.Message +
                     (usbDriverInstallResult?.RestartRequired == true ? "\n" + UsbDriverNotice : "");
             }
             return false;

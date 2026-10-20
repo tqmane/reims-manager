@@ -101,6 +101,10 @@ handling, argument quoting, settings-page rendering and backend syntax. USB
 fixtures cover failed attachment, reconnect retries, asynchronous removal,
 save-failure recovery, stale list responses, transfer-backend changes and the
 elevated driver's success/restart/failure results without installing a driver.
+Setup checks also exercise real redirected PowerShell output under CP932 and
+UTF-8, including Japanese messages, quoted paths, Unicode input and errors.
+The wizard clears stale readiness after a failed check and supports retrying
+without losing the VM plan or automatic-start preference.
 
 Startup options are `--root <engine-root> --qemu <qemu-executable>` and
 `--open <machine.reimsvm>`. A `.reimsvm` path can also be passed alone.

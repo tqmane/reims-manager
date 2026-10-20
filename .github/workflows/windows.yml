@@ -101,6 +101,8 @@ jobs:
             .work/checks-*/settings-reliability-result.json
             .work/checks-*/usb-workflow-result.json
             .work/checks-*/usb-wizard-result.json
+            .work/checks-*/onboarding-recovery-result.json
+            .work/checks-*/backend-encoding-checks/backend-encoding-result.json
             .work/checks-*/error.txt
           include-hidden-files: true
           if-no-files-found: warn

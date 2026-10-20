@@ -16,6 +16,7 @@ internal static class SelfChecks
         OnboardingChecks.Run(Path.Combine(folder, "onboarding-checks"));
         await CheckBackend();
         await BackendPipeChecks.Run(Path.Combine(folder, "backend-pipe-checks"));
+        await BackendEncodingChecks.Run(Path.Combine(folder, "backend-encoding-checks"));
         await ManagerControlChecks.Run(Path.Combine(folder, "control-target-checks"));
         CheckSafeCreation(folder);
         CheckUsbDriverResult(folder);

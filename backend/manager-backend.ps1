@@ -26,6 +26,10 @@ param(
     [Alias('AcceptDriverTerms')][switch]$AcceptPacketFilterTerms
 )
 $ErrorActionPreference='Stop'
+# GUI pipes use UTF-8 regardless of the Windows console code page.
+$OutputEncoding=[Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding=$OutputEncoding
+[Console]::OutputEncoding=$OutputEncoding
 $usbResultSupplied=$PSBoundParameters.ContainsKey('UsbResultPath')
 if ($ToolsRoot) { $env:REIMS_MANAGER_TOOLS_ROOT = [IO.Path]::GetFullPath($ToolsRoot) }
 if ($Action -eq 'GetWifiMacNat' -and !$VmDirectory) {

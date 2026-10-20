@@ -68,7 +68,7 @@ public partial class MainWindow : Window
         if (HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx")) { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
         info.ArgumentList.Add("-Qemu"); info.ArgumentList.Add(settings.QemuExecutable);
         info.ArgumentList.Add("-ToolsRoot"); info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"runtimes"));
-        if (input is not null) info.RedirectStandardInput=true;
+        if (input is not null) { info.RedirectStandardInput=true; info.StandardInputEncoding=new UTF8Encoding(false); }
         if (elevate) { info.Verb="runas"; info.WindowStyle=ProcessWindowStyle.Hidden; }
         else { info.RedirectStandardOutput=true; info.RedirectStandardError=true; info.StandardOutputEncoding=Encoding.UTF8; info.StandardErrorEncoding=Encoding.UTF8; }
         bool readOnly = action is "Status" or "GetIdentity" or "ListUsb" or "GetPrerequisites" or "GetNetworkUplinks";
