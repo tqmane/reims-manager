@@ -3,6 +3,7 @@
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 . "$PSScriptRoot/../usb.ps1"
+$stoppedProbe=(Get-Command Get-ReimsStoppedUsbInventory).ScriptBlock
 $ProjectRoot=[IO.Path]::GetFullPath("$PSScriptRoot/../..")
 $VmRoot=Join-Path $ProjectRoot ('.work/tmp/usb-reliability-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory((Join-Path $VmRoot 'state'))
@@ -54,6 +55,7 @@ function Write-ReimsJson([string]$Path, $Value) {
 function Get-ReimsVmConfig { Get-Content -Raw -LiteralPath $configPath | ConvertFrom-Json }
 function Get-ReimsRuntime { @{pid=1} }
 function Get-ReimsVmProcess($Runtime) { $script:fixture.Running }
+function Get-ReimsStoppedUsbInventory($Config) { $script:fixture.Inventory }
 function Get-PnpDevice {
     [pscustomobject]@{InstanceId='USB\VID_0FD9&PID_0080\fixture';FriendlyName='Fallback name'}
 }
@@ -215,6 +217,90 @@ try {
     Reject { Set-ReimsUsbSelection $id $true } 'VM を起動してください'
     Set-ReimsUsbSelection $id $false | Out-Null
     Assert (@(Get-ReimsUsbSelections (Get-ReimsVmConfig)).Count -eq 0 -and $script:fixture.Queries -eq $before) 'Stopped unregister must not contact QMP'
+
+    Reset-Fixture
+    $script:fixture.Running=$false;$script:fixture.DescriptionThrows=$true
+    $rows=@(Get-ReimsUsbDevices)
+    Assert ($rows.Count -eq 1 -and $rows[0].present -and !$rows[0].selected -and $rows[0].label -match 'Fallback name') 'Stopped host inventory lost optional PnP fallback'
+    Assert ($script:fixture.Queries -eq 0) 'Stopped inventory queried a recorded VM'
+
+    # The real bounded stdio protocol runs against an authored, device-free
+    # executable. It never invokes QEMU, USB enumeration, drivers or a VM.
+    $probeDirectory=Join-Path $VmRoot 'probe'
+    [void][IO.Directory]::CreateDirectory($probeDirectory)
+    $builder=@'
+param([string]$Output)
+$ErrorActionPreference='Stop'
+Add-Type -OutputAssembly $Output -OutputType ConsoleApplication -TypeDefinition @"
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Threading;
+public static class UsbProbeFixture {
+    public static void Main(string[] args) {
+        Console.OutputEncoding=new UTF8Encoding(false);
+        using(var self=Process.GetCurrentProcess()) {
+            File.WriteAllText(Environment.GetEnvironmentVariable("REIMS_USB_FIXTURE_PID"),self.Id+" "+self.StartTime.ToUniversalTime().Ticks);
+        }
+        if(String.Join("|",args)!="-machine|none|-nodefaults|-display|none|-S|-monitor|none|-qmp|stdio") { Environment.Exit(9); }
+        var expected=Environment.GetEnvironmentVariable("REIMS_USB_FIXTURE_BACKEND");
+        var actual=Environment.GetEnvironmentVariable("REIMS_USB_BACKEND")??"absent";
+        if(actual!=expected) { Environment.Exit(10); }
+        var mode=Environment.GetEnvironmentVariable("REIMS_USB_FIXTURE_MODE");
+        if(mode=="timeout") { Thread.Sleep(30000);return; }
+        if(mode=="early-exit") { Console.Error.WriteLine("fixture native dependency failure");Environment.Exit(7); }
+        if(mode=="stderr-size") { Console.Error.Write(new String('e',20000));Console.Error.Flush();Thread.Sleep(30000);return; }
+        if(mode=="line-size") { Console.WriteLine(new String('x',270000));Console.Out.Flush();Thread.Sleep(30000);return; }
+        Console.WriteLine(mode=="bad-json"?"{not-json}":"{\"QMP\":{}}");Console.Out.Flush();
+        if(Console.ReadLine().IndexOf("qmp_capabilities",StringComparison.Ordinal)<0) { Environment.Exit(11); }
+        if(mode=="qmp-error") { Console.WriteLine("{\"id\":\"usb-caps\",\"error\":{\"class\":\"GenericError\",\"desc\":\"fixture failure\"}}");Console.Out.Flush();Thread.Sleep(30000);return; }
+        Console.WriteLine("{\"event\":\"FIXTURE_EVENT\"}");
+        Console.WriteLine("{\"id\":\"usb-caps\",\"return\":{}}");Console.Out.Flush();
+        var request=Console.ReadLine();
+        if(!request.Contains("human-monitor-command")||!request.Contains("info usbhost")) { Environment.Exit(12); }
+        Console.WriteLine(mode=="result-type"?"{\"id\":\"usb-inventory\",\"return\":42}":"{\"id\":\"usb-inventory\",\"return\":\"日本語 Fixture USB\"}");Console.Out.Flush();
+        var quit=Console.ReadLine();
+        if(!quit.Contains("quit")) { Environment.Exit(13); }
+        if(mode=="exit-timeout") { Thread.Sleep(30000); }
+    }
+}
+"@
+'@
+    $buildScript=Join-Path $probeDirectory 'build.ps1';$probeExe=Join-Path $probeDirectory 'fixture.exe'
+    [IO.File]::WriteAllText($buildScript,$builder,[Text.UTF8Encoding]::new($true))
+    & "$env:SystemRoot/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $buildScript -Output $probeExe
+    if($LASTEXITCODE){throw 'Authored USB protocol fixture failed to compile.'}
+    function Get-ReimsTool([string]$Name){if($Name -cne 'qemu-system-x86_64.exe'){throw 'Wrong probe tool'};return $probeExe}
+    $variables=@('REIMS_USB_BACKEND','REIMS_USB_FIXTURE_PID','REIMS_USB_FIXTURE_MODE','REIMS_USB_FIXTURE_BACKEND')
+    $environmentBefore=@{};foreach($name in $variables){$environmentBefore[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
+    try {
+        $env:REIMS_USB_FIXTURE_PID=Join-Path $probeDirectory 'pid.txt'
+        $env:REIMS_USB_FIXTURE_MODE='success'
+        $env:REIMS_USB_BACKEND='parent-environment-must-stay'
+        foreach($backend in @('winusb','usbdk')){
+            $env:REIMS_USB_FIXTURE_BACKEND=if($backend -eq 'usbdk'){'usbdk'}else{'absent'}
+            $text=& $stoppedProbe ([pscustomobject]@{usb_backend=$backend}) -TimeoutMilliseconds 3000
+            Assert ($text -ceq '日本語 Fixture USB') 'Offline QMP UTF8 text was not preserved'
+            Assert ($env:REIMS_USB_BACKEND -ceq 'parent-environment-must-stay') 'Probe mutated the parent USB backend'
+        }
+        $env:REIMS_USB_FIXTURE_BACKEND='absent'
+        Assert ((& $stoppedProbe ([pscustomobject]@{}) -TimeoutMilliseconds 3000) -ceq '日本語 Fixture USB') 'Missing saved backend did not preserve WinUSB default'
+        foreach($case in @(@('timeout','timed out'),@('early-exit','closed QMP'),@('stderr-size','stderr exceeds'),@('line-size','line exceeds'),@('bad-json','JSON'),@('qmp-error','fixture failure'),@('result-type','not text'),@('exit-timeout','timed out during exit'))){
+            $env:REIMS_USB_FIXTURE_MODE=$case[0]
+            $watch=[Diagnostics.Stopwatch]::StartNew()
+            Reject { & $stoppedProbe ([pscustomobject]@{usb_backend='winusb'}) -TimeoutMilliseconds 1200 } $case[1]
+            Assert ($watch.Elapsed.TotalSeconds -lt 5) 'Offline probe failure was not globally bounded'
+            $identity=([IO.File]::ReadAllText($env:REIMS_USB_FIXTURE_PID)).Split(' ')
+            $owned=Get-Process -Id ([int]$identity[0]) -ErrorAction SilentlyContinue
+            if($owned){try{Assert ($owned.StartTime.ToUniversalTime().Ticks -ne [long]$identity[1] -or $owned.HasExited) 'Owned inventory process survived failure'}finally{$owned.Dispose()}}
+            else{Assert $true 'Owned inventory process exited'}
+        }
+        Reject { & $stoppedProbe ([pscustomobject]@{usb_backend=@('usbdk')}) } 'Invalid saved USB backend'
+        Reject { & $stoppedProbe ([pscustomobject]@{usb_backend='unsupported'}) } 'Invalid saved USB backend'
+    } finally {
+        foreach($name in $variables){[Environment]::SetEnvironmentVariable($name,$environmentBefore[$name],'Process')}
+    }
 
     "$script:checks USB reliability checks passed."
 } finally {

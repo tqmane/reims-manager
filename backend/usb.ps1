@@ -155,6 +155,87 @@ function Wait-ReimsUsbAttachment($Runtime, [string]$Id) {
     return $false
 }
 
+function Get-ReimsStoppedUsbInventory($Config, [ValidateRange(100,15000)][int]$TimeoutMilliseconds=10000) {
+    $backend='winusb'
+    if($Config.PSObject.Properties['usb_backend']){$backend=$Config.usb_backend}
+    if($backend -isnot [string] -or $backend -cnotin @('winusb','usbdk')){throw 'Invalid saved USB backend; select WinUSB or UsbDk in VM settings.'}
+    $info=[Diagnostics.ProcessStartInfo]::new((Get-ReimsTool 'qemu-system-x86_64.exe'))
+    $info.UseShellExecute=$false;$info.CreateNoWindow=$true
+    $info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    $info.StandardOutputEncoding=[Text.UTF8Encoding]::new($false,$true)
+    $info.StandardErrorEncoding=[Text.UTF8Encoding]::new($false,$true)
+    $info.WorkingDirectory=Split-Path $info.FileName
+    foreach($argument in @('-machine','none','-nodefaults','-display','none','-S','-monitor','none','-qmp','stdio')){$info.ArgumentList.Add($argument)}
+    # Do not change this Manager process's backend or silently switch drivers.
+    if($backend -eq 'usbdk'){$info.Environment['REIMS_USB_BACKEND']='usbdk'}else{[void]$info.Environment.Remove('REIMS_USB_BACKEND')}
+    $clock=[Diagnostics.Stopwatch]::StartNew();$process=[Diagnostics.Process]::new();$process.StartInfo=$info
+    $started=$false
+    try{
+        $started=$process.Start()
+        if(!$started){throw 'Could not start the USB inventory probe.'}
+        $io=@{pending='';total=0;errors='';outBuffer=[char[]]::new(4096);errBuffer=[char[]]::new(2048);outTask=$null;errTask=$null;errClosed=$false}
+        # Both redirected streams are drained in bounded chunks. One deadline
+        # includes greeting, replies and process exit, not a timeout per event.
+        $readLine={
+            while($true){
+                $newline=$io.pending.IndexOf("`n")
+                if($newline -gt 262144){throw 'USB inventory QMP line exceeds its size limit.'}
+                if($newline -ge 0){$line=$io.pending.Substring(0,$newline);$io.pending=$io.pending.Substring($newline+1);return $line}
+                if($io.pending.Length -gt 262144){throw 'USB inventory QMP line exceeds its size limit.'}
+                $remaining=$TimeoutMilliseconds-[int]$clock.ElapsedMilliseconds
+                if($remaining -le 0){throw 'USB inventory probe timed out.'}
+                if(!$io.outTask){$io.outTask=$process.StandardOutput.ReadAsync($io.outBuffer,0,$io.outBuffer.Length)}
+                if(!$io.errClosed -and !$io.errTask){$io.errTask=$process.StandardError.ReadAsync($io.errBuffer,0,$io.errBuffer.Length)}
+                $tasks=[Collections.Generic.List[Threading.Tasks.Task]]::new();$tasks.Add($io.outTask)
+                if($io.errTask){$tasks.Add($io.errTask)}
+                $completed=[Threading.Tasks.Task]::WaitAny($tasks.ToArray(),$remaining)
+                if($completed -lt 0){throw 'USB inventory probe timed out.'}
+                if($completed -eq 1){
+                    $count=$io.errTask.GetAwaiter().GetResult();$io.errTask=$null
+                    if(!$count){$io.errClosed=$true}else{$io.errors+=[string]::new($io.errBuffer,0,$count)}
+                    if($io.errors.Length -gt 16384){throw 'USB inventory probe stderr exceeds its size limit.'}
+                    continue
+                }
+                $count=$io.outTask.GetAwaiter().GetResult();$io.outTask=$null
+                if(!$count){throw "USB inventory probe closed QMP before completing. Required native DLLs or the selected USB backend may be unavailable. $($io.errors)"}
+                $io.total+=$count
+                if($io.total -gt 1048576){throw 'USB inventory QMP output exceeds its size limit.'}
+                $io.pending+=[string]::new($io.outBuffer,0,$count)
+            }
+        }
+        $greeting=(& $readLine)|ConvertFrom-Json -AsHashtable
+        if($greeting -isnot [Collections.IDictionary] -or !$greeting.Contains('QMP')){throw 'USB inventory probe did not provide a QMP greeting.'}
+        $text=$null
+        foreach($request in @(@{execute='qmp_capabilities';id='usb-caps'},@{execute='human-monitor-command';arguments=@{'command-line'='info usbhost'};id='usb-inventory'})){
+            $process.StandardInput.WriteLine(($request|ConvertTo-Json -Depth 4 -Compress));$process.StandardInput.Flush()
+            do{
+                $reply=(& $readLine)|ConvertFrom-Json -AsHashtable
+                if($reply -isnot [Collections.IDictionary]){throw 'Invalid USB inventory QMP response.'}
+            }while(!$reply.Contains('id') -or $reply.id -cne $request.id)
+            if($reply.Contains('error')){throw "USB inventory QMP failed: $($reply.error|ConvertTo-Json -Compress)"}
+            if(!$reply.Contains('return')){throw 'USB inventory QMP reply is missing its result.'}
+            if($request.id -eq 'usb-inventory'){
+                if($reply['return'] -isnot [string]){throw 'USB inventory QMP result is not text.'}
+                $text=$reply['return']
+            }
+        }
+        $process.StandardInput.WriteLine('{"execute":"quit","id":"usb-quit"}');$process.StandardInput.Flush()
+        $remaining=[Math]::Max(0,$TimeoutMilliseconds-[int]$clock.ElapsedMilliseconds)
+        if(!$process.WaitForExit($remaining)){throw 'USB inventory probe timed out during exit.'}
+        if($process.ExitCode -ne 0){throw "USB inventory probe failed ($($process.ExitCode)); check native DLLs and the selected USB backend."}
+        return $text
+    }finally{
+        try{
+            if($started -and !$process.HasExited){
+                try{$process.StandardInput.WriteLine('{"execute":"quit","id":"usb-cleanup"}');$process.StandardInput.Flush()}catch{}
+                # This is solely the process we created, never a recorded/user VM.
+                try{$process.Kill($true)}catch [InvalidOperationException]{if(!$process.HasExited){throw}}
+                if(!$process.WaitForExit(2000)){throw 'Owned USB inventory probe did not exit after termination.'}
+            }
+        }finally{$process.Dispose()}
+    }
+}
+
 function Get-ReimsUsbDevices {
     $config = Get-ReimsVmConfig
     $saved = @(Get-ReimsUsbSelections $config)
@@ -164,23 +245,25 @@ function Get-ReimsUsbDevices {
     $running=$runtime -and (Get-ReimsVmProcess $runtime)
     if ($running) {
         $text = Invoke-ReimsQmp $runtime human-monitor-command @{'command-line'='info usbhost'}
-        if ($text -match 'not available|unknown command') { throw 'USB 転送に対応した QEMU へ更新してください。' }
         $states=Get-ReimsUsbObjectStates $runtime
-        $names = @{}
-        $pnp = @(Get-PnpDevice -PresentOnly | Where-Object InstanceId -Like 'USB\VID_*')
-        $descriptions = @{}
-        foreach ($property in Get-ReimsPnpProperties @($pnp | ForEach-Object InstanceId) DEVPKEY_Device_BusReportedDeviceDesc -Optional) {
-            if ($property.PSObject.Properties['Data']) { $descriptions[$property.InstanceId]=$property.Data }
-        }
-        foreach ($device in $pnp) {
-            if ($device.InstanceId -match 'VID_([0-9A-F]{4})&PID_([0-9A-F]{4})') {
-                $key="$($Matches[1]):$($Matches[2])"
-                $description=$descriptions[$device.InstanceId]
-                $names[$key]=if ($description) { $description } else { $device.FriendlyName }
-            }
-        }
-        $devices = @(ConvertFrom-ReimsUsbInventory $text $names (Get-ReimsProtectedUsbIds))
+    } else {
+        $text = Get-ReimsStoppedUsbInventory $config
     }
+    if ($text -match 'not available|unknown command') { throw 'USB 転送に対応した QEMU へ更新してください。' }
+    $names = @{}
+    $pnp = @(Get-PnpDevice -PresentOnly | Where-Object InstanceId -Like 'USB\VID_*')
+    $descriptions = @{}
+    foreach ($property in Get-ReimsPnpProperties @($pnp | ForEach-Object InstanceId) DEVPKEY_Device_BusReportedDeviceDesc -Optional) {
+        if ($property.PSObject.Properties['Data']) { $descriptions[$property.InstanceId]=$property.Data }
+    }
+    foreach ($device in $pnp) {
+        if ($device.InstanceId -match 'VID_([0-9A-F]{4})&PID_([0-9A-F]{4})') {
+            $key="$($Matches[1]):$($Matches[2])"
+            $description=$descriptions[$device.InstanceId]
+            $names[$key]=if ($description) { $description } else { $device.FriendlyName }
+        }
+    }
+    $devices = @(ConvertFrom-ReimsUsbInventory $text $names (Get-ReimsProtectedUsbIds))
     foreach ($device in $saved) {
         $row = $devices | Where-Object id -EQ $device.id | Select-Object -First 1
         if ($row) { $row.selected=$true }
