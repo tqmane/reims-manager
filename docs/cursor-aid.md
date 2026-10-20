@@ -3,7 +3,9 @@
 The optional cursor aid draws the current macOS pointer as ordinary window
 content so screen sharing can include it. It uses the system cursor's image,
 hot spot and visibility. Its panel accepts no mouse or keyboard input, does
-not become the key window, and stays above the Dock and menus. It does not
+not become the key window, and stays above the Dock and menus. Its stationary
+collection behavior keeps Mission Control from moving it with ordinary windows.
+It does not
 automatically move the pointer, hide the native cursor, change capture permissions or
 modify another application.
 
