@@ -103,7 +103,11 @@ internal static class SelfChecks
                     throw new Exception("An operation bypassed its engine/VM prerequisite");
             }
             foreach (string action in new[] { "ListUsb", "DetachUsb", "AttachUsb" }) {
-                bool expected = state == "running" || state == "stopped" && action != "AttachUsb";
+                bool expected = action switch {
+                    "ListUsb" => state is "running" or "stopped" or "shutdown" or "paused" or "prelaunch" or "suspended",
+                    "DetachUsb" => state is "running" or "stopped",
+                    _ => state == "running"
+                };
                 if (VmActionPolicy.CanRun(action, state, true, true) != expected)
                     throw new Exception("USB listing/removal/attachment policy failed: " + action + " in " + state);
             }

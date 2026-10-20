@@ -139,12 +139,16 @@ public partial class MainWindow
 
     private sealed record UsbEntry(string Id, string Label, bool Present, bool Selected, bool Active, bool Attached);
     private long usbRequestVersion, usbInventoryContext = -1;
+    private long usbAutoRefreshAttemptContext = -1;
     private bool refreshingUsb, usbDriverRestartPending;
+    private bool usbAutoRefreshQueued;
+    private Task usbAutoRefreshTask = Task.CompletedTask;
 
     private void ResetUsbInventory()
     {
         usbRequestVersion++;
         usbInventoryContext = -1; refreshingUsb = false;
+        usbAutoRefreshAttemptContext = -1;
         UsbDevices.ItemsSource = null;
         UsbHint.Text = "「デバイス一覧を更新」で、この VM の USB 登録と接続状態を確認します。";
     }
@@ -188,10 +192,24 @@ public partial class MainWindow
             UsbBackendHint.Text += "\nUsbDk の適用には Windows の再起動が必要です。作業を保存してから Windows を再起動してください。";
     }
 
-    private async void UsbPageVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+    private bool UsbAutoRefreshEligible => UsbPage is not null && UsbPage.IsVisible && !IsUiBusy && CanOperate("ListUsb");
+
+    private void ScheduleUsbAutoRefresh()
     {
-        if (UsbPage is not null && UsbPage.IsVisible && !selfTest && !refreshingUsb && CanOperate("ListUsb")) await RefreshUsbCore();
+        if (selfTest && !checkingUsbAutoRefresh) return;
+        if (!UsbAutoRefreshEligible) { usbAutoRefreshAttemptContext = -1; return; }
+        // Polling status or completing this read must not re-arm a failed attempt.
+        if (usbAutoRefreshAttemptContext == contextVersion || usbAutoRefreshQueued || refreshing || refreshingUsb) return;
+        usbAutoRefreshQueued = true;
+        usbAutoRefreshTask = Dispatcher.InvokeAsync(async () => {
+            usbAutoRefreshQueued = false;
+            if (selfTest && !checkingUsbAutoRefresh) return;
+            if (!UsbAutoRefreshEligible || refreshing || refreshingUsb || usbAutoRefreshAttemptContext == contextVersion) return;
+            await RefreshUsbCore();
+        }, DispatcherPriority.Background).Task.Unwrap();
     }
+
+    private void UsbPageVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e) => ScheduleUsbAutoRefresh();
 
     private async void InstallUsbDk(object sender, RoutedEventArgs e) => await InstallUsbDkCore();
     private async Task<bool> InstallUsbDkCore()
@@ -220,6 +238,7 @@ public partial class MainWindow
     {
         if (IsUiBusy || !RequireAction("ListUsb")) return false;
         long version = contextVersion, request = ++usbRequestVersion;
+        usbAutoRefreshAttemptContext = version;
         var cancellation = statusCancellation.Token;
         string? selectedId = (UsbDevices.SelectedItem as UsbEntry)?.Id;
         usbInventoryContext = -1; refreshingUsb = true;
@@ -236,14 +255,14 @@ public partial class MainWindow
             UsbDevices.SelectedItem = devices.FirstOrDefault(x => x.Id == selectedId);
             usbInventoryContext = version;
             UsbHint.Text = currentState == "stopped"
-                ? "停止中は登録済みの機器を表示します。新しい USB を検索・接続するには VM を起動してください。"
+                ? "停止中も Windows に接続した USB と登録済みの未接続機器を確認できます。接続は VM の起動後、登録の解除は停止中も行えます。"
                 : devices.Length == 0 ? "現在の方式では USB を取得できていません。機器の接続・ドライバー・Windows 側で使用中のアプリを確認し、一覧を更新してください。"
                     : "登録はこの VM に保存されます。別の USB ポートへ移した機器は、古い登録を解除して選び直してください。";
             return true;
         } catch (Exception error) {
             if (version == contextVersion && request == usbRequestVersion && !closing) {
                 UsbDevices.ItemsSource = null;
-                UsbHint.Text = error is OperationCanceledException ? "USB の確認を中断しました。一覧を更新して再試行してください。" : "USB の一覧を取得できません。\n" + error.Message;
+                UsbHint.Text = error is OperationCanceledException ? "USB の確認を中断しました。一覧を更新して再試行してください。" : "USB の一覧を取得できません。「デバイス一覧を更新」で再試行してください。\n" + error.Message;
             }
             return false;
         } finally {
