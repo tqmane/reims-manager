@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net;
+using System.Net.NetworkInformation;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -15,6 +17,29 @@ internal static class GuestClipboard
         if (string.IsNullOrWhiteSpace(path) || path.IndexOfAny(['"', '\r', '\n', '\0']) >= 0)
             throw new ArgumentException("Invalid SSH known-hosts path.");
         return "UserKnownHostsFile=\"" + path.Replace('\\', '/') + "\"";
+    }
+
+    internal static string SelectScopedHost(string host, IEnumerable<IPAddress> addresses, int interfaceIndex)
+    {
+        var matching = addresses.Where(address => address.IsIPv6LinkLocal && address.ScopeId == interfaceIndex && interfaceIndex > 0).Distinct().ToArray();
+        return matching.Length switch {
+            0 => host,
+            1 => matching[0].ToString(),
+            _ => throw new InvalidOperationException("専用 TAP 上の macOS 接続先が複数あります。接続設定を確認してください。")
+        };
+    }
+
+    private static async Task<string> ResolveScopedHost(JsonElement network, string host, CancellationToken cancellation)
+    {
+        if (network.ValueKind != JsonValueKind.Object || network.GetProperty("mode").GetString() != "bridge" ||
+            !network.TryGetProperty("forwarder", out var forwarder) || forwarder.GetString() is not ("macnat" or "macnat-ipv4") ||
+            !network.TryGetProperty("tap_id", out var tap) || tap.ValueKind != JsonValueKind.String ||
+            !Guid.TryParse(tap.GetString(), out var tapId) || tapId == Guid.Empty || IPAddress.TryParse(host, out _)) return host;
+        var adapter = NetworkInterface.GetAllNetworkInterfaces().SingleOrDefault(candidate => Guid.TryParse(candidate.Id, out var id) && id == tapId)
+            ?? throw new InvalidOperationException("設定された TAP インターフェースを確認できません。");
+        int index = adapter.GetIPProperties().GetIPv6Properties()?.Index ?? 0;
+        if (index <= 0) throw new InvalidOperationException("設定された TAP の IPv6 インターフェース番号を確認できません。");
+        return SelectScopedHost(host, await Dns.GetHostAddressesAsync(host, cancellation), index);
     }
 
     internal static async Task<string> Transfer(string vmDirectory, string? text, CancellationToken cancellation = default)
@@ -39,6 +64,9 @@ internal static class GuestClipboard
         string user = paired.RootElement.GetProperty("user").GetString() ?? "";
         if (!Regex.IsMatch(user, "^[a-z_][a-z0-9_-]*$") || !Regex.IsMatch(host, "^[A-Za-z0-9][A-Za-z0-9.:-]*$"))
             throw new InvalidOperationException("macOS 接続の設定を確認してください。");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        host = await ResolveScopedHost(network, host, timeout.Token);
         var info = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32/OpenSSH/ssh.exe")) {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
             RedirectStandardOutput = true, RedirectStandardError = true,
@@ -54,8 +82,6 @@ internal static class GuestClipboard
         info.ArgumentList.Add(user + "@" + host);
         info.ArgumentList.Add(text is null ? "LC_CTYPE=en_US.UTF-8 /usr/bin/pbpaste" : "/usr/bin/base64 -D | LC_CTYPE=en_US.UTF-8 /usr/bin/pbcopy");
         using var process = Process.Start(info)!;
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
         using var kill = timeout.Token.Register(() => { try { if (!process.HasExited) process.Kill(); } catch (InvalidOperationException) { } catch (System.ComponentModel.Win32Exception) { } });
         var error = process.StandardError.ReadToEndAsync(timeout.Token);
         // Clipboard contents travel only through stdin/stdout, never argv or logs.

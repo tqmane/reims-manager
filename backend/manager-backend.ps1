@@ -82,10 +82,45 @@ $env:REIMS_VM_ROOT_OVERRIDE = if ($VmDirectory) { [IO.Path]::GetFullPath($VmDire
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
 . "$PSScriptRoot/network-uplinks.ps1"
 
+function Select-ReimsGuestScopedAddress($Addresses,[guid]$TapId,$Interfaces) {
+    $matched=@($Interfaces | Where-Object {
+        $id=[guid]::Empty
+        [guid]::TryParse($_.Id,[ref]$id) -and $id -eq $TapId
+    })
+    if($matched.Count -ne 1){throw '設定された TAP インターフェースを一意に確認できません。'}
+    $index=$matched[0].GetIPProperties().GetIPv6Properties().Index
+    if($index -le 0){throw '設定された TAP の IPv6 インターフェース番号を確認できません。'}
+    $candidates=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($address in $Addresses){
+        if($address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetworkV6 -and $address.IsIPv6LinkLocal -and $address.ScopeId -eq $index){
+            [void]$candidates.Add($address.ToString())
+        }
+    }
+    if($candidates.Count -gt 1){throw '設定された TAP に複数の macOS リンクローカルアドレスがあります。接続先を一意に確認できません。'}
+    foreach($candidate in $candidates){return $candidate}
+    return $null
+}
+
+function Resolve-ReimsGuestScopedAddress([string]$Name,[guid]$TapId) {
+    $interfaces=[Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()
+    $task=[Net.Dns]::GetHostAddressesAsync($Name)
+    if(!$task.Wait(5000)){throw 'macOS の接続先の名前解決が5秒以内に完了しませんでした。'}
+    Select-ReimsGuestScopedAddress ($task.GetAwaiter().GetResult()) $TapId $interfaces
+}
+
 function Get-GuestEndpoint($Config) {
-    if ((Get-ReimsNetworkMode $Config) -eq 'nat') { return @{host='127.0.0.1';port=$Config.ssh_port} }
+    $mode=Get-ReimsNetworkMode $Config
+    if ($mode -eq 'nat') { return @{host='127.0.0.1';port=$Config.ssh_port} }
     if ($Config.network.guest_host -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'ブリッジの macOS IP アドレスを設定してください。' }
-    return @{host=$Config.network.guest_host;port=22}
+    $hostName=$Config.network.guest_host;$literal=$null;$tapId=[guid]::Empty
+    if($mode -ceq 'bridge' -and ![Net.IPAddress]::TryParse($hostName,[ref]$literal) -and $Config.network.PSObject.Properties['forwarder'] -and
+        $Config.network.forwarder -cin @('macnat','macnat-ipv4') -and $Config.network.PSObject.Properties['tap_id'] -and
+        $Config.network.tap_id -is [string] -and
+        [guid]::TryParse([string]$Config.network.tap_id,[ref]$tapId) -and $tapId -ne [guid]::Empty){
+        $scoped=Resolve-ReimsGuestScopedAddress $hostName $tapId
+        if($scoped){$hostName=$scoped}
+    }
+    return @{host=$hostName;port=22}
 }
 
 function Invoke-GuestControl([string]$Operation, [string]$Command, [string]$InputJson) {

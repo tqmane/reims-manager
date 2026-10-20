@@ -76,7 +76,7 @@ public partial class MainWindow
             }
             token.ThrowIfCancellationRequested();
             ClipboardStatus.Text = "テキストを共有しています。";
-        } catch (OperationCanceledException) { }
+        } catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception error) { if (!token.IsCancellationRequested && !closing) ClipboardStatus.Text = error.Message; }
         finally { clipboardBusy = false; }
     }
@@ -86,7 +86,7 @@ public partial class MainWindow
         if (clipboardBusy || busy || !HasVm || !HasEngine || currentState != "running") return; clipboardBusy = true;
         var token = clipboardCancel.Token;
         try { if (Clipboard.ContainsText()) { await GuestClipboard.Transfer(VmDirectory, Clipboard.GetText(), token); token.ThrowIfCancellationRequested(); ClipboardStatus.Text = "macOS にコピーしました。"; } }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception error) { if (!token.IsCancellationRequested && !closing) ClipboardStatus.Text = error.Message; }
         finally { clipboardBusy = false; }
     }
@@ -95,7 +95,7 @@ public partial class MainWindow
         if (clipboardBusy || busy || !HasVm || !HasEngine || currentState != "running") return; clipboardBusy = true;
         var token = clipboardCancel.Token;
         try { string text = await GuestClipboard.Transfer(VmDirectory, null, token); token.ThrowIfCancellationRequested(); if (text.Length > 0) Clipboard.SetText(text); ClipboardStatus.Text = "Windows にコピーしました。"; }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception error) { if (!token.IsCancellationRequested && !closing) ClipboardStatus.Text = error.Message; }
         finally { clipboardBusy = false; }
     }

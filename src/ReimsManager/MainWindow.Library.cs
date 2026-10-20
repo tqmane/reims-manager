@@ -204,7 +204,12 @@ public partial class MainWindow
         } catch (Exception error) { ShowError(error.Message); }
     }
 
-    private void ShowPowerMenu(object sender, RoutedEventArgs e) { var menu = ((Button)sender).ContextMenu; menu.PlacementTarget = (Button)sender; menu.IsOpen = true; }
+    private void ShowPowerMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = ((Button)sender).ContextMenu;
+        menu.FontFamily = FontFamily; menu.FontSize = FontSize;
+        menu.PlacementTarget = (Button)sender; menu.IsOpen = true;
+    }
     private void PrepareStartConsole()
     {
         consoleDetached = false; presentation.ShowConsole(); Tabs.SelectedIndex = 0;
