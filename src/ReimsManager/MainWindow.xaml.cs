@@ -361,6 +361,7 @@ public partial class MainWindow : Window
             ConsoleDescription.Text = "登録は保持しています。保存先を接続してライブラリを更新するか、「VM を開く」で移動先の .reimsvm を選択してください。";
         }
         UpdateWorkspacePresentation();
+        ScheduleUsbAutoRefresh();
     }
 
     private void DismissError(object sender,RoutedEventArgs e) { Feedback.Visibility=Visibility.Collapsed; }
