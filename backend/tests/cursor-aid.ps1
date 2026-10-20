@@ -1,7 +1,8 @@
 #Requires -Version 7.2
 # Real helper/function bodies with synthetic payloads and a function replacing ssh.exe.
 $ErrorActionPreference='Stop'
-$work=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp/cursor-aid-"+[guid]::NewGuid().ToString('N'))
+$testParent=Join-Path ([IO.Path]::GetTempPath()) 'reims-cursor-aid-tests'
+$work=Join-Path $testParent ([guid]::NewGuid().ToString('N'))
 $oldTools=$env:REIMS_MANAGER_TOOLS_ROOT
 [void][IO.Directory]::CreateDirectory($work)
 function Assert-True($Value,[string]$Message){if(!$Value){throw $Message}}
@@ -63,6 +64,60 @@ try {
 
     # Extract the actual private function; replace only its fixed executable for an offline argv/stdin spy.
     $ast=[scriptblock]::Create((Get-Content -Raw "$PSScriptRoot/../manager-backend.ps1")).Ast
+    foreach($name in @('Select-ReimsGuestScopedAddress','Get-GuestEndpoint')){
+        $definition=$ast.Find({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
+        . ([scriptblock]::Create($definition.Extent.Text))
+    }
+    function Fake-Interface([string]$Id,[int]$Index){
+        $properties=[pscustomobject]@{FixtureIndex=$Index}
+        $properties|Add-Member ScriptMethod GetIPv6Properties {[pscustomobject]@{Index=$this.FixtureIndex}}
+        $nic=[pscustomobject]@{Id=$Id;FixtureProperties=$properties}
+        $nic|Add-Member ScriptMethod GetIPProperties {$this.FixtureProperties}
+        return $nic
+    }
+    $tapId=[guid]'11111111-1111-4111-8111-111111111111'
+    $script:EndpointInterfaces=@((Fake-Interface $tapId.ToString('B') 73),(Fake-Interface '22222222-2222-4222-8222-222222222222' 74))
+    $script:EndpointAddresses=@('192.0.2.10','2001:db8::1','fe80::42%74','fe80::42%73','FE80::42%73')|ForEach-Object {[Net.IPAddress]::Parse($_)}
+    Assert-True ((Select-ReimsGuestScopedAddress $script:EndpointAddresses $tapId $script:EndpointInterfaces) -ceq 'fe80::42%73') 'Distinct same-TAP scope was not preferred'
+    $foreignOnly=@([Net.IPAddress]::Parse('fe80::42%74'),[Net.IPAddress]::Parse('fe80::42'))
+    Assert-True ($null -eq (Select-ReimsGuestScopedAddress $foreignOnly $tapId $script:EndpointInterfaces)) 'Foreign or unscoped link-local address was adopted'
+    Reject {Select-ReimsGuestScopedAddress @([Net.IPAddress]::Parse('fe80::42%73'),[Net.IPAddress]::Parse('fe80::43%73')) $tapId $script:EndpointInterfaces}
+    Reject {Select-ReimsGuestScopedAddress $script:EndpointAddresses $tapId @()}
+    Reject {Select-ReimsGuestScopedAddress $script:EndpointAddresses $tapId @($script:EndpointInterfaces[0],$script:EndpointInterfaces[0])}
+    Reject {Select-ReimsGuestScopedAddress $script:EndpointAddresses $tapId @((Fake-Interface $tapId.ToString('D') 0))}
+    function Get-ReimsNetworkMode($Config){$Config.network.mode}
+    $script:ScopedCalls=0
+    function Resolve-ReimsGuestScopedAddress($Name,$Tap){
+        $script:ScopedCalls++
+        Assert-True ($Name -ceq 'fixture.invalid' -and $Tap -eq $tapId) 'Scoped resolver received another configured host/TAP'
+        Select-ReimsGuestScopedAddress $script:EndpointAddresses $Tap $script:EndpointInterfaces
+    }
+    $endpointConfig=[pscustomobject]@{ssh_port=2222;network=[pscustomobject]@{mode='bridge';forwarder='macnat';tap_id=$tapId.ToString('B');guest_host='fixture.invalid'}}
+    Assert-True ((Get-GuestEndpoint $endpointConfig).host -ceq 'fe80::42%73') 'macnat endpoint did not use the scoped result'
+    $endpointConfig.network.forwarder='macnat-ipv4'
+    Assert-True ((Get-GuestEndpoint $endpointConfig).host -ceq 'fe80::42%73') 'Legacy macnat endpoint policy differs'
+    $savedAddresses=$script:EndpointAddresses;$script:EndpointAddresses=$foreignOnly
+    Assert-True ((Get-GuestEndpoint $endpointConfig).host -ceq 'fixture.invalid') 'No matching LL did not retain configured host'
+    $script:EndpointAddresses=$savedAddresses
+    $before=$script:ScopedCalls
+    $endpointConfig.network.forwarder='windows-bridge'
+    Assert-True ((Get-GuestEndpoint $endpointConfig).host -ceq 'fixture.invalid') 'Wired host changed'
+    $endpointConfig.network.forwarder='macnat';$endpointConfig.network.tap_id='invalid-guid'
+    Assert-True ((Get-GuestEndpoint $endpointConfig).host -ceq 'fixture.invalid') 'Invalid TAP was used for scoped lookup'
+    $endpointConfig.network.tap_id=@($tapId.ToString('B'))
+    Assert-True ((Get-GuestEndpoint $endpointConfig).host -ceq 'fixture.invalid') 'Untyped TAP was used for scoped lookup'
+    $endpointConfig.network.tap_id=$tapId.ToString('B')
+    $endpointConfig.network.mode='unknown'
+    Assert-True ((Get-GuestEndpoint $endpointConfig).host -ceq 'fixture.invalid') 'Non-bridge mode was used for scoped lookup'
+    $endpointConfig.network.mode='bridge'
+    foreach($literal in @('192.0.2.10','2001:db8::1','fe80::42')){
+        $endpointConfig.network.guest_host=$literal
+        Assert-True ((Get-GuestEndpoint $endpointConfig).host -ceq $literal) 'Literal endpoint was changed'
+    }
+    $endpointConfig.network.guest_host='fixture.invalid';$endpointConfig.network.mode='nat'
+    $nat=Get-GuestEndpoint $endpointConfig
+    Assert-True ($nat.host -ceq '127.0.0.1' -and $nat.port -eq 2222 -and $script:ScopedCalls -eq $before) 'NAT/wired/literal performed DNS or changed endpoint'
+    $endpointConfig.network.mode='bridge'
     $body=$ast.Find({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-GuestControl'},$true).Extent.Text
     $body=$body.Replace('$ssh = "$env:SystemRoot/System32/OpenSSH/ssh.exe"', '$ssh = ''Test-ReimsCursorSsh''')
     . ([scriptblock]::Create($body))
@@ -89,6 +144,12 @@ try {
     Assert-True ('-n' -cnotin $script:SshArguments -and '-T' -cin $script:SshArguments -and $script:SshInput.Count -eq 1 -and $script:SshInput[0] -ceq '{"typed":"日本語"}') 'Bounded stdin did not reach SSH intact'
     foreach($required in @('StrictHostKeyChecking=yes','BatchMode=yes','IdentitiesOnly=yes','HostKeyAlias=reims-fixture','fixture@fixture.invalid')){Assert-True ($required -cin $script:SshArguments) 'Strict paired SSH configuration changed'}
     Assert-True (($script:SshArguments|Where-Object{$_ -like 'UserKnownHostsFile=*'}) -ceq (Get-ReimsSshKnownHostsOption (Join-Path $VmRoot 'state/known_hosts'))) 'Quoted host path changed'
+    # Reuse the actual endpoint function in the strict SSH argv fixture too.
+    $endpointBody=$ast.Find({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-GuestEndpoint'},$true).Extent.Text
+    . ([scriptblock]::Create($endpointBody))
+    function Get-ReimsVmConfig {$endpointConfig}
+    Invoke-GuestControl -Command 'fixed command' | Out-Null
+    foreach($required in @('StrictHostKeyChecking=yes','BatchMode=yes','IdentitiesOnly=yes','HostKeyAlias=reims-fixture','fixture@fe80::42%73')){Assert-True ($required -cin $script:SshArguments) 'Scoped endpoint changed paired SSH authentication'}
     Invoke-GuestControl '-r' | Out-Null
     Assert-True ('-n' -cin $script:SshArguments -and $script:SshArguments[-1] -ceq 'sudo -n /sbin/shutdown -r now') 'Restart caller changed'
     $count=$script:SSHCalls
@@ -98,9 +159,9 @@ try {
     Assert-True ($script:SSHCalls -eq $count) 'Non-running VM reached SSH'
     $script:Active=$true;$script:SshExit=9
     Reject {Invoke-GuestControl -Command 'fixed' -InputJson '{}'}
-    'PASS cursor aid bundle/move payload validation, typed move feedback, strict SSH alias/path, stdin/legacy -n, runtime guards and native SSH failure; no guest connection.'
+    'PASS cursor aid payload/move, GUID+scope endpoint selection/deduplication/refusals/fallback, strict SSH alias/path, stdin/legacy -n, runtime guards and SSH failure; no DNS, NIC or guest query.'
 } finally {
     $env:REIMS_MANAGER_TOOLS_ROOT=$oldTools
-    $prefix=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")+[IO.Path]::DirectorySeparatorChar
+    $prefix=[IO.Path]::GetFullPath($testParent)+[IO.Path]::DirectorySeparatorChar
     if($work.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){Remove-Item -LiteralPath $work -Recurse -Force}
 }
