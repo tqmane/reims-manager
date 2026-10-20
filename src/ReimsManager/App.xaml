@@ -25,7 +25,7 @@
           </ControlTemplate.Triggers>
         </ControlTemplate></Setter.Value></Setter>
       </Style>
-      <Style TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="Padding" Value="16,8"/><Setter Property="Margin" Value="0,0,8,8"/></Style>
+      <Style TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="Padding" Value="16,8"/><Setter Property="Margin" Value="0,0,8,8"/><Setter Property="ToolTipService.ShowOnDisabled" Value="True"/></Style>
       <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
       <Style x:Key="MutedText" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Opacity" Value="0.72"/></Style>
       <Style x:Key="PageHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="23"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,10"/></Style>

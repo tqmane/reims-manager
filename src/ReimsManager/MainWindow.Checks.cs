@@ -14,6 +14,9 @@ public partial class MainWindow
     {
         await CheckPresentationPolicy();
         await CheckSettingsDraftBehavior();
+        await CheckSettingsReliability(folder);
+        await CheckSettingsWorkflow(folder);
+        await CheckUsbWorkflow(folder);
         await CheckNetworkChoices(folder);
         await CheckWifiCard(folder);
         await CheckCursorAidCard(folder);

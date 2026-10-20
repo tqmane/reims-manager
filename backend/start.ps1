@@ -41,8 +41,37 @@ function Assert-ReimsArtifactPath([string]$Path) {
 function Write-ReimsJson([string]$Path, $Value) {
     $Path = Assert-ReimsArtifactPath $Path
     New-Item -ItemType Directory -Force -Path (Split-Path $Path) | Out-Null
-    ConvertTo-Json -InputObject $Value -Depth 20 | Set-Content -LiteralPath "$Path.new" -Encoding utf8NoBOM
-    Move-Item -LiteralPath "$Path.new" -Destination $Path -Force
+    # Each writer owns its staging file. A failed/concurrent save must not consume
+    # another writer's .new file or leave the published JSON partially written.
+    $json = ConvertTo-Json -InputObject $Value -Depth 20 -WarningAction Stop
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
+    $temporary = $Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    $stream = $null
+    try {
+        $stream = [IO.File]::Open($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+        $stream.Dispose(); $stream = $null
+        [IO.File]::Move($temporary, $Path, $true)
+    } finally {
+        if ($stream) { $stream.Dispose() }
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
+}
+
+function Enter-ReimsVmMutation([ValidateRange(0,300000)][int]$TimeoutMilliseconds = 5000) {
+    $canonical = [IO.Path]::GetFullPath($VmRoot).TrimEnd('\','/').ToUpperInvariant()
+    $identity = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($canonical)))
+    $mutex = [Threading.Mutex]::new($false, "Local\ReimsManager.VmMutation.$identity")
+    try {
+        try { $locked = $mutex.WaitOne($TimeoutMilliseconds) }
+        catch [Threading.AbandonedMutexException] { $locked = $true }
+        if (!$locked) { throw 'Another VM operation is in progress. Wait for it to finish, then retry.' }
+        return $mutex
+    } catch {
+        $mutex.Dispose()
+        throw
+    }
 }
 
 function Get-ReimsTool([string]$Name, [string]$ExplicitPath) {
@@ -97,12 +126,23 @@ function Get-ReimsVmConfig {
 }
 
 function Get-ReimsVmProcess($Runtime) {
-    $process = Get-Process -Id $Runtime.pid -ErrorAction SilentlyContinue
-    if (!$process) { return $null }
-    if ($process.StartTime.ToUniversalTime().Ticks -ne [long]$Runtime.start_ticks -or
-        ![string]::Equals($process.Path, $Runtime.executable, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "PID $($Runtime.pid) belongs to another process; refusing to control it."
+    $lookupErrors = @()
+    $process = Get-Process -Id $Runtime.pid -ErrorAction SilentlyContinue -ErrorVariable lookupErrors
+    if (!$process) {
+        if (@($lookupErrors | Where-Object { $_.FullyQualifiedErrorId -notlike 'NoProcessFoundForGivenId,*' }).Count) {
+            throw "Cannot verify the recorded VM process $($Runtime.pid): $($lookupErrors -join ' ')"
+        }
+        return $null
     }
+    # runtime.json survives Manager/Windows restarts. A reused PID proves the
+    # recorded VM has exited; it must not make every status/settings call fail.
+    # Unreadable identity remains an error, never permission to start another VM.
+    $started = $process.StartTime
+    if ($null -eq $started) { throw "Cannot verify the start time of VM process $($Runtime.pid)." }
+    if ($started.ToUniversalTime().Ticks -ne [long]$Runtime.start_ticks) { return $null }
+    $executable = $process.Path
+    if ([string]::IsNullOrWhiteSpace($executable)) { throw "Cannot verify the executable of VM process $($Runtime.pid)." }
+    if (![string]::Equals($executable, $Runtime.executable, [StringComparison]::OrdinalIgnoreCase)) { return $null }
     return $process
 }
 
@@ -250,6 +290,7 @@ function Get-ReimsQemuArguments($Config, [string]$RunDirectory, [switch]$Paused,
 
 if ($FunctionsOnly) { return }
 $config = Get-ReimsVmConfig
+$selectedUsbBackend = if ($config.PSObject.Properties['usb_backend'] -and $config.usb_backend -eq 'usbdk') { 'usbdk' } else { 'winusb' }
 if (!$Qemu) { $Qemu = Get-ReimsEnginePath 'qemu' 'build/qemu/qemu-system-x86_64.exe' }
 $Qemu = [IO.Path]::GetFullPath($Qemu)
 if ($script:ReimsEngine -and $Qemu -ne (Get-ReimsEnginePath 'qemu' '')) { throw 'Selected QEMU does not belong to the installed engine package.' }
@@ -298,6 +339,7 @@ $whpx = Get-ReimsWhpxStatus
 $launch = [ordered]@{
     executable = $Qemu; arguments = $qemuArgs; whpx = $whpx
     headless = [bool]$Headless; diagnostic_only = [bool]$DiagnosticTcg
+    usb_backend = $selectedUsbBackend
 }
 if ($DryRun) {
     Write-ReimsJson (Join-Path $ReimsWorkRoot 'diagnostics/vm-launch.json') $launch
@@ -335,7 +377,7 @@ New-Item -ItemType Directory -Force -Path $run | Out-Null
 Write-ReimsJson (Join-Path $run 'command.json') $launch
 $env:REIMS_VGPU_LOG = 'info'
 $env:REIMS_VGPU_STATS = '1'
-if ($config.PSObject.Properties['usb_backend'] -and $config.usb_backend -eq 'usbdk') { $env:REIMS_USB_BACKEND = 'usbdk' }
+if ($selectedUsbBackend -eq 'usbdk') { $env:REIMS_USB_BACKEND = 'usbdk' }
 else { Remove-Item Env:REIMS_USB_BACKEND -ErrorAction SilentlyContinue }
 if ($Headless) { $env:REIMS_VGPU_WINDOW = '0' } else { Remove-Item Env:REIMS_VGPU_WINDOW -ErrorAction SilentlyContinue }
 $process = Start-Process -FilePath $Qemu -ArgumentList (($qemuArgs | ForEach-Object { ConvertTo-ReimsWindowsArgument $_ }) -join ' ') -WorkingDirectory $ProjectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $run 'stdout.log') -RedirectStandardError (Join-Path $run 'stderr.log') -PassThru
@@ -343,6 +385,7 @@ $runtime = [ordered]@{
     pid = $process.Id; start_ticks = $process.StartTime.ToUniversalTime().Ticks; executable = $Qemu
     qmp_port = $config.qmp_port; run_directory = $run; disk = $config.active_disk
     diagnostic_only = [bool]$DiagnosticTcg
+    usb_backend = $selectedUsbBackend
 }
 Write-ReimsJson (Join-Path $VmRoot 'state/runtime.json') $runtime
 try {

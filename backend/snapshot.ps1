@@ -30,12 +30,12 @@ if ($Action -eq 'Create') {
     New-Item -ItemType Directory -Path $directory | Out-Null
     $vars = Join-Path $directory 'OVMF_VARS.fd'
     Copy-Item -LiteralPath $config.firmware_vars -Destination $vars
-    Write-ReimsJson $manifest ([ordered]@{
+    $snapshot = [ordered]@{
         schema = 1; name = $Name; created_utc = [DateTime]::UtcNow.ToString('o')
         disk = $config.active_disk; firmware_vars = $vars
         firmware_code_sha256 = (Get-FileHash -LiteralPath $config.firmware_code).Hash
         opencore_sha256 = (Get-FileHash -LiteralPath $config.opencore).Hash
-    })
+    }
 } else {
     if (!(Test-Path -LiteralPath $manifest)) { throw "Snapshot not found: $Name" }
     $snapshot = Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json
@@ -54,4 +54,9 @@ if ($Action -eq 'Create') {
 }
 $config.active_disk = $next
 Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
+if ($Action -eq 'Create') {
+    # Publish only after the checkpoint disk is no longer writable. If saving the
+    # active overlay fails, List/Restore must never expose a mutable checkpoint.
+    Write-ReimsJson $manifest $snapshot
+}
 "$Action snapshot '$Name'; next boot writes $next. Previous disks are retained."

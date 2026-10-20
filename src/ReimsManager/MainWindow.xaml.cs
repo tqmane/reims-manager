@@ -14,7 +14,7 @@ namespace ReimsManager;
 
 public partial class MainWindow : Window
 {
-    private bool busy, refreshing, loadedHardware;
+    private bool busy, refreshing, loadedHardware, completingOperation;
     private readonly ManagerSettings settings;
     private string currentState = "unprepared";
     private bool HasVm => selectedEntry?.IsAvailable == true;
@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private JsonElement latest;
     private readonly DispatcherTimer timer = new() { Interval=TimeSpan.FromSeconds(5) };
     private readonly bool selfTest;
+    private UsbDriverInstallResult? usbDriverInstallResult;
 
     public MainWindow(bool test = false)
     {
@@ -43,7 +44,15 @@ public partial class MainWindow : Window
 
     private async Task<string> Execute(string action, string[] arguments, bool elevate = false, string? input = null, CancellationToken cancellation = default)
     {
-        if (selfTest && controlFixtureBackend is not null) return await controlFixtureBackend(action);
+        if (action == "InstallUsbDk") usbDriverInstallResult = null;
+        if (selfTest && controlFixtureBackend is not null) {
+            string result = await controlFixtureBackend(action);
+            if (action == "InstallUsbDk") {
+                usbDriverInstallResult = UsbDriverInstallResult.Parse(result);
+                usbDriverRestartPending |= usbDriverInstallResult.RestartRequired;
+            }
+            return result;
+        }
         if (!HasEngine) throw new InvalidOperationException("先に Reims エンジンを選択してください。");
         if (!HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx" or "InstallUsbDk" or "InstallTap" or "CreateBridge"))
             throw new InvalidOperationException("操作する仮想マシンを選択してください。");
@@ -56,19 +65,50 @@ public partial class MainWindow : Window
         if (!File.Exists(pwsh)) throw new Exception("PowerShell 7 をインストールしてください。");
         var info = new ProcessStartInfo(pwsh) { UseShellExecute=elevate, CreateNoWindow=true, WorkingDirectory=root };
         foreach (string arg in new[] {"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",backend,"-Root",root,"-Action",action}.Concat(arguments)) info.ArgumentList.Add(arg);
-        if (HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx" or "InstallUsbDk")) { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
+        if (HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx")) { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
         info.ArgumentList.Add("-Qemu"); info.ArgumentList.Add(settings.QemuExecutable);
         info.ArgumentList.Add("-ToolsRoot"); info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"runtimes"));
-        if (input is not null) info.RedirectStandardInput=true;
+        if (input is not null) { info.RedirectStandardInput=true; info.StandardInputEncoding=new UTF8Encoding(false); }
         if (elevate) { info.Verb="runas"; info.WindowStyle=ProcessWindowStyle.Hidden; }
         else { info.RedirectStandardOutput=true; info.RedirectStandardError=true; info.StandardOutputEncoding=Encoding.UTF8; info.StandardErrorEncoding=Encoding.UTF8; }
         bool readOnly = action is "Status" or "GetIdentity" or "ListUsb" or "GetPrerequisites" or "GetNetworkUplinks";
-        return await BackendCommand.Run(info, input, readOnly, readOnly ? cancellation : CancellationToken.None);
+        string? usbResultPath = null;
+        try {
+            if (action == "InstallUsbDk") {
+                // An elevated helper cannot return stdout and may run as another user.
+                // Give it a unique, caller-owned receipt instead of guessing its profile.
+                string support = Path.Combine(ManagerSettings.DataDirectory, "support");
+                Directory.CreateDirectory(support);
+                usbResultPath = Path.Combine(support, $"usb-install-{Guid.NewGuid():N}.json");
+                using (File.Open(usbResultPath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
+                info.ArgumentList.Add("-UsbResultPath"); info.ArgumentList.Add(usbResultPath);
+            }
+            string output = await BackendCommand.Run(info, input, readOnly, readOnly ? cancellation : CancellationToken.None);
+            if (usbResultPath is not null) {
+                usbDriverInstallResult = UsbDriverInstallResult.Read(usbResultPath);
+                usbDriverRestartPending |= usbDriverInstallResult.RestartRequired;
+                return usbDriverInstallResult.ToJson();
+            }
+            return output;
+        } finally {
+            if (usbResultPath is not null) {
+                try { File.Delete(usbResultPath); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) {
+                    AppendLog("UsbDk の一時結果ファイルを削除できませんでした: " + error.Message + "\n");
+                }
+            }
+        }
     }
 
     private async Task<bool> Operate(string action, string[]? args = null, bool elevate = false, string? input = null)
     {
         if (!RequireAction(action)) return false;
+        if (action == "Start" && (hardwareDirty || identityDirty)) {
+            Tabs.SelectedIndex = hardwareDirty ? 1 : 3;
+            ShowError("保存していない設定があります。「変更を保存」または「変更を破棄」で確定してから起動してください。");
+            UpdatePowerControls();
+            return false;
+        }
         if (action == "SnapshotRestore" && !DiscardPendingChanges()) return false;
         // Menus, keyboard shortcuts and buttons use exactly the same installer preference.
         if (action == "Start") { args = VmActionPolicy.StartArguments(ConnectIso.IsChecked == true); PrepareStartConsole(); }
@@ -90,10 +130,13 @@ public partial class MainWindow : Window
         } catch (Exception error) { AppendLog(error.Message + "\n"); ShowError(error.Message); }
         finally {
             if (action is "RemoveBridge" or "PrepareWifi" or "DisableWifi") loadedHardware = false;
-            busy = false; currentState = "unknown"; Tabs.IsEnabled = true;
+            busy = false; completingOperation = true; currentState = "unknown";
             OperationProgress.Visibility = Visibility.Collapsed; UpdatePowerControls();
         }
-        await RefreshState();
+        // Keep the selected VM and staged forms stable until the final status read
+        // completes. Save callers still have to publish their committed drafts.
+        try { await RefreshState(); }
+        finally { completingOperation = false; UpdatePowerControls(); }
         return success;
     }
 
@@ -196,7 +239,9 @@ public partial class MainWindow : Window
         Cpus.Text=latest.GetProperty("cpus").ToString(); DiskSize.Text=latest.GetProperty("disk_gib").ToString();
         DiskInfo.Text=$"最大容量: {DiskSize.Text} GiB\n{latest.GetProperty("disk").GetString()}";
         Iso.Text=HardwareIsoPath.Text=latest.GetProperty("iso").GetString()??"";
-        ConnectIso.IsChecked=HardwareIso.IsChecked=latest.GetProperty("with_installer").GetBoolean();
+        bool installer = latest.TryGetProperty("connect_installer", out var preference)
+            ? preference.GetBoolean() : latest.GetProperty("with_installer").GetBoolean();
+        ConnectIso.IsChecked=HardwareIso.IsChecked=installer;
         Nat.IsChecked=latest.GetProperty("network").GetString()=="nat"; Bridge.IsChecked=!Nat.IsChecked;
         hardwareForwarder=wifiForwarder?.Kind ?? "";
         string adapter = latest.GetProperty("network_adapter").GetString() ?? "";
@@ -225,6 +270,7 @@ public partial class MainWindow : Window
         }
         if (!syncingNavigation && !IsUiBusy && HasVm && Devices.SelectedItem is ListBoxItem item && int.TryParse(item.Tag?.ToString(), out int page))
             Tabs.SelectedIndex = page;
+        ResetSettingsScroll();
     }
     private void MemoryChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
@@ -239,8 +285,13 @@ public partial class MainWindow : Window
         root=Path.GetFullPath(root);
         qemu=string.IsNullOrWhiteSpace(qemu) ? Path.Combine(root,File.Exists(Path.Combine(root,"reims-engine.json")) ? "bin/qemu-system-x86_64.exe" : "build/qemu/qemu-system-x86_64.exe") : Path.GetFullPath(qemu);
         if (!File.Exists(qemu)) throw new FileNotFoundException("Reims 対応 QEMU が見つかりません。エンジンのフォルダーを確認してください。");
-        Root.Text=root; settings.EngineRoot=root; settings.QemuExecutable=qemu;
-        if (!SavePreferences()) throw new IOException("エンジンの保存先を記録できませんでした。アプリ設定の保存先を確認して再試行してください。");
+        string oldRoot = settings.EngineRoot, oldQemu = settings.QemuExecutable;
+        settings.EngineRoot=root; settings.QemuExecutable=qemu;
+        if (!SavePreferences()) {
+            settings.EngineRoot=oldRoot; settings.QemuExecutable=oldQemu;
+            throw new IOException("エンジンの保存先を記録できませんでした。アプリ設定の保存先を確認して再試行してください。");
+        }
+        Root.Text=root;
         ResetVmContext(); UpdatePowerControls();
     }
 
@@ -295,14 +346,14 @@ public partial class MainWindow : Window
         EngineNotice.Visibility = HasEngine ? Visibility.Collapsed : Visibility.Visible;
         EngineSummary.Text = HasEngine ? "エンジン設定済み" : "未設定";
         NewVmWelcomeDescription.Text = HasEngine ? "Windows の準備を確認して ISO を選ぶ" : "エンジンの準備から始める";
-        RefreshButton.IsEnabled = HasVm && HasEngine && !busy && !refreshing;
+        RefreshButton.IsEnabled = HasVm && HasEngine && !IsUiBusy && !refreshing;
         RevealButton.IsEnabled = selectedEntry is not null;
         foreach (var button in LogicalChildren<Button>(Tabs)) {
             if (button.Tag is string action && !int.TryParse(action, out _)) button.IsEnabled = CanOperate(action);
         }
-        ClipboardSharing.IsEnabled = !busy && HasEngine && HasVm && currentState == "running";
+        UpdateClipboardAvailability();
         foreach (var button in LogicalChildren<Button>(Tabs).Where(x => x.Tag?.ToString() == "SnapshotRestore")) button.IsEnabled &= Snapshots.SelectedIndex >= 0;
-        foreach (var button in LogicalChildren<Button>(Tabs).Where(x => x.Tag?.ToString() is "AttachUsb" or "DetachUsb")) button.IsEnabled &= UsbDevices.SelectedItem is not null;
+        UpdateUsbControls();
         ConsoleHeading.Text = currentState switch { "stopped" => "起動する準備ができました", "unprepared" => "macOS をセットアップ", "shutdown" => "macOS は電源オフです", "unknown" => "VM の状態を確認してください", _ => consoleDetached ? "別ウィンドウで表示中" : "VM の画面を待っています" };
         ConsoleDescription.Text = currentState switch { "stopped" => "上の「起動」から macOS を開始できます。", "unprepared" => "設定画面の「macOS のインストール」からインストーラーを選んでください。", "unknown" => "「更新」で状態を取得してから操作を再試行できます。", _ => "入力の解放は Ctrl + Alt + Win。画面は別ウィンドウにも切り替えられます。" };
         if (selectedEntry?.IsAvailable == false) {
@@ -315,8 +366,8 @@ public partial class MainWindow : Window
     private void DismissError(object sender,RoutedEventArgs e) { Feedback.Visibility=Visibility.Collapsed; }
 
     private string? ChooseIso() { var dialog=new OpenFileDialog { Filter="macOS インストーラー|*.iso;*.img|すべてのファイル|*.*" }; return dialog.ShowDialog(this)==true ? dialog.FileName : null; }
-    private void BrowseIso(object sender,RoutedEventArgs e) { if (ChooseIso() is string path) Iso.Text=path; }
-    private void BrowseHardwareIso(object sender,RoutedEventArgs e) { if (ChooseIso() is string path) HardwareIsoPath.Text=path; }
+    private void BrowseIso(object sender,RoutedEventArgs e) { if (!IsUiBusy && CanOperate("Setup") && ChooseIso() is string path) Iso.Text=path; }
+    private void BrowseHardwareIso(object sender,RoutedEventArgs e) { if (!IsUiBusy && loadedHardware && CanOperate("SetHardware") && ChooseIso() is string path) HardwareIsoPath.Text=path; }
     private async void Setup(object sender,RoutedEventArgs e) {
         if (!RequireAction("Setup")) return;
         if (!File.Exists(Iso.Text.Trim())) { ShowError("使用する ISO ファイルを選択してください。"); Iso.Focus(); return; }
@@ -327,7 +378,17 @@ public partial class MainWindow : Window
             if (StartAfterSetup.IsChecked==true && selectedEntry is { } entry) await StartPreparedVm(entry,cpus,memory);
         }
     }
-    private async void RefreshClick(object sender,RoutedEventArgs e) => await RefreshState();
+    private async void RefreshClick(object sender,RoutedEventArgs e) => await RefreshDisplayedState();
+
+    private async Task RefreshDisplayedState()
+    {
+        if (IsUiBusy) return;
+        // An explicit refresh reloads committed values; periodic status polling
+        // must continue to leave the form and its pending edits untouched.
+        if (!hardwareDirty) loadedHardware = false;
+        await RefreshState();
+        if (!identityDirty) await ReadIdentity();
+    }
     private async void ActionClick(object sender,RoutedEventArgs e) { string action=((Button)sender).Tag.ToString()!; await Operate(action,action=="Start"&&ConnectIso.IsChecked==true ? ["-WithInstaller"] : []); }
     private async void SaveSnapshot(object sender,RoutedEventArgs e)
     {
@@ -350,6 +411,7 @@ public partial class MainWindow : Window
             // The backend committed these values even if the following status read fails.
             RememberHardwareDraft();
             loadedHardware=false; await RefreshState();
+            ShowSettingsSaved("ハードウェア設定を保存しました。次回起動から使用します。");
         }
         return saved;
     }
@@ -367,7 +429,22 @@ public partial class MainWindow : Window
         if (!Confirm($"仮想ディスクを {size} GiB に拡張します。macOS 側の APFS 拡張も必要です。")) return;
         await Operate("ExpandDisk",["-DiskGiB",size.ToString()]);
     }
-    private async void ApplyResolution(object sender,RoutedEventArgs e) => await Operate("ApplyResolution",["-Resolution",Selected(Resolution)]);
+    private async void ApplyResolution(object sender,RoutedEventArgs e) => await ApplyResolutionCore();
+
+    private async Task<bool> ApplyResolutionCore()
+    {
+        if (!RequireAction("ApplyResolution") || !loadedHardware || committedHardware is null) return false;
+        string resolution = Selected(Resolution);
+        if (!ManagerValidation.Resolution(resolution)) return InvalidField(Resolution, "対応する解像度を選び直してください。");
+        if (!await Operate("ApplyResolution", ["-Resolution", resolution])) return false;
+        // Only this field was committed; unrelated staged CPU/network edits must
+        // remain pending, and Cancel must restore the newly saved resolution.
+        committedHardware = committedHardware with { Resolution = resolution };
+        hardwareDirty = CaptureHardwareDraft() != committedHardware;
+        ShowSettingsSaved("解像度を適用・保存しました。次回の VM 起動後も保持します。");
+        UpdatePowerControls();
+        return true;
+    }
     private void OpenBridgeTab(object sender,RoutedEventArgs e) {
         if (SelectedUplink.Length>0) Physical.SelectedValue=SelectedUplink;
         BridgeTap.SelectedItem=Tap.SelectedItem;

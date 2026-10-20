@@ -10,8 +10,9 @@ public partial class MainWindow
     private readonly WorkspacePresentation presentation = new();
     private bool wasConsoleFocused;
     private GridLength libraryWidth = new(236);
+    private string settingsFeedback = "";
     private bool SettingsOpen => Tabs.SelectedIndex > 0;
-    private bool IsUiBusy => busy || applyingSettings;
+    private bool IsUiBusy => busy || applyingSettings || completingOperation;
     private bool ConsoleFocused => presentation.Focused(SettingsOpen, consoleDetached);
 
     private void UpdateWorkspacePresentation()
@@ -54,11 +55,16 @@ public partial class MainWindow
             (!focus || currentState == "unknown" || currentState.Contains("error", StringComparison.Ordinal) || currentState == "guest-panicked")
             ? Visibility.Visible : Visibility.Collapsed;
         OverviewActions.Visibility = currentState is "stopped" or "shutdown" or "unprepared" ? Visibility.Visible : Visibility.Collapsed;
+        OverviewActions.IsEnabled = HasVm && !IsUiBusy;
+        OverviewStartButton.Visibility = currentState is "stopped" or "shutdown" ? Visibility.Visible : Visibility.Collapsed;
+        OverviewSetupButton.Visibility = currentState == "unprepared" ? Visibility.Visible : Visibility.Collapsed;
+        OverviewExitButton.Visibility = currentState == "shutdown" ? Visibility.Visible : Visibility.Collapsed;
         OverviewStartButton.IsEnabled = CanOperate("Start") && !applyingSettings;
         ConsoleConnectButton.Visibility = CanOperate("Console") ? Visibility.Visible : Visibility.Collapsed;
         ConsoleConnectButton.IsEnabled = CanOperate("Console") && !applyingSettings;
         foreach (var button in LogicalChildren<Button>(ConsolePage))
-            if (button.Tag is string action) button.IsEnabled = CanOperate(action) && !applyingSettings;
+            if (button.Tag is string action && !int.TryParse(action, out _)) button.IsEnabled = CanOperate(action) && !applyingSettings;
+        OverviewSetupButton.IsEnabled = HasVm && HasEngine && !IsUiBusy;
         foreach (var item in SessionPowerButton.ContextMenu.Items.OfType<MenuItem>()) item.IsEnabled = CanOperate(item.Tag?.ToString() ?? "") && !applyingSettings;
         SessionPowerButton.IsEnabled = new[] { "PowerOff", "Exit", "ForceExit" }.Any(CanOperate) && !applyingSettings;
         bool resume = currentState is "paused" or "prelaunch" or "suspended";
@@ -77,7 +83,7 @@ public partial class MainWindow
         SessionSettingsButton.IsEnabled = SessionUsbButton.IsEnabled = SessionSharingButton.IsEnabled = SessionSnapshotButton.IsEnabled = HasVm && !IsUiBusy;
         bool editHardware = !IsUiBusy && loadedHardware && CanOperate("SetHardware");
         foreach (UIElement field in new UIElement[] { Memory, MemorySlider, Cpus, HardwareIsoPath, GuestHost, Tap, UsbBackend,
-            HardwareIso, Nat, Bridge, Sound, Microphone, DiskSize }) field.IsEnabled = editHardware;
+            HardwareIso, HardwareIsoBrowseButton, Nat, Bridge, Sound, Microphone, DiskSize }) field.IsEnabled = editHardware;
         Uplink.IsEnabled = editHardware && Bridge.IsChecked == true;
         NetworkTapDetails.Visibility=Bridge.IsChecked==true && Uplink.SelectedItem is not NetworkUplink { Kind:"wifi" } && !WifiForwarderState.IsMacNat(hardwareForwarder) ? Visibility.Visible : Visibility.Collapsed;
         Physical.IsEnabled = BridgeTap.IsEnabled = !IsUiBusy && CanOperate("CreateBridge");
@@ -87,17 +93,93 @@ public partial class MainWindow
         Devices.IsEnabled = Tabs.IsEnabled = !IsUiBusy;
         AdvancedButton.IsEnabled = HasVm && !IsUiBusy;
         Library.IsEnabled = LibrarySearch.IsEnabled = WorkspaceNavigation.IsEnabled = !IsUiBusy;
-        SettingsBackButton.IsEnabled = ReloadHardwareButton.IsEnabled = !IsUiBusy;
-        SaveHardwareButton.IsEnabled = !IsUiBusy && (hardwareDirty || identityDirty) &&
-            (!hardwareDirty || CanOperate("SetHardware")) && (!identityDirty || CanOperate("SetIdentity"));
-        SettingsOkButton.IsEnabled = !IsUiBusy;
-        SettingsHint.Text = IsUiBusy ? "設定を処理しています…" : hardwareDirty || identityDirty
-            ? currentState == "stopped" ? "未保存の変更があります (Ctrl+S)。" : "未保存の変更があります。保存には完全停止が必要です。"
-            : currentState == "stopped" ? "変更はありません。" : "ハードウェア・識別情報の保存は完全停止時のみです。";
+        UpdateSettingsWorkflow();
         // Explicitly hide the native child when the settings page owns the workspace.
         // Its HwndHost stays at the same place in the tree: no detach/reparent on navigation.
         if (settingsVisible) ConsoleView.Visibility = Visibility.Hidden;
         UpdateWifiControls();
+    }
+
+    private void ShowSettingsSaved(string message)
+    {
+        settingsFeedback = message;
+        UpdateSettingsWorkflow();
+    }
+
+    private void ClearSettingsFeedback() => settingsFeedback = "";
+
+    private void UpdateSettingsWorkflow()
+    {
+        if (SettingsScopeHint is null || SettingsStateNotice is null) return;
+        bool pending = hardwareDirty || identityDirty;
+        bool canSave = (!hardwareDirty || CanOperate("SetHardware")) && (!identityDirty || CanOperate("SetIdentity"));
+        SettingsBackButton.IsEnabled = !IsUiBusy;
+        ReloadHardwareButton.IsEnabled = !IsUiBusy && pending;
+        SaveHardwareButton.IsEnabled = !IsUiBusy && pending && canSave;
+        SettingsOkButton.IsEnabled = !IsUiBusy && (!pending || canSave);
+        SettingsOkButton.Content = pending ? "保存して閉じる" : "閉じる";
+
+        string changed = hardwareDirty && identityDirty ? "ハードウェア・識別情報" : hardwareDirty ? "ハードウェア" : "識別情報";
+        SettingsHint.Text = IsUiBusy ? "処理が完了するまでお待ちください…" : pending
+            ? canSave ? $"未保存の変更: {changed} (Ctrl+S)" : $"未保存の変更: {changed}。保存には VM の完全停止が必要です。"
+            : settingsFeedback.Length > 0 ? settingsFeedback : loadedHardware
+                ? "未保存の変更はありません。" : "保存済みの構成を確認しています。";
+        SettingsHeading.Text = Tabs.SelectedIndex switch {
+            4 => "スナップショット", 5 => "macOS のインストール", 6 => "macOS と接続", 7 => "LAN 接続の準備",
+            _ => "仮想マシンの設定"
+        };
+        SettingsScopeHint.Text = Tabs.SelectedIndex switch {
+            1 when hardwareCategory == 2 => "ディスクの拡張・整理は、それぞれの操作ボタンで実行します。",
+            1 when hardwareCategory == 5 => "USB の登録・解除は即時反映。転送方式は「変更を保存」で確定します。",
+            1 when hardwareCategory == 7 => "解像度を macOS に適用すると、次回起動の設定も保存します。カーソル操作はすぐに反映します。",
+            1 => "「変更を保存」で確定した設定は、次回の VM 起動から使用します。",
+            2 => "自動共有のオン・オフは、この VM の設定としてすぐに保存します。",
+            3 => "識別情報は保存時に確認します。起動・GPU の操作は、その場で実行します。",
+            4 => "スナップショットの保存・復元は、このページの操作ボタンで実行します。",
+            5 => "インストーラーを選択し、「仮想マシンを作成」でディスクを準備します。",
+            6 => "接続は「指紋を照合して接続」で実行します。",
+            7 => "接続の準備・解除は、それぞれの操作ボタンで実行します。",
+            _ => ""
+        };
+
+        bool requiresStopped = Tabs.SelectedIndex is 1 or 3 or 4 or 7;
+        bool showState = SettingsOpen && (!HasEngine || currentState == "unknown" ||
+            requiresStopped && (currentState != "stopped" || Tabs.SelectedIndex == 1 && !loadedHardware));
+        SettingsStateNotice.Visibility = showState ? Visibility.Visible : Visibility.Collapsed;
+        SettingsRefreshButton.IsEnabled = HasVm && HasEngine && !IsUiBusy && !refreshing;
+        string? action = null, label = null;
+        if (!HasEngine) {
+            SettingsStateHeading.Text = "エンジンを準備してください";
+            SettingsStateDescription.Text = "エンジンの保存先を設定すると、VM の構成と動作状態を確認できます。";
+            action = "SetupEngine"; label = "エンジンを設定…";
+        } else if (currentState == "running") {
+            SettingsStateHeading.Text = "VM は実行中です";
+            SettingsStateDescription.Text = Tabs.SelectedIndex == 1 && hardwareCategory == 7
+                ? "解像度・カーソルの操作は実行できます。その他の起動時設定は、VM の完全終了後に保存できます。"
+                : Tabs.SelectedIndex == 1 && hardwareCategory == 5
+                    ? "USB の接続操作は実行できます。転送方式の変更は、VM の完全終了後に保存できます。"
+                    : "設定変更・ディスク操作には完全停止が必要です。macOS をシャットダウンしてから、VM を完全終了してください。";
+            action = "PowerOff"; label = "シャットダウン";
+        } else if (currentState == "shutdown") {
+            SettingsStateHeading.Text = "macOS は電源オフです。VM はまだ完全停止していません";
+            SettingsStateDescription.Text = "VM を完全終了すると、ハードウェア設定やディスクを変更できます。";
+            action = "Exit"; label = "VM を完全終了";
+        } else if (currentState is "paused" or "prelaunch" or "suspended") {
+            SettingsStateHeading.Text = "一時停止中は構成を変更できません";
+            SettingsStateDescription.Text = "再開して macOS をシャットダウンし、VM を完全終了してから変更できます。";
+            action = "Resume"; label = "VM を再開";
+        } else if (currentState == "unprepared") {
+            SettingsStateHeading.Text = "セットアップがまだ完了していません";
+            SettingsStateDescription.Text = "インストーラーと仮想ディスクを準備してから、構成を変更できます。";
+            action = "SetupPage"; label = "セットアップを開く";
+        } else {
+            SettingsStateHeading.Text = currentState == "stopped" ? "構成を読み込んでいます" : "VM の状態を確認してください";
+            SettingsStateDescription.Text = "「状態を更新」で再確認できます。入力中の変更は保持します。";
+        }
+        SettingsStateActionButton.Tag = action;
+        SettingsStateActionButton.Content = label;
+        SettingsStateActionButton.Visibility = action is null ? Visibility.Collapsed : Visibility.Visible;
+        SettingsStateActionButton.IsEnabled = !IsUiBusy && (action is "SetupEngine" or "SetupPage" || action is not null && CanOperate(action));
     }
 
     private void ShowLibrary(object sender, RoutedEventArgs e)

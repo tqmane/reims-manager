@@ -96,6 +96,8 @@ public partial class MainWindow
         try {
             bool saved = await SettingsCommitSequence.Apply(hardwareDirty, identityDirty,
                 SaveHardwareCore, () => SaveIdentityCore(confirm: false));
+            if (saved && !hardwareDirty && !identityDirty)
+                ShowSettingsSaved("変更を保存しました。次回起動から使用します。");
             return saved && !hardwareDirty && !identityDirty;
         } finally { applyingSettings = false; UpdatePowerControls(); }
     }

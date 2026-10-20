@@ -30,6 +30,11 @@ function Invoke-ReimsQmp($Runtime,$Command,$Arguments) {
         device_add { $script:objects[$Arguments.id]=$Arguments }
         device_del { $script:objects.Remove($Arguments.id) }
         qom-list { foreach ($key in $script:objects.Keys) { [pscustomobject]@{name=$key} } }
+        qom-get {
+            $id=$Arguments.path.Split('/')[-1]
+            if ($Arguments.property -ne 'attached' -or !$script:objects.ContainsKey($id)) { throw 'Unknown USB property' }
+            $true
+        }
         default { throw "Unexpected QMP: $Command" }
     }
 }

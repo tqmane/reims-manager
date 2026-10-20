@@ -33,6 +33,7 @@ function Invoke-ReimsVmSetup([string]$Iso, [int]$DiskGiB, [int]$Cpus=8, [int]$Me
     }
     $config=Get-ReimsVmConfig
     $config.cpus=$Cpus; $config.memory_mib=$MemoryMiB
+    if (!$existing) { $config | Add-Member -Force connect_installer $true }
     Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
     & "$PSScriptRoot/prepare-tools.ps1" | Out-Null
     & "$PSScriptRoot/prepare-guest-bridge.ps1" -Mode Enable
