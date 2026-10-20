@@ -11,6 +11,7 @@ function Get-ReimsWifiStatus { @{schema=1;kind='none';configured=$false;ready=$f
 param([switch]$FunctionsOnly)
 $VmRoot=$env:REIMS_VM_ROOT_OVERRIDE
 if(!$VmRoot){throw 'No-VM action sourced VM environment'}
+function Enter-ReimsVmMutation { $null }
 function Assert-ReimsVmStopped {}
 function Write-ReimsJson($Path,$Value){
     if(Test-Path (Join-Path $VmRoot 'deny-result')){throw 'Fixture result write failure'}

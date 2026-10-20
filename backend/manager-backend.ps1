@@ -5,10 +5,10 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','HideHostCursor','ShowHostCursor','EnableCursorAid','DisableCursorAid','MoveCursorToMainDisplay','MoveCursorToExtendedDisplay','LightenExtendedDisplay','RestoreExtendedDisplay','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
     [string]$DiskPath,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
-    [string]$UsbId,
+    [string]$UsbId, [string]$UsbResultPath,
     [string]$Iso,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$')][string]$Name,
     [ValidateSet('1280x720','1920x1080','2560x1440','3840x2160')][string]$Resolution = '1920x1080',
@@ -26,6 +26,11 @@ param(
     [Alias('AcceptDriverTerms')][switch]$AcceptPacketFilterTerms
 )
 $ErrorActionPreference='Stop'
+# GUI pipes use UTF-8 regardless of the Windows console code page.
+$OutputEncoding=[Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding=$OutputEncoding
+[Console]::OutputEncoding=$OutputEncoding
+$usbResultSupplied=$PSBoundParameters.ContainsKey('UsbResultPath')
 if ($ToolsRoot) { $env:REIMS_MANAGER_TOOLS_ROOT = [IO.Path]::GetFullPath($ToolsRoot) }
 if ($Action -eq 'GetWifiMacNat' -and !$VmDirectory) {
     . "$PSScriptRoot/wifi-macnat.ps1"
@@ -58,7 +63,9 @@ if ($Action -eq 'EnableWhpx') {
 }
 if ($Action -eq 'InstallUsbDk' -and !$VmDirectory) {
     $cache=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'ReimsManager/support'
-    & "$PSScriptRoot/install-usbdk.ps1" -CacheDirectory $cache
+    $usbInstallArguments=@{CacheDirectory=$cache}
+    if ($usbResultSupplied) { $usbInstallArguments.ResultPath=$UsbResultPath }
+    & "$PSScriptRoot/install-usbdk.ps1" @usbInstallArguments
     return
 }
 if ($Action -eq 'InstallTap' -and !$VmDirectory) {
@@ -75,13 +82,48 @@ $env:REIMS_VM_ROOT_OVERRIDE = if ($VmDirectory) { [IO.Path]::GetFullPath($VmDire
 . "$PSScriptRoot/start.ps1" -FunctionsOnly
 . "$PSScriptRoot/network-uplinks.ps1"
 
-function Get-GuestEndpoint($Config) {
-    if ((Get-ReimsNetworkMode $Config) -eq 'nat') { return @{host='127.0.0.1';port=$Config.ssh_port} }
-    if ($Config.network.guest_host -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'ブリッジの macOS IP アドレスを設定してください。' }
-    return @{host=$Config.network.guest_host;port=22}
+function Select-ReimsGuestScopedAddress($Addresses,[guid]$TapId,$Interfaces) {
+    $matched=@($Interfaces | Where-Object {
+        $id=[guid]::Empty
+        [guid]::TryParse($_.Id,[ref]$id) -and $id -eq $TapId
+    })
+    if($matched.Count -ne 1){throw '設定された TAP インターフェースを一意に確認できません。'}
+    $index=$matched[0].GetIPProperties().GetIPv6Properties().Index
+    if($index -le 0){throw '設定された TAP の IPv6 インターフェース番号を確認できません。'}
+    $candidates=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($address in $Addresses){
+        if($address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetworkV6 -and $address.IsIPv6LinkLocal -and $address.ScopeId -eq $index){
+            [void]$candidates.Add($address.ToString())
+        }
+    }
+    if($candidates.Count -gt 1){throw '設定された TAP に複数の macOS リンクローカルアドレスがあります。接続先を一意に確認できません。'}
+    foreach($candidate in $candidates){return $candidate}
+    return $null
 }
 
-function Invoke-GuestControl([string]$Operation, [string]$Command) {
+function Resolve-ReimsGuestScopedAddress([string]$Name,[guid]$TapId) {
+    $interfaces=[Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()
+    $task=[Net.Dns]::GetHostAddressesAsync($Name)
+    if(!$task.Wait(5000)){throw 'macOS の接続先の名前解決が5秒以内に完了しませんでした。'}
+    Select-ReimsGuestScopedAddress ($task.GetAwaiter().GetResult()) $TapId $interfaces
+}
+
+function Get-GuestEndpoint($Config) {
+    $mode=Get-ReimsNetworkMode $Config
+    if ($mode -eq 'nat') { return @{host='127.0.0.1';port=$Config.ssh_port} }
+    if ($Config.network.guest_host -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'ブリッジの macOS IP アドレスを設定してください。' }
+    $hostName=$Config.network.guest_host;$literal=$null;$tapId=[guid]::Empty
+    if($mode -ceq 'bridge' -and ![Net.IPAddress]::TryParse($hostName,[ref]$literal) -and $Config.network.PSObject.Properties['forwarder'] -and
+        $Config.network.forwarder -cin @('macnat','macnat-ipv4') -and $Config.network.PSObject.Properties['tap_id'] -and
+        $Config.network.tap_id -is [string] -and
+        [guid]::TryParse([string]$Config.network.tap_id,[ref]$tapId) -and $tapId -ne [guid]::Empty){
+        $scoped=Resolve-ReimsGuestScopedAddress $hostName $tapId
+        if($scoped){$hostName=$scoped}
+    }
+    return @{host=$hostName;port=22}
+}
+
+function Invoke-GuestControl([string]$Operation, [string]$Command, [string]$InputJson) {
     $runtime = Get-ReimsRuntime
     if (!$runtime -or !(Get-ReimsVmProcess $runtime)) { throw 'VM は停止しています。' }
     $state = (Invoke-ReimsQmp $runtime 'query-status').status
@@ -99,9 +141,13 @@ function Invoke-GuestControl([string]$Operation, [string]$Command) {
     $endpoint = Get-GuestEndpoint (Get-ReimsVmConfig)
     $guest = if (Test-Path $guestPath) { Get-Content $guestPath -Raw | ConvertFrom-Json } else { $null }
     $alias = if ($guest -and $guest.PSObject.Properties['host_key_alias']) { @('-o', "HostKeyAlias=$($guest.host_key_alias)") } else { @() }
-    $output = @(& "$env:SystemRoot/System32/OpenSSH/ssh.exe" -F NUL -n -o ConnectTimeout=5 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes `
-        -o (Get-ReimsSshKnownHostsOption $known) -o KexAlgorithms=curve25519-sha256 @alias -p $endpoint.port -i $key `
-        "$account@$($endpoint.host)" $(if ($Command) {$Command} else {"sudo -n /sbin/shutdown $Operation now"}) 2>&1 | ForEach-Object ToString)
+    $inputSupplied = $PSBoundParameters.ContainsKey('InputJson')
+    if ($inputSupplied -and (!$Command -or [Text.Encoding]::UTF8.GetByteCount($InputJson) -gt 32MB)) { throw 'Invalid bounded guest input.' }
+    $sshArguments = @('-F','NUL') + $(if($inputSupplied){@('-T')}else{@('-n')}) + @('-o','ConnectTimeout=5','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes',
+        '-o',(Get-ReimsSshKnownHostsOption $known),'-o','KexAlgorithms=curve25519-sha256') + $alias + @('-p',$endpoint.port,'-i',$key,
+        "$account@$($endpoint.host)",$(if ($Command) {$Command} else {"sudo -n /sbin/shutdown $Operation now"}))
+    $ssh = "$env:SystemRoot/System32/OpenSSH/ssh.exe"
+    $output = @(if($inputSupplied){$InputJson | & $ssh @sshArguments 2>&1 | ForEach-Object ToString}else{& $ssh @sshArguments 2>&1 | ForEach-Object ToString})
     $exitCode = $LASTEXITCODE
     if ($Command) {
         if ($exitCode -ne 0) { throw "macOS の操作に失敗しました ($exitCode): $($output -join ' ')" }
@@ -126,6 +172,13 @@ function Assert-Administrator {
 
 . "$PSScriptRoot/manager-ports.ps1"
 
+$managerMutation = $null
+try {
+    # Separate Manager processes must recheck runtime/config under the same lock.
+    # Read-only status and diagnostics remain available during long operations.
+    if ($Action -notin @('Status', 'GetIdentity', 'ListUsb', 'GetWifiMacNat', 'CollectLogs')) {
+        $managerMutation = Enter-ReimsVmMutation
+    }
 if ($Action -eq 'Status') {
     $runtime = Get-ReimsRuntime
     $prepared = Test-Path (Join-Path $VmRoot 'state/config.json')
@@ -135,8 +188,8 @@ if ($Action -eq 'Status') {
     $config = if ($prepared) { Get-ReimsVmConfig } else { $null }
     $adapters = @(Get-NetAdapter | ForEach-Object { @{Name=[string]$_.Name; InterfaceDescription=[string]$_.InterfaceDescription; Status=[string]$_.Status; HardwareInterface=[bool]$_.HardwareInterface} })
     $taps = @(Get-ReimsTapAdapters | ForEach-Object Name)
-    $installerAttached = $false
-    if ($config -and $config.PSObject.Properties['connect_installer']) { $installerAttached = [bool]$config.connect_installer }
+    $connectInstaller = [bool]($config -and $config.PSObject.Properties['connect_installer'] -and $config.connect_installer)
+    $installerAttached = $connectInstaller
     if ($runtime -and (Get-ReimsVmProcess $runtime)) {
         $launch = Get-Content -Raw (Join-Path $runtime.run_directory 'command.json') | ConvertFrom-Json
         $installerAttached = [bool]($launch.arguments | Where-Object { $_ -like 'id=installer,*' })
@@ -144,12 +197,17 @@ if ($Action -eq 'Status') {
     @{state=$state; prepared=$prepared; snapshots=$snapshots; taps=$taps; adapters=$adapters;
         runtime=$(if ($runtime -and (Get-ReimsVmProcess $runtime)) {$runtime} else {$null});
         vm_directory=$VmRoot;
+        host_cursor_hidden=(Get-ReimsHostCursorHidden);
         microphone=[bool]($config -and $config.PSObject.Properties['microphone'] -and $config.microphone);
         usb_backend=$(if ($config -and $config.PSObject.Properties['usb_backend']) {$config.usb_backend} else {'winusb'});
+        usb_backend_active=$(if ($runtime -and (Get-ReimsVmProcess $runtime) -and $runtime.PSObject.Properties['usb_backend']) {$runtime.usb_backend} else {$null});
+        usb_usbdk_installed=[bool]((Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\UsbDk') -and
+            (Test-Path -LiteralPath "$env:SystemRoot/System32/UsbDkHelper.dll" -PathType Leaf));
         cpus=$(if ($config) {$config.cpus} else {8}); memory_mib=$(if ($config) {$config.memory_mib} else {8192});
         disk_gib=$(if ($config) {$config.disk_gib} else {128}); disk=$(if ($config) {$config.active_disk} else {''});
         audio=$(if ($config -and $config.PSObject.Properties['audio']) {$config.audio} else {'none'});
-        with_installer=$installerAttached; network_adapter=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.adapter} else {''});
+        connect_installer=$connectInstaller; with_installer=$installerAttached;
+        network_adapter=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.adapter} else {''});
         guest_host=$(if ($config -and $config.PSObject.Properties['network']) {$config.network.guest_host} else {''});
         network_uplink_id=$(if ($config -and $config.PSObject.Properties['network'] -and $config.network.PSObject.Properties['physical_adapter_id']) {$config.network.physical_adapter_id} else {''});
         resolution=$(if ($config) {$config.resolution} else {'1920x1080'});
@@ -159,6 +217,38 @@ if ($Action -eq 'Status') {
     return
 }
 switch ($Action) {
+    HideHostCursor {
+        Set-ReimsHostCursor $true | Out-Null
+        'ホストカーソルを隠す設定を QEMU と保存値に反映しました。UI キューで処理されます。'
+    }
+    ShowHostCursor {
+        Set-ReimsHostCursor $false | Out-Null
+        'ホストカーソルの非表示設定を解除しました。'
+    }
+    LightenExtendedDisplay {
+        . "$PSScriptRoot/display-optimization.ps1"
+        Invoke-ReimsDisplayOptimization 'lighten'
+    }
+    RestoreExtendedDisplay {
+        . "$PSScriptRoot/display-optimization.ps1"
+        Invoke-ReimsDisplayOptimization 'restore'
+    }
+    MoveCursorToMainDisplay {
+        . "$PSScriptRoot/cursor-aid.ps1"
+        Invoke-ReimsCursorAid 'move-main'
+    }
+    MoveCursorToExtendedDisplay {
+        . "$PSScriptRoot/cursor-aid.ps1"
+        Invoke-ReimsCursorAid 'move-extended'
+    }
+    EnableCursorAid {
+        . "$PSScriptRoot/cursor-aid.ps1"
+        Invoke-ReimsCursorAid 'enable'
+    }
+    DisableCursorAid {
+        . "$PSScriptRoot/cursor-aid.ps1"
+        Invoke-ReimsCursorAid 'disable'
+    }
     GetWifiMacNat { Get-ReimsWifiStatus $VmRoot | ConvertTo-Json -Depth 6 -Compress }
     InstallWifiDriver {
         Assert-ReimsVmStopped
@@ -211,7 +301,11 @@ switch ($Action) {
         & "$PSScriptRoot/prepare-tools.ps1" | Out-Null
         'ディスクのコピーを新しい VM に取り込みました。元のファイルは変更していません。'
     }
-    InstallUsbDk { & "$PSScriptRoot/install-usbdk.ps1" }
+    InstallUsbDk {
+        $usbInstallArguments=@{}
+        if ($usbResultSupplied) { $usbInstallArguments.ResultPath=$UsbResultPath }
+        & "$PSScriptRoot/install-usbdk.ps1" @usbInstallArguments
+    }
     ListUsb { ConvertTo-Json -InputObject @(Get-ReimsUsbDevices) -Depth 4 -Compress }
     AttachUsb {
         if (!$UsbId) { $UsbId=(Get-ReimsUsbDevices | Where-Object { $_.bus -eq $UsbBus -and $_.address -eq $UsbAddress } | Select-Object -First 1).id }
@@ -285,7 +379,22 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     ApplyResolution {
         $js = Get-Content -Raw -LiteralPath "$PSScriptRoot/guest-display.js"
-        Invoke-GuestControl -Command "/usr/bin/osascript -l JavaScript - $Resolution <<'REIMS_DISPLAY'`n$js`nREIMS_DISPLAY"
+        [void](Get-ReimsVmConfig)
+        $result = Invoke-GuestControl -Command "/usr/bin/osascript -l JavaScript - $Resolution <<'REIMS_DISPLAY'`n$js`nREIMS_DISPLAY"
+        $confirmed = $result | ConvertFrom-Json -AsHashtable
+        if ($confirmed -isnot [Collections.IDictionary] -or !$confirmed.Contains('display_applied') -or
+            $confirmed.display_applied -isnot [string] -or $confirmed.display_applied -cne $Resolution) {
+            throw 'macOS の解像度変更を確認できませんでした。起動時の設定は変更していません。'
+        }
+        try {
+            # Reload after SSH so unrelated settings saved while it ran survive.
+            $config = Get-ReimsVmConfig
+            $config.resolution = $Resolution
+            Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
+        } catch {
+            throw "macOS の解像度は変更済みですが、次回起動用の設定を保存できませんでした。再試行してください。$($_.Exception.Message)"
+        }
+        $result
     }
     SetNetwork {
         Assert-ReimsVmStopped
@@ -298,12 +407,14 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     SetHardware {
         Assert-ReimsVmStopped
+        $savedConfig = Get-ReimsVmConfig
+        Assert-ReimsUsbBackendChange $savedConfig $UsbBackend
         if ($MemoryMiB % 4 -ne 0) { throw 'メモリは 4 MiB 単位で指定してください。' }
         $hostInfo = Get-CimInstance Win32_ComputerSystem
         if ($Cpus -gt $hostInfo.NumberOfLogicalProcessors -or [long]$MemoryMiB * 1MB -ge $hostInfo.TotalPhysicalMemory) { throw 'ホストの CPU / メモリ容量以内で設定してください。' }
         if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
         if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid guest address.' }
-        $selectedNetwork=Get-ReimsSavedNetwork (Get-ReimsVmConfig) $Network $Adapter $GuestHost $PhysicalAdapter
+        $selectedNetwork=Get-ReimsSavedNetwork $savedConfig $Network $Adapter $GuestHost $PhysicalAdapter
         if ($WithInstaller -and !$Iso) { throw 'インストーラーを接続する場合は ISO を選択してください。' }
         if ($Iso) { & "$PSScriptRoot/prepare-vm.ps1" -Iso $Iso | Out-Null }
         $config = Get-ReimsVmConfig
@@ -383,4 +494,10 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         'SSH ホスト鍵を照合し、接続設定を保存しました。'
     }
     CollectLogs { & "$PSScriptRoot/collect-logs.ps1" -Screenshot }
+}
+} finally {
+    if ($managerMutation) {
+        $managerMutation.ReleaseMutex()
+        $managerMutation.Dispose()
+    }
 }

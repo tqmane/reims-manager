@@ -245,7 +245,8 @@ efi[128:132]=b'PE\0\0'; struct.pack_into('<H',efi,132,0x8664)
     Assert-Throws { Assert-ReimsVmStopped } 'Stop this VM'
     $wrong = $runtime.PSObject.Copy()
     $wrong.start_ticks++
-    Assert-Throws { Get-ReimsVmProcess $wrong } 'belongs to another process'
+    Assert-Condition ($null -eq (Get-ReimsVmProcess $wrong)) 'A reused PID means the recorded VM has exited'
+    Assert-Throws { Invoke-ReimsQmp $wrong 'query-status' } 'no longer running'
     & (Join-Path $testScripts 'collect-logs.ps1') -Screenshot | Out-Null
     $report = Get-ChildItem -LiteralPath (Join-Path $testRoot '.work/diagnostics') -Directory -Filter 'vm-*' | Select-Object -Last 1
     Assert-Condition (Test-Path -LiteralPath (Join-Path $report.FullName 'guest.ppm')) 'Collect uses guest QMP screendump'

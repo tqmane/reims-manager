@@ -275,6 +275,111 @@ function Prepare-ReimsWifi([string]$EngineRoot,[string]$TapId,[string]$UplinkId,
     $result.prepared=$true;$result.configured=$true
     return $result
 }
+function Read-ReimsWifiRecoveryFile([string]$Path) {
+    $root=[IO.Path]::GetFullPath($VmRoot).TrimEnd('\','/')
+    $full=[IO.Path]::GetFullPath($Path)
+    if(!$full.StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Recovery evidence must belong to this VM.'}
+    $part=$root
+    foreach($name in @('')+([IO.Path]::GetRelativePath($root,$full) -split '[\\/]')){
+        if($name){$part=Join-Path $part $name}
+        if(Test-Path -LiteralPath $part){if((Get-Item -LiteralPath $part).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Recovery evidence must not traverse a link or junction.'}}
+    }
+    $file=Get-Item -LiteralPath $full -ErrorAction Stop
+    if($file.PSIsContainer -or $file.Length -gt 64KB){throw 'Recovery evidence must be a bounded ordinary file.'}
+    $bytes=[IO.File]::ReadAllBytes($full)
+    $value=[Text.Encoding]::UTF8.GetString($bytes)|ConvertFrom-Json -AsHashtable
+    if($value -isnot [Collections.IDictionary] -or ($value['schema'] -isnot [int] -and $value['schema'] -isnot [long]) -or $value.schema -ne 1){throw 'Unsupported recovery evidence schema.'}
+    return @{path=$full;value=$value;hash=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))}
+}
+function Get-ReimsWifiBootTicks {
+    $system=@(Get-CimInstance Win32_OperatingSystem -ErrorAction Stop)
+    if($system.Count -ne 1 -or $system[0].LastBootUpTime -isnot [datetime]){throw 'Cannot verify the current Windows boot time.'}
+    $boot=$system[0].LastBootUpTime.ToUniversalTime()
+    if($boot.Ticks -le 0 -or $boot -gt [DateTime]::UtcNow){throw 'Invalid Windows boot time.'}
+    return $boot.Ticks
+}
+function Get-ReimsWifiCaptureInspection([string]$Tap,[string]$Wifi) {
+    $info=[Diagnostics.ProcessStartInfo]::new((Get-ReimsWifiHelper))
+    $info.UseShellExecute=$false;$info.CreateNoWindow=$true
+    $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    $info.StandardOutputEncoding=[Text.UTF8Encoding]::new($false,$true);$info.StandardErrorEncoding=$info.StandardOutputEncoding
+    foreach($argument in @('--inspect',([guid]$Tap).ToString('B'),([guid]$Wifi).ToString('B'))){$info.ArgumentList.Add($argument)}
+    $process=[Diagnostics.Process]::new();$process.StartInfo=$info;$started=$false
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    try{
+        $started=$process.Start();if(!$started){throw 'Cannot start read-only capture inspection.'}
+        $output=[char[]]::new(65537);$errors=[char[]]::new(4097)
+        $stdout=$process.StandardOutput.ReadBlockAsync($output,0,$output.Length)
+        $stderr=$process.StandardError.ReadBlockAsync($errors,0,$errors.Length)
+        if(!$process.WaitForExit(3000)){throw 'Read-only capture inspection timed out.'}
+        $remaining=[Math]::Max(0,3000-[int]$clock.ElapsedMilliseconds)
+        if(![Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdout,$stderr),$remaining)){throw 'Read-only inspection output timed out.'}
+        $count=$stdout.GetAwaiter().GetResult();$errorCount=$stderr.GetAwaiter().GetResult()
+        if($count -gt 65536 -or $errorCount -gt 4096 -or $process.ExitCode -ne 0){throw 'Read-only capture inspection failed or exceeded its output limit.'}
+        return ([string]::new($output,0,$count)|ConvertFrom-Json -AsHashtable)
+    }finally{
+        try{if($started -and !$process.HasExited){$process.Kill($true);if(!$process.WaitForExit(2000)){throw 'Owned read-only inspection did not exit.'}}}
+        finally{$process.Dispose()}
+    }
+}
+function Archive-ReimsWifiPreviousBoot {
+    $folder=Join-Path $VmRoot 'state/wifi-forwarder'
+    $files=@{}
+    foreach($key in @('config','record','runtime','status')){
+        $path=switch($key){config{'state/config.json'}record{'state/wifi-forwarder.json'}runtime{'state/wifi-forwarder/runtime.json'}status{'state/wifi-forwarder/status.json'}}
+        $files[$key]=Read-ReimsWifiRecoveryFile (Join-Path $VmRoot $path)
+    }
+    $runtime=$files.runtime.value;$last=$files.status.value;$record=$files.record.value;$config=$files.config.value
+    foreach($key in @('pid','qemu_pid','start_ticks','qemu_start_ticks')){
+        if(($runtime[$key] -isnot [int] -and $runtime[$key] -isnot [long]) -or $runtime[$key] -le 0){throw 'Invalid previous forwarder process identity.'}
+    }
+    foreach($key in @('helper_pid','qemu_pid','qemu_start_ticks')){if($last[$key] -isnot [int] -and $last[$key] -isnot [long]){throw 'Invalid previous native status identity type.'}}
+    $session=[guid]::Empty
+    if($runtime['session'] -isnot [string] -or ![guid]::TryParse($runtime.session,[ref]$session) -or $session -eq [guid]::Empty -or
+        $runtime['executable'] -isnot [string] -or ![IO.Path]::IsPathFullyQualified($runtime.executable) -or
+        ![string]::Equals([IO.Path]::GetFullPath($runtime.executable),[IO.Path]::GetFullPath((Get-ReimsWifiHelper)),[StringComparison]::OrdinalIgnoreCase) -or
+        $last['session'] -cne $runtime.session -or $last['helper_pid'] -ne $runtime.pid -or $last['qemu_pid'] -ne $runtime.qemu_pid -or $last['qemu_start_ticks'] -ne $runtime.qemu_start_ticks -or
+        $last['cleanup_confirmed'] -isnot [bool] -or $last.cleanup_confirmed -or $last['state'] -notin @('starting','ready','error')){throw 'Previous forwarder receipts do not prove the same owned session.'}
+    $boot=Get-ReimsWifiBootTicks
+    if($runtime.start_ticks -ge $boot -or $runtime.qemu_start_ticks -ge $boot){throw 'Same-boot unconfirmed capture cannot be recovered automatically.'}
+    if(Get-ReimsVmProcess ([pscustomobject]$runtime)){throw 'Previous owned forwarder is still running.'}
+    $lookupErrors=@();$oldQemu=Get-Process -Id $runtime.qemu_pid -ErrorAction SilentlyContinue -ErrorVariable lookupErrors
+    if(!$oldQemu){if(@($lookupErrors|Where-Object {$_.FullyQualifiedErrorId -notlike 'NoProcessFoundForGivenId,*'}).Count){throw 'Cannot verify the previous QEMU identity.'}}
+    else{try{if(!$oldQemu.StartTime -or $oldQemu.StartTime.ToUniversalTime().Ticks -eq $runtime.qemu_start_ticks){throw 'Previous QEMU identity is live or unreadable.'}}finally{$oldQemu.Dispose()}}
+    if($record['state'] -ne 'enabled' -or !$config.ContainsKey('network') -or $config.network['mode'] -ne 'bridge' -or $config.network['forwarder'] -ne 'macnat' -or
+        $record['tap_id'] -isnot [string] -or $record['uplink_id'] -isnot [string] -or $record['pnp_instance_id'] -isnot [string] -or
+        $config.network['tap_id'] -ne $record.tap_id -or $config.network['physical_adapter_id'] -ne $record.uplink_id -or ([guid]$record.tap_id) -eq ([guid]$record.uplink_id)){throw 'Recovery adapter pair does not match the configured owned pair.'}
+    [void](Assert-ReimsOwnedWifiTap $record.tap_id $record.pnp_instance_id)
+    $tap=Get-ReimsWifiNic $record.tap_id;$wifi=Get-ReimsWifiNic $record.uplink_id
+    $receive=$last['receive'];$filters=$last['hardware_filters']
+    if($receive -isnot [Collections.IDictionary] -or $receive['strategy'] -cne 'native80211-socket-memberships' -or
+        ($receive['interface_index'] -isnot [int] -and $receive['interface_index'] -isnot [long]) -or $receive.interface_index -ne $wifi.InterfaceIndex -or
+        $filters -isnot [Collections.IDictionary] -or $filters['tap'] -isnot [Collections.IDictionary] -or $filters['wifi'] -isnot [Collections.IDictionary] -or
+        !$filters.wifi.ContainsKey('requested') -or $null -ne $filters.wifi.requested -or
+        ($filters.tap['before'] -isnot [int] -and $filters.tap['before'] -isnot [long]) -or $filters.tap.before -lt 0 -or $filters.tap.before -gt [uint32]::MaxValue){throw 'Only a fully recorded Native80211 observe-only session can recover after reboot.'}
+    $inspection=Get-ReimsWifiCaptureInspection $record.tap_id $record.uplink_id
+    if($inspection -isnot [Collections.IDictionary] -or ($inspection['schema'] -isnot [int] -and $inspection['schema'] -isnot [long]) -or $inspection.schema -ne 1 -or $inspection['adapters'] -isnot [Array] -or $inspection.adapters.Count -ne 2){throw 'Read-only inspection did not return the exact adapter pair.'}
+    foreach($role in @('tap','wifi')){
+        $rows=@($inspection.adapters|Where-Object {$_['role'] -ceq $role})
+        $index=if($role -eq 'tap'){$tap.InterfaceIndex}else{$wifi.InterfaceIndex}
+        if($rows.Count -ne 1 -or ($rows[0]['interface_index'] -isnot [int] -and $rows[0]['interface_index'] -isnot [long]) -or $rows[0].interface_index -ne $index -or
+            ($rows[0]['ndis_mode'] -isnot [int] -and $rows[0]['ndis_mode'] -isnot [long]) -or $rows[0].ndis_mode -ne 0 -or
+            ($rows[0]['packet_filter'] -isnot [int] -and $rows[0]['packet_filter'] -isnot [long]) -or $rows[0].packet_filter -lt 0 -or $rows[0].packet_filter -gt [uint32]::MaxValue -or
+            ($role -eq 'tap' -and $rows[0].packet_filter -ne $filters.tap.before)){throw 'Selected capture modes or the owned TAP filter are not restored.'}
+        foreach($key in @('sdk_medium','system_medium','physical_medium')){if(($rows[0][$key] -isnot [int] -and $rows[0][$key] -isnot [long]) -or $rows[0][$key] -lt 0){throw 'Inspection adapter medium is unknown.'}}
+        if($role -eq 'wifi' -and $rows[0].sdk_medium -ne 16 -and $rows[0].system_medium -ne 16 -and $rows[0].physical_medium -ne 9){throw 'Inspection does not identify Native80211 Wi-Fi.'}
+    }
+    $history=Join-Path $VmRoot 'state/wifi-forwarder-history'
+    if(Test-Path -LiteralPath $history){$entry=Get-Item -LiteralPath $history;if(!$entry.PSIsContainer -or $entry.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Recovery history must be an ordinary VM directory.'}}
+    $archive=Join-Path $history ([guid]::NewGuid().ToString('N'))
+    $proof=@{schema=1;kind='previous-windows-boot-idle-capture';observed_utc=[DateTime]::UtcNow.ToString('O');boot_ticks=$boot;previous_session=$runtime.session;tap_id=$record.tap_id;uplink_id=$record.uplink_id;inspection=$inspection;evidence=@{}}
+    foreach($key in $files.Keys){$proof.evidence[$key]=$files[$key].hash}
+    Write-ReimsJson (Join-Path $archive 'recovery.json') $proof
+    foreach($key in $files.Keys){if((Read-ReimsWifiRecoveryFile $files[$key].path).hash -cne $files[$key].hash){throw 'Recovery evidence changed concurrently; original session was not archived.'}}
+    # Preserve the old status verbatim. This proves idle capture after a new
+    # Windows boot, not that the old process completed its shutdown protocol.
+    [IO.Directory]::Move($folder,(Join-Path $archive 'original'))
+}
 function Stop-ReimsWifiForwarder {
     $folder=Join-Path $VmRoot 'state/wifi-forwarder';$runtime=Read-ReimsWifiJson (Join-Path $folder 'runtime.json')
     if(!$runtime){return}
@@ -282,7 +387,10 @@ function Stop-ReimsWifiForwarder {
     if(!$process){
         $last=Read-ReimsWifiJson (Join-Path $folder 'status.json')
         if(!$last -or $last.session -ne $runtime.session -or ($last.state -ne 'stopped' -and
-            !($last.state -eq 'error' -and $last['cleanup_confirmed'] -eq $true))){throw 'Previous forwarder exited without confirmed capture cleanup; inspect before reusing adapters.'}
+            !($last.state -eq 'error' -and $last['cleanup_confirmed'] -eq $true))){
+            try{Archive-ReimsWifiPreviousBoot}
+            catch{throw "Previous forwarder exited without confirmed capture cleanup; automatic reboot recovery refused: $($_.Exception.Message)"}
+        }
         return
     }
     [IO.File]::WriteAllText((Join-Path $folder 'stop'),'stop')

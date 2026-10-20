@@ -114,6 +114,19 @@
             <Button x:Name="SessionRestartButton" Content="" Tag="Restart" Click="ActionClick" Style="{StaticResource ChromeButton}" ToolTip="macOSを再起動" AutomationProperties.Name="macOSを再起動"/>
             <Border Width="1" Margin="6,9" Background="{DynamicResource CardBorderBrush}"/>
             <Button x:Name="SessionSettingsButton" Content="" Click="OpenSettings" Style="{StaticResource ChromeButton}" ToolTip="仮想マシンの設定" AutomationProperties.Name="仮想マシンの設定"/>
+            <Button x:Name="SessionCursorAidButton" Content="カーソルを表示" Tag="EnableCursorAid" Click="ActionClick" Style="{StaticResource CommandButton}" shell:WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="1 回のクリックで、SSH ペアリング済みの VM に同梱ヘルパーを検証・導入して起動します。解除は「設定 → ディスプレイ → カーソル互換表示 → オフにする」。" AutomationProperties.Name="カーソルを表示"/>
+            <Button x:Name="SessionCursorMenuButton" Content="" Click="ShowPowerMenu" Style="{StaticResource ChromeButton}" Width="26" ToolTip="カーソルの移動と設定" AutomationProperties.Name="カーソルの移動と設定">
+              <Button.ContextMenu><ContextMenu>
+                <MenuItem Header="VM 本体の画面へ移動" Tag="MoveCursorToMainDisplay" Click="MenuAction"/>
+                <MenuItem Header="拡張画面へ移動" Tag="MoveCursorToExtendedDisplay" Click="MenuAction"/>
+                <Separator/>
+                <MenuItem Header="Windows 側のカーソルを隠す" Tag="HideHostCursor" Click="MenuAction"/>
+                <MenuItem Header="Windows 側のカーソルを表示" Tag="ShowHostCursor" Click="MenuAction"/>
+                <Separator/>
+                <MenuItem Header="カーソル互換表示をオフ" Tag="DisableCursorAid" Click="MenuAction"/>
+                <MenuItem Header="Windows に戻す: Ctrl + Alt + Home（対応エンジン）" IsEnabled="False"/>
+              </ContextMenu></Button.ContextMenu>
+            </Button>
             <Button x:Name="SessionUsbButton" Content="" Tag="usb" Click="OpenSettingsCategory" Style="{StaticResource ChromeButton}" ToolTip="USBデバイス" AutomationProperties.Name="USBデバイス"/>
             <Button x:Name="SessionSharingButton" Content="" Tag="2" Click="NavigatePage" Style="{StaticResource ChromeButton}" ToolTip="クリップボード共有" AutomationProperties.Name="クリップボード共有"/>
             <Button x:Name="SessionSnapshotButton" Content="" Tag="4" Click="NavigatePage" Style="{StaticResource ChromeButton}" ToolTip="スナップショット" AutomationProperties.Name="スナップショット"/>
@@ -123,7 +136,7 @@
             <TextBlock Text="" Style="{StaticResource CommandIcon}" Margin="0,0,10,0"/>
             <TextBlock Text="Reims Manager" FontWeight="SemiBold" TextWrapping="NoWrap"/>
           </StackPanel>
-          <TextBlock x:Name="SessionTitle" Grid.Column="1" Text="{Binding Text, ElementName=VmTitle}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="12,0" FontSize="12" ToolTip="入力をWindowsに戻す: Ctrl + Alt + Win"/>
+          <TextBlock x:Name="SessionTitle" Grid.Column="1" Text="{Binding Text, ElementName=VmTitle}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="12,0" FontSize="12" ToolTip="入力を Windows に戻す: Ctrl + Alt + Home / Ctrl + Alt + Win（Home は対応エンジンが必要です）"/>
           <StackPanel x:Name="CaptionCommands" Grid.Column="2" Orientation="Horizontal">
             <Button x:Name="MinimizeCommand" Content="" Click="MinimizeWindow" Style="{StaticResource CaptionButton}" ToolTip="最小化" AutomationProperties.Name="最小化"/>
             <Button x:Name="MaximizeCommand" Content="" Click="MaximizeWindow" Style="{StaticResource CaptionButton}" ToolTip="最大化 / 元に戻す" AutomationProperties.Name="最大化または元に戻す"/>
@@ -196,10 +209,10 @@
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal">
               <Button x:Name="NewVmCommand" IsEnabled="{Binding IsEnabled, ElementName=Library}" Click="NewVm" Style="{StaticResource CommandButton}" ToolTip="新しい仮想マシン (Ctrl+N)" AutomationProperties.Name="新しい仮想マシン">
-                <TextBlock Text="" Style="{StaticResource CommandIcon}"/>
+                <StackPanel Orientation="Horizontal"><TextBlock Text="" Style="{StaticResource CommandIcon}" Margin="0,0,7,0"/><TextBlock Text="新規" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button IsEnabled="{Binding IsEnabled, ElementName=Library}" Click="OpenVm" Style="{StaticResource CommandButton}" ToolTip="仮想マシンを開く (Ctrl+O)" AutomationProperties.Name="仮想マシンを開く">
-                <TextBlock Text="" Style="{StaticResource CommandIcon}"/>
+                <StackPanel Orientation="Horizontal"><TextBlock Text="" Style="{StaticResource CommandIcon}" Margin="0,0,7,0"/><TextBlock Text="開く" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Border Width="1" Background="{DynamicResource CardBorderBrush}" Margin="10,6"/>
               <Button x:Name="StartButton" Content="▶  起動" Tag="Start" Click="ActionClick" Style="{StaticResource PrimaryButton}" Padding="16,6" Margin="2,0,6,0" MinHeight="34"/>
@@ -458,6 +471,8 @@
                         <Button x:Name="ConsoleConnectButton" Content="VM の画面を接続" Click="DockConsole" HorizontalAlignment="Center" Margin="0,20,0,0" Tag="Console"/>
                         <WrapPanel x:Name="OverviewActions" HorizontalAlignment="Center" Margin="0,20,0,0">
                           <Button x:Name="OverviewStartButton" Content="仮想マシンを起動" Tag="Start" Click="ActionClick" Style="{StaticResource PrimaryButton}"/>
+                          <Button x:Name="OverviewSetupButton" Content="macOS をセットアップ" Tag="5" Click="NavigatePage" Style="{StaticResource PrimaryButton}" Visibility="Collapsed"/>
+                          <Button x:Name="OverviewExitButton" Content="VM を完全終了" Tag="Exit" Click="ActionClick" Visibility="Collapsed" ToolTip="ハードウェアの設定を変更できる状態にします。"/>
                           <Button Content="仮想マシンの設定" Click="OpenSettings"/>
                         </WrapPanel>
                       </StackPanel>
@@ -470,7 +485,7 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
-                  <TextBlock Text="入力を Windows に戻す: Ctrl + Alt + Win" Style="{StaticResource MutedText}" FontSize="12" VerticalAlignment="Center"/>
+                  <TextBlock Text="Windows に戻す: Ctrl + Alt + Home / Ctrl + Alt + Win" Style="{StaticResource MutedText}" FontSize="12" VerticalAlignment="Center"/>
                   <Button Grid.Column="1" Content="別ウィンドウで開く" Click="PopOutConsole" Tag="Console" Style="{StaticResource CommandButton}" Margin="0"/>
                 </Grid>
               </Grid>
@@ -512,7 +527,7 @@
           </Grid.ColumnDefinitions>
           <Button x:Name="SettingsBackButton" Content="" FontFamily="Segoe Fluent Icons" Click="CloseSettings" Style="{StaticResource CommandButton}" ToolTip="元の画面に戻る" AutomationProperties.Name="設定を閉じて戻る" Margin="0,0,16,0"/>
           <StackPanel Grid.Column="1">
-            <TextBlock Text="仮想マシンの設定" FontSize="23" FontWeight="SemiBold"/>
+            <TextBlock x:Name="SettingsHeading" Text="仮想マシンの設定" FontSize="23" FontWeight="SemiBold"/>
             <TextBlock Text="{Binding Text, ElementName=VmTitle}" Style="{StaticResource MutedText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,5,0,0"/>
           </StackPanel>
           <Border Grid.Column="2" Style="{StaticResource NoticeCard}" Padding="12,6" VerticalAlignment="Center" Margin="20,0,0,0">
@@ -611,7 +626,22 @@
           </DockPanel>
         </Border>
         <Border x:Name="SettingsSurface" Grid.Row="1" Grid.Column="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="8">
-          <TabControl x:Name="Tabs" SelectedIndex="0" Background="Transparent" BorderThickness="0" SelectionChanged="TabChanged">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Border x:Name="SettingsStateNotice" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1" Padding="20,14" Visibility="Collapsed">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,16,0">
+                  <TextBlock x:Name="SettingsStateHeading" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/>
+                  <TextBlock x:Name="SettingsStateDescription" Style="{StaticResource MutedText}" FontSize="12" Margin="0,4,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                  <Button x:Name="SettingsStateActionButton" Click="SettingsStateAction" Padding="12,7" Margin="0,0,0,6" Visibility="Collapsed"/>
+                  <Button x:Name="SettingsRefreshButton" Content="状態を更新" Click="RefreshClick" Padding="12,7" Margin="0" ToolTip="保存済みの構成と VM の状態を再確認 (F5)。入力中の変更は保持します。"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+          <TabControl x:Name="Tabs" Grid.Row="1" SelectedIndex="0" Background="Transparent" BorderThickness="0" SelectionChanged="TabChanged">
             <TabControl.Template>
               <ControlTemplate TargetType="TabControl">
                 <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" KeyboardNavigation.TabNavigation="Local"/>
@@ -621,7 +651,7 @@
               <Grid/>
             </TabItem>
             <TabItem Header="設定">
-              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <ScrollViewer x:Name="HardwareScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid x:Name="Editors" Margin="24,24,24,20">
                   <StackPanel x:Name="MemoryPage">
                     <TextBlock Text="メモリ" Style="{StaticResource PageHeading}"/>
@@ -639,7 +669,7 @@
                     <TextBlock Text="プロセッサ" Style="{StaticResource PageHeading}"/>
                     <TextBlock Text="Windows のハードウェア仮想化を使用します。" Style="{StaticResource MutedText}"/>
                     <TextBlock Text="CPU コア数" Style="{StaticResource FieldLabel}"/>
-                    <TextBox x:Name="Cpus" Text="8" Width="180" HorizontalAlignment="Left"/>
+                    <TextBox x:Name="Cpus" Text="8" Width="180" HorizontalAlignment="Left" AutomationProperties.Name="CPU コア数"/>
                     <TextBlock Text="1 ソケット / Windows Hypervisor Platform" Style="{StaticResource MutedText}" Margin="0,24,0,0"/>
                   </StackPanel>
                   <StackPanel x:Name="DiskPage" Visibility="Collapsed">
@@ -650,15 +680,15 @@
                       <Button Content="ディスク差分を整理" Tag="OptimizeDisk" Click="ActionClick"/>
                     </WrapPanel>
                     <TextBlock Text="拡張後の容量 (GiB)" Style="{StaticResource FieldLabel}"/>
-                    <TextBox x:Name="DiskSize" Text="128" Width="180" HorizontalAlignment="Left"/>
+                    <TextBox x:Name="DiskSize" Text="128" Width="180" HorizontalAlignment="Left" AutomationProperties.Name="拡張後のディスク容量 GiB"/>
                     <Button Content="容量を拡張…" Click="ExpandDisk" HorizontalAlignment="Left" Margin="0,16,0,8" Tag="ExpandDisk"/>
                     <TextBlock Text="拡張後、macOS の Disk Utility でも APFS 領域を拡張します。" Style="{StaticResource MutedText}"/>
                   </StackPanel>
                   <StackPanel x:Name="MediaPage" Visibility="Collapsed">
                     <TextBlock Text="CD/DVD・ISO" Style="{StaticResource PageHeading}"/>
                     <CheckBox x:Name="HardwareIso" Content="起動時にインストーラーを接続" Margin="0,18,0,16"/>
-                    <TextBox x:Name="HardwareIsoPath" MinWidth="120" VerticalContentAlignment="Center"/>
-                    <Button Content="ISO を選択…" Click="BrowseHardwareIso" HorizontalAlignment="Left" Margin="0,16,0,8"/>
+                    <TextBox x:Name="HardwareIsoPath" MinWidth="120" VerticalContentAlignment="Center" AutomationProperties.Name="起動時に接続する ISO の保存先"/>
+                    <Button x:Name="HardwareIsoBrowseButton" Content="ISO を選択…" Click="BrowseHardwareIso" HorizontalAlignment="Left" Margin="0,16,0,8"/>
                     <TextBlock Text="インストールが終わったら接続を解除できます。" Style="{StaticResource MutedText}"/>
                   </StackPanel>
                   <StackPanel x:Name="NetworkPage" Visibility="Collapsed">
@@ -676,27 +706,31 @@
                       </StackPanel>
                     </Expander>
                     <TextBlock Text="macOS の IP アドレス / ホスト名" Style="{StaticResource FieldLabel}"/>
-                    <TextBox x:Name="GuestHost"/>
+                    <TextBox x:Name="GuestHost" AutomationProperties.Name="macOS の IP アドレスまたはホスト名"/>
                     <Button Content="LAN 接続の準備" Click="OpenBridgeTab" HorizontalAlignment="Left" Margin="0,18,0,0"/>
                   </StackPanel>
-                  <StackPanel x:Name="UsbPage" Visibility="Collapsed">
+                  <StackPanel x:Name="UsbPage" Visibility="Collapsed" IsVisibleChanged="UsbPageVisibilityChanged">
                     <TextBlock Text="USB デバイス" Style="{StaticResource PageHeading}"/>
                     <TextBlock Text="Windows に接続したデバイスを、この VM に接続します。接続中は Windows 側から使用できません。" Style="{StaticResource MutedText}"/>
                     <WrapPanel Margin="0,18,0,12">
-                      <Button Content="デバイス一覧を更新" Click="RefreshUsb" Tag="ListUsb"/>
-                      <Button Content="USB 転送ドライバーを導入…" Click="InstallUsbDk"/>
+                      <Button x:Name="UsbRefreshButton" Content="デバイス一覧を更新" Click="RefreshUsb" Tag="ListUsb"/>
+                      <Button x:Name="InstallUsbDkButton" Content="UsbDk を導入…" Click="InstallUsbDk" Tag="InstallUsbDk"/>
                     </WrapPanel>
-                    <ListBox x:Name="UsbDevices" MinHeight="140" MaxHeight="280" DisplayMemberPath="Label"/>
+                    <ListBox x:Name="UsbDevices" MinHeight="140" MaxHeight="220" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" AutomationProperties.Name="USB デバイスの登録と接続状態">
+                      <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Margin="0,3"/></DataTemplate></ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock x:Name="UsbSelectionHint" Style="{StaticResource MutedText}" Margin="0,10,0,0" Text="一覧を更新してから操作してください。"/>
                     <WrapPanel Margin="0,12,0,0">
-                      <Button Content="自動接続に登録" Click="AttachUsb" Tag="AttachUsb"/>
-                      <Button Content="登録を解除して Windows に戻す" Click="DetachUsb" Tag="DetachUsb"/>
+                      <Button x:Name="UsbAttachButton" Content="接続して自動接続に登録" Click="AttachUsb" Tag="AttachUsb"/>
+                      <Button x:Name="UsbDetachButton" Content="登録を解除して Windows に戻す" Click="DetachUsb" Tag="DetachUsb"/>
                     </WrapPanel>
                     <TextBlock Text="転送方式（変更は次回起動時）" Style="{StaticResource FieldLabel}"/>
-                    <ComboBox x:Name="UsbBackend" SelectedIndex="0">
-                      <ComboBoxItem>WinUSB（対応する機器）</ComboBoxItem>
+                    <ComboBox x:Name="UsbBackend" SelectedIndex="0" AutomationProperties.Name="USB 転送方式">
+                      <ComboBoxItem>WinUSB（機器ごとに対応ドライバーが必要）</ComboBoxItem>
                       <ComboBoxItem>UsbDk（汎用転送・ドライバー導入後）</ComboBoxItem>
                     </ComboBox>
-                    <TextBlock x:Name="UsbHint" Style="{StaticResource MutedText}" Text="USB 転送には Windows 側の対応ドライバーが必要です。"/>
+                    <TextBlock x:Name="UsbBackendHint" Style="{StaticResource MutedText}" Margin="0,8,0,12"/>
+                    <TextBlock x:Name="UsbHint" Style="{StaticResource MutedText}" Text="「デバイス一覧を更新」で、この VM の USB 登録と接続状態を確認します。"/>
                   </StackPanel>
                   <StackPanel x:Name="AudioPage" Visibility="Collapsed">
                     <TextBlock Text="マイク・スピーカー" Style="{StaticResource PageHeading}"/>
@@ -709,14 +743,43 @@
                   <StackPanel x:Name="DisplayPage" Visibility="Collapsed">
                     <TextBlock Text="ディスプレイ" Style="{StaticResource PageHeading}"/>
                     <TextBlock Text="起動時の解像度" Style="{StaticResource FieldLabel}"/>
-                    <ComboBox x:Name="Resolution">
+                    <ComboBox x:Name="Resolution" AutomationProperties.Name="起動時の解像度">
                       <ComboBoxItem>1280x720</ComboBoxItem>
                       <ComboBoxItem IsSelected="True">1920x1080</ComboBoxItem>
                       <ComboBoxItem>2560x1440</ComboBoxItem>
                       <ComboBoxItem>3840x2160</ComboBoxItem>
                     </ComboBox>
                     <Button Content="実行中の macOS に適用" Click="ApplyResolution" HorizontalAlignment="Left" Margin="0,18,0,0" Tag="ApplyResolution"/>
+                    <TextBlock Text="適用に成功すると、次回の VM 起動時にもこの解像度を使用します。VM が停止中の場合は、下の「変更を保存」で起動時の解像度を保存できます。" Style="{StaticResource MutedText}" Margin="0,10,0,0"/>
                     <TextBlock Text="macOS 26 の Intel VM では、画面幅が 2048 ピクセルを超えると表示が乱れる既知の問題があります。安定した操作には 1920 × 1080 を推奨します。4K は描画負荷も高くなります。" Style="{StaticResource MutedText}" Margin="0,20,0,0"/>
+                    <Border x:Name="CursorAidCard" Style="{StaticResource NoticeCard}" Margin="0,20,0,0"><StackPanel>
+                      <TextBlock Text="カーソル互換表示" FontSize="18" FontWeight="SemiBold"/>
+                      <TextBlock Text="画面ミラーリングでカーソルが見えないときに、macOS の実際のカーソルを通常の画面内容として描画します。" Style="{StaticResource MutedText}" Margin="0,8,0,8"/>
+                      <TextBlock Text="この VM の macOS ユーザーで、ログイン後もオンの状態が続きます。ミラーリングは自動検出しません。必要なときだけオンにし、不要になったらオフにしてください。操作には実行中の VM と SSH ペアリングが必要です。" Style="{StaticResource MutedText}"/>
+                      <WrapPanel Margin="0,16,0,0">
+                        <Button x:Name="EnableCursorAidButton" Content="オンにする" Tag="EnableCursorAid" Click="ActionClick" AutomationProperties.Name="カーソル互換表示をオンにする"/>
+                        <Button x:Name="DisableCursorAidButton" Content="オフにする" Tag="DisableCursorAid" Click="ActionClick" AutomationProperties.Name="カーソル互換表示をオフにする"/>
+                      </WrapPanel>
+                      <WrapPanel Margin="0,8,0,0">
+                        <Button x:Name="MoveCursorMainButton" Content="VM 本体の画面へ移動" Tag="MoveCursorToMainDisplay" Click="ActionClick"/>
+                        <Button x:Name="MoveCursorExtendedButton" Content="拡張画面へ移動" Tag="MoveCursorToExtendedDisplay" Click="ActionClick"/>
+                      </WrapPanel>
+                      <TextBlock Text="移動先の画面配置と倍率を読み取り、実際の画面中央へ移動します。拡張画面を複数検出した場合は自動選択しません。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                      <WrapPanel Margin="0,12,0,0">
+                        <Button x:Name="HideHostCursorButton" Content="Windows 側を隠す" Tag="HideHostCursor" Click="ActionClick"/>
+                        <Button x:Name="ShowHostCursorButton" Content="Windows 側を表示" Tag="ShowHostCursor" Click="ActionClick"/>
+                      </WrapPanel>
+                      <TextBlock Text="対応エンジンで、VM の画面内だけ Windows 側のカーソルを隠します。VM 内にカーソルを表示するには、上の「カーソル互換表示」などゲスト側で描画するカーソルが必要です。入力を Windows に戻す: Ctrl + Alt + Home / Ctrl + Alt + Win。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                    </StackPanel></Border>
+                    <Border x:Name="ExtendedDisplayCard" Style="{StaticResource NoticeCard}" Margin="0,16,0,0"><StackPanel>
+                      <TextBlock Text="拡張画面の軽量化" FontSize="18" FontWeight="SemiBold"/>
+                      <TextBlock Text="拡張画面の広さを保ったまま、描画ピクセル数が少ないモードに切り替えます。文字の精細さは下がります。VM 本体の画面は変更しません。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                      <WrapPanel Margin="0,16,0,0">
+                        <Button x:Name="LightenExtendedDisplayButton" Content="拡張画面を軽くする" Tag="LightenExtendedDisplay" Click="ActionClick"/>
+                        <Button x:Name="RestoreExtendedDisplayButton" Content="元の画質へ戻す" Tag="RestoreExtendedDisplay" Click="ActionClick"/>
+                      </WrapPanel>
+                      <TextBlock Text="現在のログイン中だけ適用します。再接続後は必要に応じて再適用してください。変更後に別の設定が適用された場合は、保存した設定で上書きしません。" Style="{StaticResource MutedText}" Margin="0,8,0,0"/>
+                    </StackPanel></Border>
                     <TextBlock Text="Reims vGPU · Apple Paravirtualized Graphics" Style="{StaticResource MutedText}" Margin="0,24,0,0"/>
                   </StackPanel>
                 </Grid>
@@ -728,7 +791,7 @@
                   <TextBlock Text="クリップボード" Style="{StaticResource PageHeading}"/>
                   <TextBlock Text="Windows と macOS の間でテキストをコピー＆ペーストできます。" Style="{StaticResource MutedText}"/>
                   <CheckBox x:Name="ClipboardSharing" Content="テキストを自動で共有する" Checked="ClipboardChanged" Unchecked="ClipboardChanged" Margin="0,24,0,12"/>
-                  <TextBlock Text="このアプリの起動中、選択した VM と共有します。画像・ファイルは対象外です。" Style="{StaticResource MutedText}"/>
+                  <TextBlock Text="共有する設定は VM ごとに保存され、次回この VM を開いたときも引き継ぎます。アプリの起動中、VM が実行中のときにテキストを共有します。画像・ファイルは対象外です。" Style="{StaticResource MutedText}"/>
                   <WrapPanel Margin="0,24,0,0">
                     <Button Content="Windows → macOS" Click="CopyToGuest" Tag="Clipboard"/>
                     <Button Content="macOS → Windows" Click="CopyFromGuest" Tag="Clipboard"/>
@@ -758,23 +821,23 @@
                     </Grid.RowDefinitions>
                     <StackPanel>
                       <TextBlock Text="モデル"/>
-                      <TextBox x:Name="IdentityModel" Margin="0,6,0,14"/>
+                      <TextBox x:Name="IdentityModel" Margin="0,6,0,14" AutomationProperties.Name="Mac のモデル"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2">
                       <TextBlock Text="シリアル番号"/>
-                      <TextBox x:Name="IdentitySerial" Margin="0,6,0,14"/>
+                      <TextBox x:Name="IdentitySerial" Margin="0,6,0,14" AutomationProperties.Name="Mac のシリアル番号"/>
                     </StackPanel>
                     <StackPanel Grid.Row="1">
                       <TextBlock Text="MLB（ボードシリアル）"/>
-                      <TextBox x:Name="IdentityMlb" Margin="0,6,0,14"/>
+                      <TextBox x:Name="IdentityMlb" Margin="0,6,0,14" AutomationProperties.Name="MLB ボードシリアル"/>
                     </StackPanel>
                     <StackPanel Grid.Row="1" Grid.Column="2">
                       <TextBlock Text="ROM（12 桁の16進数）"/>
-                      <TextBox x:Name="IdentityRom" Margin="0,6,0,14"/>
+                      <TextBox x:Name="IdentityRom" Margin="0,6,0,14" AutomationProperties.Name="ROM 12 桁の16進数"/>
                     </StackPanel>
                     <StackPanel Grid.Row="2" Grid.ColumnSpan="3">
                       <TextBlock Text="System UUID"/>
-                      <TextBox x:Name="IdentityUuid" Margin="0,6,0,0"/>
+                      <TextBox x:Name="IdentityUuid" Margin="0,6,0,0" AutomationProperties.Name="System UUID"/>
                     </StackPanel>
                   </Grid>
                   <WrapPanel Margin="0,20,0,0">
@@ -805,12 +868,12 @@
                   <TextBlock Text="保存する名前" Style="{StaticResource FieldLabel}"/>
                   <DockPanel>
                     <Button Content="保存" DockPanel.Dock="Right" Click="SaveSnapshot" Style="{StaticResource PrimaryButton}" Tag="SnapshotCreate"/>
-                    <TextBox x:Name="SnapshotName"/>
+                    <TextBox x:Name="SnapshotName" AutomationProperties.Name="保存するスナップショットの名前"/>
                   </DockPanel>
                   <TextBlock Text="保存済みの状態" Style="{StaticResource FieldLabel}"/>
                   <DockPanel>
                     <Button Content="復元…" DockPanel.Dock="Right" Click="RestoreSnapshot" Tag="SnapshotRestore"/>
-                    <ComboBox x:Name="Snapshots"/>
+                    <ComboBox x:Name="Snapshots" AutomationProperties.Name="復元するスナップショット"/>
                   </DockPanel>
                 </StackPanel>
               </ScrollViewer>
@@ -822,14 +885,15 @@
                   <TextBlock Text="1  インストーラーを選択" Style="{StaticResource SectionHeading}"/>
                   <DockPanel>
                     <Button Content="ISO を選択…" DockPanel.Dock="Right" Click="BrowseIso"/>
-                    <TextBox x:Name="Iso" MinWidth="120" VerticalContentAlignment="Center"/>
+                    <TextBox x:Name="Iso" MinWidth="120" VerticalContentAlignment="Center" AutomationProperties.Name="macOS インストーラーの保存先"/>
                   </DockPanel>
                   <TextBlock Text="2  ディスクを準備" Style="{StaticResource SectionHeading}"/>
                   <TextBlock Text="新規ディスクの容量 (GiB)" Margin="0,0,0,8"/>
-                  <TextBox x:Name="NewDiskSize" Text="300" Width="160" HorizontalAlignment="Left"/>
+                  <TextBox x:Name="NewDiskSize" Text="300" Width="160" HorizontalAlignment="Left" AutomationProperties.Name="新規ディスクの容量 GiB"/>
                   <TextBlock Text="3  作成後の動作" Style="{StaticResource SectionHeading}"/>
                   <CheckBox x:Name="StartAfterSetup" IsChecked="True" Content="作成後、インストーラーを起動する" Margin="0,0,0,12"/>
-                  <CheckBox x:Name="ConnectIso" Content="インストーラーを接続して起動" Margin="0,0,0,12"/>
+                  <CheckBox x:Name="ConnectIso" Content="インストーラーを接続して起動（一時指定・保存しません）" Margin="0,0,0,8"/>
+                  <TextBlock Text="次回以降もインストーラーを接続する場合は、「CD/DVD・ISO」で起動時の設定を保存してください。" Style="{StaticResource MutedText}" Margin="0,0,0,12"/>
                   <TextBlock Text="Disk Utility で仮想ディスクを APFS に初期化し、macOS をインストールします。初回設定後、REIMSTOOLS の setup.command を実行してください。" Style="{StaticResource MutedText}"/>
                   <Button Content="仮想マシンを作成" Click="Setup" HorizontalAlignment="Left" Margin="0,24,0,8" Style="{StaticResource PrimaryButton}" Tag="Setup"/>
                   <Expander Header="エンジンの準備" Margin="0,24,0,0">
@@ -846,9 +910,9 @@
                   <TextBlock Text="macOS とペアリング" Style="{StaticResource PageHeading}"/>
                   <TextBlock Text="Finder の REIMSTOOLS から setup.command を開き、表示されたユーザー名と指紋を入力します。" Style="{StaticResource MutedText}"/>
                   <TextBlock Text="macOS ユーザー名" Style="{StaticResource FieldLabel}"/>
-                  <TextBox x:Name="GuestUser"/>
+                  <TextBox x:Name="GuestUser" AutomationProperties.Name="SSH 接続する macOS ユーザー名"/>
                   <TextBlock Text="SHA256 指紋" Style="{StaticResource FieldLabel}"/>
-                  <TextBox x:Name="Fingerprint"/>
+                  <TextBox x:Name="Fingerprint" AutomationProperties.Name="SSH ホスト鍵の SHA256 指紋"/>
                   <Button Content="指紋を照合して接続" Click="Pair" HorizontalAlignment="Left" Margin="0,20,0,16" Style="{StaticResource PrimaryButton}" Tag="Pair"/>
                   <TextBlock Text="macOS のパスワードは保存しません。SSH 鍵はこの VM のフォルダーに保持します。" Style="{StaticResource MutedText}"/>
                 </StackPanel>
@@ -889,6 +953,7 @@
               </ScrollViewer>
             </TabItem>
           </TabControl>
+          </Grid>
         </Border>
         <Border x:Name="SettingsFooter" Grid.Row="2" Grid.ColumnSpan="2" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="0,14,0,0" Margin="0,14,0,0">
           <Grid>
@@ -898,12 +963,12 @@
             </Grid.ColumnDefinitions>
             <StackPanel VerticalAlignment="Center" Margin="0,0,20,0">
               <TextBlock x:Name="SettingsHint" Text="変更はありません。" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/>
-              <TextBlock Text="接続・共有など、各ページの操作ボタンは即時反映です。" Style="{StaticResource MutedText}" FontSize="12" Margin="0,4,0,0"/>
+              <TextBlock x:Name="SettingsScopeHint" Text="ハードウェア設定は「変更を保存」で確定し、次回の VM 起動から使用します。" Style="{StaticResource MutedText}" FontSize="12" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-              <Button x:Name="ReloadHardwareButton" Content="キャンセル" Click="CancelSettings" MinWidth="100" Margin="0,0,8,0"/>
-              <Button x:Name="SaveHardwareButton" Content="適用" Click="ApplySettings" MinWidth="90" Margin="0,0,8,0"/>
-              <Button x:Name="SettingsOkButton" Content="OK" Click="SaveAndCloseSettings" Style="{StaticResource PrimaryButton}" MinWidth="90" Margin="0"/>
+              <Button x:Name="ReloadHardwareButton" Content="変更を破棄…" Click="DiscardSettingsEdits" MinWidth="100" Margin="0,0,8,0" ToolTip="未保存のハードウェア・識別情報を元に戻します。実行済みの操作は保持します。"/>
+              <Button x:Name="SaveHardwareButton" Content="変更を保存" Click="ApplySettings" MinWidth="100" Margin="0,0,8,0" ToolTip="Ctrl+S"/>
+              <Button x:Name="SettingsOkButton" Content="閉じる" Click="SaveAndCloseSettings" Style="{StaticResource PrimaryButton}" MinWidth="100" Margin="0"/>
             </StackPanel>
           </Grid>
         </Border>

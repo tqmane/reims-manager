@@ -4,7 +4,7 @@ function Invoke-ReimsVmSetup([string]$Iso, [int]$DiskGiB, [int]$Cpus=8, [int]$Me
     if (!$Iso -or !(Test-Path -LiteralPath $Iso -PathType Leaf)) { throw 'macOS インストーラーを選択してください。' }
     . "$PSScriptRoot/guest-bridge-release.ps1"
     $pin=Get-ReimsQualifiedGuestBridgeLock
-    if (!$script:ReimsEngine -or $script:ReimsEngine.id -ne $pin.required_engine_id) { throw 'Install and select the matching portable engine before setup.' }
+    if (!(Test-ReimsGuestBridgeEngine $pin $script:ReimsEngine)) { throw 'Install and select the matching portable engine before setup.' }
     # Fail before preparing disks/firmware when the required addon is unpublished.
     [void](Get-ReimsGuestBridgeRelease $pin)
     $existing=Test-Path -LiteralPath (Join-Path $VmRoot 'state/config.json')
@@ -33,11 +33,12 @@ function Invoke-ReimsVmSetup([string]$Iso, [int]$DiskGiB, [int]$Cpus=8, [int]$Me
     }
     $config=Get-ReimsVmConfig
     $config.cpus=$Cpus; $config.memory_mib=$MemoryMiB
+    if (!$existing) { $config | Add-Member -Force connect_installer $true }
     Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
     & "$PSScriptRoot/prepare-tools.ps1" | Out-Null
     & "$PSScriptRoot/prepare-guest-bridge.ps1" -Mode Enable
     Write-ReimsJson (Join-Path $VmRoot 'state/setup-preparation.json') @{
-        schema=1;complete=$true;engine_id=$pin.required_engine_id;guest_addon_id=$pin.id
+        schema=1;complete=$true;engine_id=$script:ReimsEngine.id;guest_addon_id=$pin.id
         macos_installation='user';prepared_utc=[DateTime]::UtcNow.ToString('o')
     }
     '準備完了。インストーラー付きで起動し、macOS のインストールと初回設定を行ってください。'

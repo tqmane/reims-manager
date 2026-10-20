@@ -194,6 +194,90 @@ try{
     Reject {Stop-ReimsWifiForwarder} 'without confirmed'
     Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder/status.json') @{schema=1;state='stopped';session=$session;cleanup_confirmed=$true}
     Stop-ReimsWifiForwarder;$fixture.cases++
+    # Reboot recovery uses only synthetic OS/process/adapter/inspection providers.
+    $fixture.boot=[DateTime]::UtcNow.AddMinutes(-10).Ticks;$fixture.inspectCalls=0
+    function Get-ReimsWifiBootTicks {$fixture.boot}
+    function Get-ReimsWifiHelper {Join-Path $VmRoot 'authored-helper.exe'}
+    function Get-ReimsVmProcess {if($fixture.helperLive){[pscustomobject]@{Id=88}}}
+    function Get-Process {
+        [CmdletBinding()]param([int]$Id)
+        if($Id -ne 77){throw 'Unrelated process query'}
+        if($fixture.qemuLive -or $fixture.pidReused){
+            $ticks=if($fixture.qemuLive){$fixture.boot-2000}else{$fixture.boot+2000}
+            $object=[pscustomobject]@{StartTime=[DateTime]::new($ticks,[DateTimeKind]::Utc)}
+            $object|Add-Member ScriptMethod Dispose {};return $object
+        }
+    }
+    function Get-ReimsWifiNic($Id){
+        if($Id -eq $tapId){return @{InterfaceIndex=23}}
+        if($Id -eq $uplinkId){return @{InterfaceIndex=11}}
+        throw 'Foreign adapter queried'
+    }
+    function Get-ReimsWifiCaptureInspection($Tap,$Wifi){
+        if($Tap -ne $tapId -or $Wifi -ne $uplinkId){throw 'Wrong inspection pair'}
+        $fixture.inspectCalls++
+        if($fixture.inspectFail){throw 'Fixture read-only inspect failed'}
+        if($fixture.concurrent){[IO.File]::AppendAllText($configPath,' ')}
+        return $fixture.inspection
+    }
+    function Reset-Reboot {
+        $fixture.helperLive=$false;$fixture.qemuLive=$false;$fixture.pidReused=$false;$fixture.inspectFail=$false;$fixture.concurrent=$false;$fixture.foreign=$false
+        $fixture.inspection=@{schema=1;adapters=@(
+            @{role='tap';interface_index=23;ndis_mode=0;packet_filter=11;sdk_medium=0;system_medium=0;physical_medium=0},
+            @{role='wifi';interface_index=11;ndis_mode=0;packet_filter=0;sdk_medium=16;system_medium=16;physical_medium=9})}
+        Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder/runtime.json') @{schema=1;pid=88;start_ticks=($fixture.boot-1000);executable=(Get-ReimsWifiHelper);session=$session;qemu_pid=77;qemu_start_ticks=($fixture.boot-2000)}
+        Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder/status.json') @{schema=1;state='ready';session=$session;helper_pid=88;qemu_pid=77;qemu_start_ticks=($fixture.boot-2000);cleanup_confirmed=$false;hardware_filters=@{tap=@{before=11;requested=43;read_back=43};wifi=@{before=0;requested=$null;read_back=0}};receive=@{strategy='native80211-socket-memberships';interface_index=11}}
+        Write-ReimsJson (Join-Path $VmRoot 'state/wifi-forwarder.json') @{schema=1;state='enabled';tap_id=$tapId;uplink_id=$uplinkId;pnp_instance_id='ROOT\NET\0001'}
+        Write-ReimsJson $configPath @{schema=1;network=@{mode='bridge';forwarder='macnat';tap_id=$tapId;physical_adapter_id=$uplinkId}}
+    }
+    function Change-RebootJson($Path,[scriptblock]$Change){$value=Read-ReimsWifiJson (Join-Path $VmRoot $Path);&$Change $value;Write-ReimsJson (Join-Path $VmRoot $Path) $value}
+    Reset-Reboot
+    $original=[IO.File]::ReadAllText((Join-Path $VmRoot 'state/wifi-forwarder/status.json'))
+    $beforeChanges=$fixture.changes.Count;$beforeRouterWrites=$fixture.routerWrites.Count
+    Stop-ReimsWifiForwarder
+    Check (!(Test-Path (Join-Path $VmRoot 'state/wifi-forwarder/runtime.json'))) 'Recovered runtime was not archived';$fixture.cases++
+    $archives=@(Get-ChildItem -LiteralPath (Join-Path $VmRoot 'state/wifi-forwarder-history') -Directory)
+    Check ($archives.Count -eq 1) 'Reboot history missing'
+    $archived=Join-Path $archives[0].FullName 'original/status.json'
+    Check ([IO.File]::ReadAllText($archived) -ceq $original -and !(Read-ReimsWifiJson $archived).cleanup_confirmed) 'Old cleanup status was fabricated'
+    $proof=Read-ReimsWifiJson (Join-Path $archives[0].FullName 'recovery.json')
+    Check ($proof.boot_ticks -eq $fixture.boot -and $proof.evidence.Count -eq 4) 'Recovery proof missing boot/byte guards';$fixture.cases++
+    Check ($fixture.changes.Count -eq $beforeChanges -and $fixture.routerWrites.Count -eq $beforeRouterWrites) 'Recovery changed IP bindings or RouterDiscovery'
+
+    foreach($case in @('same-boot','old-qemu-live','helper-live','foreign-tap','nonobserve','missing-filter','changed-tap-filter','active-tap','active-wifi','wrong-index','duplicate-role','wrong-medium','string-mode','inspect-failure','concurrent-file','session-mismatch','string-pid','missing-status','oversize')){
+        Reset-Reboot
+        switch($case){
+            same-boot {Change-RebootJson 'state/wifi-forwarder/runtime.json' {param($v)$v.start_ticks=$fixture.boot}}
+            old-qemu-live {$fixture.qemuLive=$true}
+            helper-live {$fixture.helperLive=$true}
+            foreign-tap {$fixture.foreign=$true;function Assert-ReimsOwnedWifiTap {throw 'Foreign TAP'}}
+            nonobserve {Change-RebootJson 'state/wifi-forwarder/status.json' {param($v)$v.hardware_filters.wifi.requested=4}}
+            missing-filter {Change-RebootJson 'state/wifi-forwarder/status.json' {param($v)$v.hardware_filters.Remove('tap')}}
+            changed-tap-filter {$fixture.inspection.adapters[0].packet_filter=43}
+            active-tap {$fixture.inspection.adapters[0].ndis_mode=3}
+            active-wifi {$fixture.inspection.adapters[1].ndis_mode=3}
+            wrong-index {$fixture.inspection.adapters[1].interface_index=99}
+            duplicate-role {$fixture.inspection.adapters[1].role='tap'}
+            wrong-medium {$fixture.inspection.adapters[1].sdk_medium=0;$fixture.inspection.adapters[1].system_medium=0;$fixture.inspection.adapters[1].physical_medium=0}
+            string-mode {$fixture.inspection.adapters[0].ndis_mode='0'}
+            inspect-failure {$fixture.inspectFail=$true}
+            concurrent-file {$fixture.concurrent=$true}
+            session-mismatch {Change-RebootJson 'state/wifi-forwarder/status.json' {param($v)$v.session=[guid]::NewGuid().ToString('B')}}
+            string-pid {Change-RebootJson 'state/wifi-forwarder/status.json' {param($v)$v.helper_pid='88'}}
+            missing-status {Remove-Item -LiteralPath (Join-Path $VmRoot 'state/wifi-forwarder/status.json')}
+            oversize {[IO.File]::WriteAllText((Join-Path $VmRoot 'state/wifi-forwarder/status.json'),[string]::new('x',65537))}
+        }
+        Reject {Archive-ReimsWifiPreviousBoot} '.'
+        Check (Test-Path (Join-Path $VmRoot 'state/wifi-forwarder/runtime.json')) 'Refused recovery discarded old runtime'
+        function Assert-ReimsOwnedWifiTap($Id,$PnpId){if($Id -ne $fixture.ownedTap -or $PnpId -ne 'ROOT\NET\0001'){throw 'Unowned policy status'};@{adapter_id=$Id}}
+    }
+    Reset-Reboot;$fixture.pidReused=$true
+    # A fresh process with a reused PID is foreign; do not touch it or require
+    # that every QEMU on the host is absent before starting a new owned VM.
+    Archive-ReimsWifiPreviousBoot;$fixture.cases++
+    Remove-Item Function:Get-Process
+    . "$PSScriptRoot/../wifi-macnat.ps1"
+    function Get-ReimsVmProcess { $null }
     # Exercise the actual binding identity reader, without any live CIM/NIC call.
     $fixture.wrongBinding=$false;$fixture.bridged=$false;$fixture.bindingWrites=@()
     function Get-NetAdapter {

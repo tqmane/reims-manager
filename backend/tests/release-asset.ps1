@@ -17,7 +17,7 @@ function Reject([scriptblock]$Operation,[string]$Pattern) {
 }
 try {
     $lock=Get-ReimsEngineLock
-    if ($lock.bytes -ne 96409618) { throw 'Published engine size pin differs' }
+    if ($lock.bytes -ne 96767891) { throw 'Published engine size pin differs' }
     $pin=@{release_repository='tqmane/reims-manager';id='fixture-release-1';asset='Fixture.zip';bytes=$fixtureState.payload.Length}
     $asset=Resolve-ReimsReleaseAsset $pin -CheckAvailability
     if ($asset.url -ne 'https://github.com/tqmane/reims-manager/releases/download/fixture-release-1/Fixture.zip' -or $fixtureState.apiCalls) { throw 'Fixed asset resolution used API' }

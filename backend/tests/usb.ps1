@@ -19,6 +19,7 @@ $script:running=$true
 function Get-ReimsVmConfig { Get-Content -Raw (Join-Path $VmRoot 'state/config.json') | ConvertFrom-Json }
 function Get-ReimsRuntime { @{pid=1} }
 function Get-ReimsVmProcess($Runtime) { $script:running }
+function Get-ReimsStoppedUsbInventory($Config) { $script:inventory }
 function Get-PnpDevice { }
 function Get-ReimsProtectedUsbIds {
     $blocked=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -30,6 +31,11 @@ function Invoke-ReimsQmp($Runtime,$Command,$Arguments) {
         device_add { $script:objects[$Arguments.id]=$Arguments }
         device_del { $script:objects.Remove($Arguments.id) }
         qom-list { foreach ($key in $script:objects.Keys) { [pscustomobject]@{name=$key} } }
+        qom-get {
+            $id=$Arguments.path.Split('/')[-1]
+            if ($Arguments.property -ne 'attached' -or !$script:objects.ContainsKey($id)) { throw 'Unknown USB property' }
+            $true
+        }
         default { throw "Unexpected QMP: $Command" }
     }
 }
@@ -62,6 +68,12 @@ try {
     $bad.vendor='0bda'
     Reject { Get-ReimsUsbSelections ([pscustomobject]@{usb_devices=@($bad,$bad)}) }
     $script:running=$false
+    $script:inventory="  Bus 2, Addr 12, Port 11.2, Speed 12 Mb/s`n    Class 00: USB device 0fd9:0080`n  Bus 6, Addr 2, Port 1, Speed 12 Mb/s`n    Class 00: USB device 046d:c539"
+    Write-ReimsJson (Join-Path $VmRoot 'state/config.json') @{schema=1}
+    $stopped=@(Get-ReimsUsbDevices)
+    Assert ($stopped.Count -eq 1 -and $stopped[0].present -and !$stopped[0].active -and !$stopped[0].attached) 'Stopped inventory must show eligible physical devices, excluding protected input'
+    Reject { Set-ReimsUsbSelection $id $true }
+    $script:inventory=''
     Write-ReimsJson (Join-Path $VmRoot 'state/config.json') @{schema=1;usb_devices=$selected}
     Assert (@(Get-ReimsUsbDevices).Count -eq 1) 'Stopped VM lists saved devices'
     Set-ReimsUsbSelection $id $false | Out-Null

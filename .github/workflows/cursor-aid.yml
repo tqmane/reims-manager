@@ -1,0 +1,25 @@
+name: macOS cursor aid
+on:
+  pull_request:
+    paths:
+      - native/cursor-aid/**
+      - tools/build_cursor_aid.py
+      - .github/workflows/cursor-aid.yml
+      - docs/cursor-aid.md
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cursor-aid:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build universal helper and run pure native checks
+        run: python3 tools/build_cursor_aid.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ReimsCursorAid
+          path: artifacts/cursor-aid/*
+          if-no-files-found: error
+          retention-days: 30

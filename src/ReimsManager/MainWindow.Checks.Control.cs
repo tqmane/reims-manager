@@ -50,9 +50,9 @@ public partial class MainWindow
                 started.GetProperty("state").GetString() != "running" || !started.GetProperty("consoleAttached").GetBoolean())
                 throw new Exception("CLI start did not complete with the running embedded console.");
             var popped = await ControlCli("popout-console");
-            if (!popped.GetProperty("consoleDetached").GetBoolean() || FixtureGetParent(childWindow) != 0) throw new Exception("CLI pop-out failed.");
+            if (!popped.GetProperty("consoleDetached").GetBoolean() || FixtureGetWindow(childWindow, 4) != 0 || FixtureGetAncestor(childWindow, 2) != childWindow) throw new Exception("CLI pop-out failed.");
             await ControlCli("dock-console");
-            if (FixtureGetParent(childWindow) != ConsoleView.Handle) throw new Exception("CLI docking failed.");
+            RequireOwnedPopup(childWindow, new System.Windows.Interop.WindowInteropHelper(this).Handle);
             await ControlCli("pause"); await ControlCli("resume");
 
             // Disconnect after acceptance; the command must finish without the client.

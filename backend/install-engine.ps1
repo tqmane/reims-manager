@@ -1,6 +1,10 @@
 #Requires -Version 7.2
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$Destination, [string]$Archive, [string]$Sha256)
+# GUI pipes use UTF-8 regardless of the Windows console code page.
+$OutputEncoding=[Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding=$OutputEncoding
+[Console]::OutputEncoding=$OutputEncoding
 . "$PSScriptRoot/engine-package.ps1"
 $pin=Get-ReimsEngineLock
 $localArchive=[bool]$Archive

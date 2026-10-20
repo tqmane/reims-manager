@@ -16,8 +16,10 @@ internal static class SelfChecks
         OnboardingChecks.Run(Path.Combine(folder, "onboarding-checks"));
         await CheckBackend();
         await BackendPipeChecks.Run(Path.Combine(folder, "backend-pipe-checks"));
+        await BackendEncodingChecks.Run(Path.Combine(folder, "backend-encoding-checks"));
         await ManagerControlChecks.Run(Path.Combine(folder, "control-target-checks"));
         CheckSafeCreation(folder);
+        CheckUsbDriverResult(folder);
         await CheckQmp(false);
         await CheckQmp(true);
         string runtimeDirectory=Path.Combine(folder,"identity-check","state");
@@ -27,10 +29,15 @@ internal static class SelfChecks
         File.WriteAllText(Path.Combine(runtimeDirectory,"runtime.json"),JsonSerializer.Serialize(new {
             pid=self.Id,start_ticks=self.StartTime.ToUniversalTime().Ticks+1,executable=Environment.ProcessPath,qmp_port=4444
         }));
-        try {
-            await LiveVmStatus.Read(Path.GetDirectoryName(runtimeDirectory)!);
-            throw new Exception("A reused PID was accepted");
-        } catch (InvalidDataException) { }
+        var stale = await LiveVmStatus.Read(Path.GetDirectoryName(runtimeDirectory)!);
+        if (stale.State != "stopped" || stale.Runtime is not null)
+            throw new Exception("A reused PID did not recover to a stopped VM");
+        File.WriteAllText(Path.Combine(runtimeDirectory,"runtime.json"),JsonSerializer.Serialize(new {
+            pid=self.Id,start_ticks=self.StartTime.ToUniversalTime().Ticks,executable="unrelated.exe",qmp_port=4444
+        }));
+        stale = await LiveVmStatus.Read(Path.GetDirectoryName(runtimeDirectory)!);
+        if (stale.State != "stopped" || stale.Runtime is not null || self.HasExited)
+            throw new Exception("An unrelated process was contacted or affected by stale VM metadata");
 
         string? previous=Environment.GetEnvironmentVariable("REIMS_MANAGER_HOME");
         Environment.SetEnvironmentVariable("REIMS_MANAGER_HOME",Path.Combine(folder,"settings-check"));
@@ -55,20 +62,64 @@ internal static class SelfChecks
         catch (InvalidDataException) { }
     }
 
+    private static void CheckUsbDriverResult(string folder)
+    {
+        string receipt = Path.Combine(folder, "usb-install-result.json");
+        void Reject(string json)
+        {
+            File.WriteAllText(receipt, json);
+            try { UsbDriverInstallResult.Read(receipt); throw new Exception("An unconfirmed USB driver result was accepted."); }
+            catch (InvalidDataException) { }
+        }
+        try {
+            foreach (bool restart in new[] { false, true }) {
+                string json = restart
+                    ? "{\"schema\":1,\"installed\":true,\"restart_required\":true,\"exit_code\":3010}"
+                    : "{\"schema\":1,\"installed\":true,\"restart_required\":false,\"exit_code\":0}";
+                File.WriteAllText(receipt, json);
+                if (UsbDriverInstallResult.Read(receipt).RestartRequired != restart || UsbDriverInstallResult.Parse(json).RestartRequired != restart)
+                    throw new Exception("The elevated USB installer reboot requirement was lost.");
+            }
+            foreach (string json in new[] {
+                "", "{}", "not JSON", "[]", new string('x', 4097),
+                "{\"schema\":1,\"installed\":true,\"restart_required\":false,\"exit_code\":3010}",
+                "{\"schema\":1,\"installed\":true,\"restart_required\":true,\"exit_code\":0}",
+                "{\"schema\":1,\"installed\":false,\"restart_required\":false,\"exit_code\":0}",
+                "{\"schema\":1,\"installed\":true,\"restart_required\":false,\"exit_code\":1603}",
+                "{\"schema\":2,\"installed\":true,\"restart_required\":false,\"exit_code\":0}",
+                "{\"schema\":1,\"installed\":true,\"restart_required\":\"false\",\"exit_code\":0}"
+            }) Reject(json);
+            File.Delete(receipt);
+            try { UsbDriverInstallResult.Read(receipt); throw new Exception("A missing USB driver result was accepted."); }
+            catch (InvalidDataException) { }
+        } finally { File.Delete(receipt); }
+    }
+
     private static void CheckPolicy()
     {
         foreach (string state in new[] { "unknown", "future-state", "paused", "prelaunch", "suspended", "shutdown", "running", "stopped", "unprepared" }) {
-            foreach (string action in new[] { "Start", "ForceExit", "SetHardware", "SnapshotRestore", "Setup", "ListUsb", "DetachUsb", "AttachUsb" }) {
+            foreach (string action in new[] { "Start", "ForceExit", "SetHardware", "SnapshotRestore", "Setup", "ListUsb", "DetachUsb", "AttachUsb", "EnableCursorAid", "DisableCursorAid", "MoveCursorToMainDisplay", "MoveCursorToExtendedDisplay", "HideHostCursor", "ShowHostCursor", "LightenExtendedDisplay", "RestoreExtendedDisplay" }) {
                 if (VmActionPolicy.CanRun(action, state, true, false) || VmActionPolicy.CanRun(action, state, false, true))
                     throw new Exception("An operation bypassed its engine/VM prerequisite");
             }
             foreach (string action in new[] { "ListUsb", "DetachUsb", "AttachUsb" }) {
-                bool expected = state == "running" || state == "stopped" && action != "AttachUsb";
+                bool expected = action switch {
+                    "ListUsb" => state is "running" or "stopped" or "shutdown" or "paused" or "prelaunch" or "suspended",
+                    "DetachUsb" => state is "running" or "stopped",
+                    _ => state == "running"
+                };
                 if (VmActionPolicy.CanRun(action, state, true, true) != expected)
                     throw new Exception("USB listing/removal/attachment policy failed: " + action + " in " + state);
             }
+            if (VmActionPolicy.CanRun("InstallUsbDk", state, true, true) != (state is "stopped" or "unprepared") ||
+                !VmActionPolicy.CanRun("InstallUsbDk", state, false, true) || VmActionPolicy.CanRun("InstallUsbDk", state, true, false))
+                throw new Exception("USB driver installation bypassed the stopped VM policy or required a VM.");
             foreach (string action in new[] { "SetHardware", "SnapshotRestore", "SetIdentity", "ExpandDisk", "ApplyBootProfile", "EnableGuestBridge", "DisableGuestBridge", "RemoveBridge", "InstallTap", "PrepareWifi", "DisableWifi" })
                 if (VmActionPolicy.CanRun(action, state, true, true) != (state == "stopped")) throw new Exception("An offline operation is enabled for " + state);
+            foreach (string action in new[] { "EnableCursorAid", "DisableCursorAid", "MoveCursorToMainDisplay", "MoveCursorToExtendedDisplay", "HideHostCursor", "LightenExtendedDisplay", "RestoreExtendedDisplay" })
+                if (VmActionPolicy.CanRun(action, state, true, true) != (state == "running")) throw new Exception("Cursor compatibility bypassed its running VM policy.");
+            if (VmActionPolicy.CanRun("ShowHostCursor",state,true,true) != (state is "running" or "paused" or "stopped" or "shutdown" or "prelaunch" or "suspended"))
+                throw new Exception("Host cursor recovery is unavailable or bypasses the known-state policy.");
             foreach (string action in new[] { "EnableAppleAccount", "DisableAppleAccount" })
                 if (VmActionPolicy.CanRun(action, state, true, true)) throw new Exception("A retired version-specific account patch remains a UI action.");
         }

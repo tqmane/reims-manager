@@ -14,8 +14,12 @@ public partial class MainWindow
     {
         await CheckPresentationPolicy();
         await CheckSettingsDraftBehavior();
+        await CheckSettingsReliability(folder);
+        await CheckSettingsWorkflow(folder);
+        await CheckUsbWorkflow(folder);
         await CheckNetworkChoices(folder);
         await CheckWifiCard(folder);
+        await CheckCursorAidCard(folder);
         double width = Width, height = Height;
         string title = VmTitle.Text;
         int count = machines.Count;
@@ -30,6 +34,7 @@ public partial class MainWindow
                     Tabs.SelectedIndex = 0; UpdatePowerControls(); await ArrangeCheck();
                     RequireManagementGeometry();
                     SaveImage(Path.Combine(folder, prefix + "-powered-off.png"));
+                    await CheckCommandMenu(PowerMoreButton, Path.Combine(folder, prefix + "-power-more-menu.png"));
                     Tabs.SelectedIndex = 1; Devices.SelectedIndex = 0; UpdatePowerControls(); await ArrangeCheck();
                     RequireSettingsGeometry();
                     if (SettingsSurface.Background is SolidColorBrush card &&
@@ -41,6 +46,8 @@ public partial class MainWindow
                     presentation.ShowConsole(); UpdatePowerControls(); await ArrangeCheck();
                     RequireFocusedGeometry();
                     SaveImage(Path.Combine(folder, prefix + "-powered-on.png"));
+                    await CheckCommandMenu(SessionPowerButton, Path.Combine(folder, prefix + "-session-power-menu.png"));
+                    await CheckCommandMenu(SessionCursorMenuButton, Path.Combine(folder, prefix + "-cursor-menu.png"));
                     currentState = "paused"; State.Text = "一時停止"; UpdatePowerControls(); await ArrangeCheck();
                     RequireFocusedGeometry();
                     if (SessionPauseButton.Tag?.ToString() != "Resume" || !SessionPauseButton.IsEnabled)
@@ -125,6 +132,64 @@ public partial class MainWindow
     }
 #pragma warning restore WPF0001
 
+    private async Task CheckCommandMenu(Button button, string image)
+    {
+        var menu = button.ContextMenu ?? throw new Exception("Command menu is missing");
+        var iconFont = button.FontFamily;
+        double iconSize = button.FontSize;
+        ShowPowerMenu(button, new RoutedEventArgs());
+        try {
+            await ArrangeCheck(); menu.UpdateLayout();
+            if (!menu.IsOpen || !menu.IsVisible || PresentationSource.FromVisual(menu) is null ||
+                menu.ActualWidth <= 0 || menu.ActualHeight <= 0 || menu.ActualWidth > Width || menu.ActualHeight > Height)
+                throw new Exception("Command popup is not realized within the fixture bounds");
+            var items = menu.Items.OfType<MenuItem>().ToArray();
+            if (items.Length is 0 or > 16) throw new Exception("Command popup has an unexpected item count");
+            foreach (Control text in new Control[] { menu }.Concat(items)) {
+                if (text.FontFamily.Source != FontFamily.Source || Math.Abs(text.FontSize - FontSize) > 0.01)
+                    throw new Exception("Command menu text inherited the icon font or size");
+            }
+            if (!button.FontFamily.Equals(iconFont) || button.FontSize != iconSize)
+                throw new Exception("Opening a text menu changed the toolbar icon font");
+            SaveImage(image, menu);
+        } finally { menu.IsOpen = false; await ArrangeCheck(); }
+    }
+
+    private async Task CheckCursorAidCard(string folder)
+    {
+        if (!selfTest) throw new InvalidOperationException("Cursor aid fixture access only.");
+        string oldState=currentState, oldStateText=State.Text;
+        int tab=Tabs.SelectedIndex, device=Devices.SelectedIndex;
+        double width=Width, height=Height;
+        try {
+            Tabs.SelectedIndex=1;Devices.SelectedIndex=7;Width=MinWidth;Height=MinHeight;
+            if (EnableCursorAidButton.Tag?.ToString()!="EnableCursorAid" || DisableCursorAidButton.Tag?.ToString()!="DisableCursorAid")
+                throw new Exception("Cursor aid controls do not use the paired backend actions.");
+            foreach (string state in new[] { "unknown", "unprepared", "stopped", "shutdown", "paused", "running" }) {
+                currentState=state;State.Text=VmActionPolicy.StateLabel(state);UpdatePowerControls();
+                if (EnableCursorAidButton.IsEnabled!=(state=="running") || DisableCursorAidButton.IsEnabled!=(state=="running"))
+                    throw new Exception("Cursor aid controls are enabled outside a running VM.");
+            }
+            await ArrangeCheck();CursorAidCard.BringIntoView();await ArrangeCheck();
+            RequireInside(EnableCursorAidButton,HardwareScroll,"Cursor compatibility enable");
+            RequireInside(DisableCursorAidButton,HardwareScroll,"Cursor compatibility disable");
+            MoveCursorExtendedButton.BringIntoView();await ArrangeCheck();
+            RequireInside(MoveCursorMainButton,HardwareScroll,"Main display cursor move");
+            RequireInside(MoveCursorExtendedButton,HardwareScroll,"Extended display cursor move");
+            ShowHostCursorButton.BringIntoView();await ArrangeCheck();
+            RequireInside(HideHostCursorButton,HardwareScroll,"Hide host cursor");
+            RequireInside(ShowHostCursorButton,HardwareScroll,"Show host cursor");
+            SaveImage(Path.Combine(folder,"cursor-aid-running-compact.png"));
+            ExtendedDisplayCard.BringIntoView();await ArrangeCheck();
+            RequireInside(LightenExtendedDisplayButton,HardwareScroll,"Extended display performance preset");
+            RequireInside(RestoreExtendedDisplayButton,HardwareScroll,"Extended display restoration");
+            SaveImage(Path.Combine(folder,"extended-display-compact.png"));
+            File.WriteAllText(Path.Combine(folder,"cursor-aid-page-result.json"),"{\"existing_display_page\":true,\"explicit_on_off_actions\":true,\"running_only\":true,\"compact_actions_reachable\":true,\"no_guest_calls\":true}");
+        } finally {
+            currentState=oldState;State.Text=oldStateText;Tabs.SelectedIndex=tab;Devices.SelectedIndex=device;Width=width;Height=height;UpdatePowerControls();
+        }
+    }
+
     private async Task CheckDuplicateVmPaths(string folder)
     {
         string name = "macOS Tahoe（同名の確認）", query = LibrarySearch.Text;
@@ -205,8 +270,11 @@ public partial class MainWindow
             OperationLog.Visibility != Visibility.Collapsed || WorkspaceStatusBar.Visibility != Visibility.Collapsed ||
             ConsoleFooter.Visibility != Visibility.Collapsed || SettingsPage.Visibility != Visibility.Collapsed)
             throw new Exception("Powered-on view still contains management chrome");
-        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionUsbButton, SessionSharingButton, SessionSnapshotButton, SessionPopOutButton, CaptionCommands })
+        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionCursorAidButton, SessionCursorMenuButton, SessionUsbButton, SessionSharingButton, SessionSnapshotButton, SessionPopOutButton, CaptionCommands })
             RequireInside(control, TitleBar, "Session title bar");
+        if (SessionCursorAidButton.Tag?.ToString()!="EnableCursorAid" || SessionCursorAidButton.Content?.ToString()!="カーソルを表示" ||
+            SessionCursorAidButton.IsEnabled!=(currentState=="running" && !IsUiBusy))
+            throw new Exception("The one-click cursor toolbar action lost its label, route or running-only policy.");
         Rect icons = SessionCommands.TransformToAncestor(TitleBar).TransformBounds(new Rect(SessionCommands.RenderSize));
         Rect caption = CaptionCommands.TransformToAncestor(TitleBar).TransformBounds(new Rect(CaptionCommands.RenderSize));
         if (icons.Right > caption.Left || TitleBar.ActualHeight > 45) throw new Exception("Session title bar overlaps or is not compact");

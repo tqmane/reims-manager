@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -28,6 +29,7 @@ public partial class MainWindow
 
     private async Task CheckOnboarding(string folder)
     {
+        await CheckOnboardingRecovery(folder);
         string parent = Path.Combine(folder, "wizard 日本語 VM"), iso = Path.Combine(folder, "synthetic.iso");
         File.WriteAllText(iso, "Synthetic UI input, not a bootable installer.");
         bool fail = false; int available = 2048, queries = 0;
@@ -73,6 +75,82 @@ public partial class MainWindow
             SaveImage(Path.Combine(folder, name), content);
         }
     }
+
+#pragma warning disable WPF0001
+    private async Task CheckOnboardingRecovery(string folder)
+    {
+        // Exercise an initial malformed response like the reported invalid UTF-8
+        // escape, then retry through the same WPF entrypoint. No host work runs.
+        string parent = Path.Combine(folder, "wizard-recovery"), iso = Path.Combine(folder, "wizard-recovery.iso");
+        File.WriteAllText(iso, "Authored UI fixture; not a bootable installer.");
+        string malformed = "{\"probe\":\"C:\\" + '\uFFFD' + "\"}";
+        bool malformedResponse = true;
+        int queries = 0;
+        var previousTheme = Application.Current.ThemeMode;
+        var wizard = new NewVmWindow((action, arguments, elevated, cancellation) => {
+            if (action != "GetPrerequisites" || elevated || !cancellation.CanBeCanceled)
+                throw new Exception("Recovery fixture attempted a host mutation.");
+            queries++;
+            return Task.FromResult(malformedResponse ? malformed : OnboardingChecks.Requirements(int.Parse(arguments[1]), int.Parse(arguments[3])));
+        }, checkOnLoad: false) { Owner = this, Opacity = 0, ShowInTaskbar = false };
+        try {
+            Application.Current.ThemeMode = ThemeMode.Dark;
+            wizard.Width = wizard.MinWidth; wizard.Height = wizard.MinHeight;
+            wizard.Show(); wizard.ParentFolder.Text = parent; wizard.Installer.Text = iso;
+            if (await wizard.ReadRequirements() || wizard.RequirementsList.Items.Count != 0 || wizard.Request is not null ||
+                wizard.NextButton.IsEnabled || wizard.CreateButton.IsEnabled || wizard.StartAfterCreation.IsEnabled ||
+                wizard.StartAfterCreation.IsChecked == true || wizard.Progress.Visibility != Visibility.Collapsed ||
+                !wizard.RefreshRequirementsButton.IsEnabled || !wizard.CancelButton.IsEnabled ||
+                !wizard.RequirementsSummary.Text.Contains("確認できませんでした", StringComparison.Ordinal) ||
+                wizard.RequirementsSummary.Text.Contains("確認しています", StringComparison.Ordinal) ||
+                !wizard.Notice.Text.Contains("必要条件", StringComparison.Ordinal) || !wizard.Notice.Text.Contains("0xEF", StringComparison.Ordinal) ||
+                !wizard.Notice.Text.Contains("BytePositionInLine", StringComparison.Ordinal))
+                throw new Exception("Initial malformed prerequisite JSON leaves stale progress or hides recovery/diagnostics.");
+            await CaptureRecovery("onboarding-json-error-dark.png");
+
+            malformedResponse = false;
+            if (!await wizard.ReadRequirements() || wizard.RequirementsList.Items.Count == 0 || !wizard.NextButton.IsEnabled ||
+                !wizard.StartAfterCreation.IsEnabled || wizard.StartAfterCreation.IsChecked != true || wizard.Notice.Text.Length != 0 ||
+                !wizard.RequirementsSummary.Text.Contains("準備ができました", StringComparison.Ordinal) || queries != 2)
+                throw new Exception("Retry does not restore the prerequisite list, readiness and requested automatic start.");
+            await CaptureRecovery("onboarding-recovered-dark-compact.png");
+            wizard.NextButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (!await wizard.TryCreateRequest() || wizard.Request?.AutoStart != true || wizard.InstallUsbButton.Visibility != Visibility.Visible)
+                throw new Exception("Recovery fixture failed to establish a prior ready request and repair action.");
+            wizard.StartAfterCreation.IsChecked = false;
+            wizard.StartAfterCreation.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            malformedResponse = true;
+            if (await wizard.ReadRequirements() || wizard.Request is not null || wizard.RequirementsList.Items.Count != 0 ||
+                wizard.EnableWhpxButton.Visibility != Visibility.Collapsed || wizard.InstallUsbButton.Visibility != Visibility.Collapsed ||
+                wizard.StartAfterCreation.IsEnabled || wizard.StartAfterCreation.IsChecked == true || wizard.NextButton.IsEnabled || wizard.CreateButton.IsEnabled ||
+                !wizard.RefreshRequirementsButton.IsEnabled || !wizard.CancelButton.IsEnabled ||
+                !wizard.RequirementsSummary.Text.Contains("確認できませんでした", StringComparison.Ordinal))
+                throw new Exception("Failed recheck preserves stale prerequisite controls or an already prepared creation request.");
+            malformedResponse = false;
+            if (!await wizard.ReadRequirements() || !wizard.StartAfterCreation.IsEnabled || wizard.StartAfterCreation.IsChecked == true ||
+                !await wizard.TryCreateRequest() || wizard.Request is not { AutoStart: false } request ||
+                wizard.ParentFolder.Text != parent || wizard.Installer.Text != iso || File.Exists(request.Vm.File) || Directory.Exists(parent))
+                throw new Exception("Recovery lost the user's plan or auto-start choice, or wrote VM data during validation.");
+            File.WriteAllText(Path.Combine(folder, "onboarding-recovery-result.json"), JsonSerializer.Serialize(new {
+                initial_invalid_json_failure = true, japanese_error_context = true, raw_byte_diagnostic_retained = true,
+                stale_progress_cleared = true, retry_and_cancel_available = true, successful_retry_restores_readiness = true,
+                stale_requirement_actions_cleared = true, failed_recheck_invalidates_request = true,
+                user_auto_start_choice_preserved = true, vm_plan_preserved_without_writes = true
+            }));
+        } finally { wizard.Close(); Application.Current.ThemeMode = previousTheme; }
+
+        async Task CaptureRecovery(string name)
+        {
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); wizard.UpdateLayout();
+            var content = (FrameworkElement)wizard.Content;
+            RequireInside(wizard.RequirementsSummary, content, "Wizard prerequisite failure/recovery summary");
+            RequireInside(wizard.CancelButton, content, "Wizard recovery cancel");
+            RequireInside(wizard.RefreshRequirementsButton, content, "Wizard recovery retry");
+            RequireInside(wizard.NextButton, content, "Wizard recovery next");
+            SaveImage(Path.Combine(folder, name), content);
+        }
+    }
+#pragma warning restore WPF0001
 
     private async Task CheckNetworkChoices(string folder)
     {

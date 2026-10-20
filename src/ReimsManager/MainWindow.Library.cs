@@ -65,8 +65,7 @@ public partial class MainWindow
         if (IsUiBusy) return;
         try {
             var entry = VmLibrary.Open(file);
-            if (!DiscardPendingChanges()) return;
-            hardwareDirty = identityDirty = false;
+            if (!DiscardPendingChanges() || !RestoreSettingsDrafts()) return;
             AddVm(entry);
         } catch (Exception error) { ShowError(error.Message); }
     }
@@ -80,17 +79,18 @@ public partial class MainWindow
 
     private async void ReloadLibrary(object sender, RoutedEventArgs e)
     {
-        if (IsUiBusy || !DiscardPendingChanges()) return;
-        hardwareDirty = identityDirty = false;
+        if (IsUiBusy || !DiscardPendingChanges() || !RestoreSettingsDrafts()) return;
         var saved = ManagerSettings.Load(out var warning);
-        if (saved.EngineRoot != settings.EngineRoot || saved.QemuExecutable != settings.QemuExecutable) {
-            if (!HasVm || currentState is "stopped" or "unprepared") {
-                settings.EngineRoot = saved.EngineRoot; settings.QemuExecutable = saved.QemuExecutable;
-                Root.Text = settings.EngineRoot; ResetVmContext();
-            } else ShowError("別のウィンドウでエンジンの設定が変わりました。現在の接続を維持しています。VM の完全終了後にライブラリを更新すると反映します。");
+        bool engineChanged = saved.EngineRoot != settings.EngineRoot || saved.QemuExecutable != settings.QemuExecutable;
+        bool adoptEngine = !HasVm || currentState is "stopped" or "unprepared";
+        settings.SynchronizeFrom(saved, adoptEngine);
+        if (engineChanged) {
+            if (adoptEngine) { Root.Text = settings.EngineRoot; ResetVmContext(); }
+            else ShowError("別のウィンドウでエンジンの設定が変わりました。現在の接続を維持しています。VM の完全終了後にライブラリを更新すると反映します。");
         }
-        settings.VirtualMachines = settings.VirtualMachines.Concat(saved.VirtualMachines).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         LoadLibrary();
+        RestoreClipboardPreference();
+        loadedHardware = false;
         if (warning is not null) ShowError(warning);
         await RefreshState();
     }
@@ -109,10 +109,13 @@ public partial class MainWindow
         var dialog = new OpenFileDialog { Filter = "Reims Manager の設定|*.json", FileName = "settings.json", Title = "以前のアプリ設定を取り込む" };
         if (dialog.ShowDialog(this) != true) return;
         try {
+            if (!RestoreSettingsDrafts()) return;
             settings.Import(dialog.FileName);
-            hardwareDirty = identityDirty = false;
             Root.Text = settings.EngineRoot;
             LoadLibrary();
+            RestoreClipboardPreference();
+            loadedHardware = false;
+            if (settings.LastSaveWarning is { } warning) ShowError(warning);
             await RefreshState();
         } catch (Exception error) { ShowError(error.Message); }
     }
@@ -201,7 +204,12 @@ public partial class MainWindow
         } catch (Exception error) { ShowError(error.Message); }
     }
 
-    private void ShowPowerMenu(object sender, RoutedEventArgs e) { var menu = ((Button)sender).ContextMenu; menu.PlacementTarget = (Button)sender; menu.IsOpen = true; }
+    private void ShowPowerMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = ((Button)sender).ContextMenu;
+        menu.FontFamily = FontFamily; menu.FontSize = FontSize;
+        menu.PlacementTarget = (Button)sender; menu.IsOpen = true;
+    }
     private void PrepareStartConsole()
     {
         consoleDetached = false; presentation.ShowConsole(); Tabs.SelectedIndex = 0;

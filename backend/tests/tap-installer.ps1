@@ -107,6 +107,7 @@ try {
     [IO.File]::WriteAllText("$stub/start.ps1",@'
 param([switch]$FunctionsOnly)
 $VmRoot=$env:REIMS_VM_ROOT_OVERRIDE
+function Enter-ReimsVmMutation { $null }
 function Assert-ReimsVmStopped {}
 function Write-ReimsJson($Path,$Value) {
     if (Test-Path (Join-Path $VmRoot 'state/fail-result-write')) { throw 'Fixture result write denied' }

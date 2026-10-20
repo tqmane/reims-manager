@@ -24,7 +24,9 @@ internal sealed record LiveVmStatus(string State, JsonElement? Runtime)
             if (process.HasExited) return new("stopped", null);
             if (process.StartTime.ToUniversalTime().Ticks != runtime.GetProperty("start_ticks").GetInt64() ||
                 !string.Equals(process.MainModule?.FileName, runtime.GetProperty("executable").GetString(), StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("実行記録の PID が別のプロセスを指しています。VM の操作を中止しました。");
+                // A reused PID proves the recorded VM has exited. Never contact the
+                // old QMP endpoint or operate on the unrelated replacement process.
+                return new("stopped", null);
         } catch (ArgumentException) { return new("stopped", null); }
         int port = runtime.GetProperty("qmp_port").GetInt32();
         if (port < 1024 || port > 65535) throw new InvalidDataException("VM の管理ポートが不正です。");
