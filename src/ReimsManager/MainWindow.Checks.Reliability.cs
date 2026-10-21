@@ -60,6 +60,27 @@ public partial class MainWindow
             ClipboardSharing.IsChecked = true;
             if (!settings.ClipboardEnabled(entry.File) || !ClipboardSharing.IsEnabled || clipboardTimer.IsEnabled)
                 throw new Exception("Sharing preference cannot be saved while stopped or started a fixture transfer.");
+            currentState = "running"; UpdatePowerControls();
+            lastClipboard = "Authored synchronization cache sentinel";
+            var clipboardToken = clipboardCancel.Token;
+            var cachedStatus = latest;
+            try {
+                // Stay synchronous and stop before yielding; no clipboard Tick or SSH runs.
+                clipboardTimer.Start();
+                currentState = "unknown"; UpdatePowerControls();
+                var manualClipboardButtons = LogicalChildren<Button>(Tabs).Where(x => x.Tag?.ToString() == "Clipboard").ToArray();
+                if (!clipboardTimer.IsEnabled || clipboardToken.IsCancellationRequested || lastClipboard != "Authored synchronization cache sentinel" ||
+                    !CanShareClipboard || !CanOperate("Clipboard") || currentState != "unknown" || !latest.Equals(cachedStatus) ||
+                    manualClipboardButtons.Length != 2 || manualClipboardButtons.Any(x => !x.IsEnabled))
+                    throw new Exception("A QMP failure cancelled independent clipboard SSH or invented running state.");
+                foreach (string state in new[] { "paused", "shutdown", "stopped" }) {
+                    currentState = state; UpdatePowerControls();
+                    if (clipboardTimer.IsEnabled || CanShareClipboard || CanOperate("Clipboard"))
+                        throw new Exception("Clipboard transfer is eligible while " + state);
+                }
+                if (!clipboardToken.IsCancellationRequested || lastClipboard is not null)
+                    throw new Exception("Stopping the VM did not cancel the old clipboard session.");
+            } finally { clipboardTimer.Stop(); }
             Library.SelectedItem = second;
             if (ClipboardSharing.IsChecked == true || settings.ClipboardEnabled(second.File))
                 throw new Exception("A different VM inherited another VM's clipboard sharing.");

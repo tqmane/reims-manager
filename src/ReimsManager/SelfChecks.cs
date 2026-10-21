@@ -98,10 +98,12 @@ internal static class SelfChecks
     private static void CheckPolicy()
     {
         foreach (string state in new[] { "unknown", "future-state", "paused", "prelaunch", "suspended", "shutdown", "running", "stopped", "unprepared" }) {
-            foreach (string action in new[] { "Start", "ForceExit", "SetHardware", "SnapshotRestore", "Setup", "ListUsb", "DetachUsb", "AttachUsb", "EnableCursorAid", "DisableCursorAid", "MoveCursorToMainDisplay", "MoveCursorToExtendedDisplay", "HideHostCursor", "ShowHostCursor", "LightenExtendedDisplay", "RestoreExtendedDisplay" }) {
+            foreach (string action in new[] { "Start", "ForceExit", "SetHardware", "SnapshotRestore", "Setup", "ListUsb", "DetachUsb", "AttachUsb", "Clipboard", "EnableCursorAid", "DisableCursorAid", "MoveCursorToMainDisplay", "MoveCursorToExtendedDisplay", "HideHostCursor", "ShowHostCursor", "LightenExtendedDisplay", "RestoreExtendedDisplay" }) {
                 if (VmActionPolicy.CanRun(action, state, true, false) || VmActionPolicy.CanRun(action, state, false, true))
                     throw new Exception("An operation bypassed its engine/VM prerequisite");
             }
+            if (VmActionPolicy.CanRun("Clipboard", state, true, true) != (state is "running" or "unknown"))
+                throw new Exception("Independent clipboard SSH eligibility failed for " + state);
             foreach (string action in new[] { "ListUsb", "DetachUsb", "AttachUsb" }) {
                 bool expected = action switch {
                     "ListUsb" => state is "running" or "stopped" or "shutdown" or "paused" or "prelaunch" or "suspended",
