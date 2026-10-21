@@ -210,7 +210,7 @@ try{
     }
     function Get-ReimsWifiNic($Id){
         if($Id -eq $tapId){return @{InterfaceIndex=23}}
-        if($Id -eq $uplinkId){return @{InterfaceIndex=11}}
+        if($Id -eq $uplinkId){return @{InterfaceIndex=$fixture.liveWifiIndex}}
         throw 'Foreign adapter queried'
     }
     function Get-ReimsWifiCaptureInspection($Tap,$Wifi){
@@ -221,6 +221,7 @@ try{
         return $fixture.inspection
     }
     function Reset-Reboot {
+        $fixture.liveWifiIndex=11
         $fixture.helperLive=$false;$fixture.qemuLive=$false;$fixture.pidReused=$false;$fixture.inspectFail=$false;$fixture.concurrent=$false;$fixture.foreign=$false
         $fixture.inspection=@{schema=1;adapters=@(
             @{role='tap';interface_index=23;ndis_mode=0;packet_filter=11;sdk_medium=0;system_medium=0;physical_medium=0},
@@ -244,7 +245,16 @@ try{
     Check ($proof.boot_ticks -eq $fixture.boot -and $proof.evidence.Count -eq 4) 'Recovery proof missing boot/byte guards';$fixture.cases++
     Check ($fixture.changes.Count -eq $beforeChanges -and $fixture.routerWrites.Count -eq $beforeRouterWrites) 'Recovery changed IP bindings or RouterDiscovery'
 
-    foreach($case in @('same-boot','old-qemu-live','helper-live','foreign-tap','nonobserve','missing-filter','changed-tap-filter','active-tap','active-wifi','wrong-index','duplicate-role','wrong-medium','string-mode','inspect-failure','concurrent-file','session-mismatch','string-pid','missing-status','oversize')){
+    Reset-Reboot
+    $fixture.liveWifiIndex=13;$fixture.inspection.adapters[1].interface_index=13
+    $oldStatus=[IO.File]::ReadAllText((Join-Path $VmRoot 'state/wifi-forwarder/status.json'))
+    $beforeInspect=$fixture.inspectCalls
+    Archive-ReimsWifiPreviousBoot
+    Check ($fixture.inspectCalls -eq $beforeInspect+1 -and !(Test-Path (Join-Path $VmRoot 'state/wifi-forwarder/runtime.json'))) 'Reboot interface renumbering refused current GUID inspection'
+    $latestArchive=@(Get-ChildItem -LiteralPath (Join-Path $VmRoot 'state/wifi-forwarder-history') -Directory | Where-Object {[IO.File]::ReadAllText((Join-Path $_.FullName 'original/status.json')) -ceq $oldStatus})
+    Check ($latestArchive.Count -ge 1) 'Renumbered recovery rewrote original status';$fixture.cases++
+
+    foreach($case in @('same-boot','old-qemu-live','helper-live','foreign-tap','nonobserve','missing-filter','invalid-old-index','changed-tap-filter','active-tap','active-wifi','wrong-index','renumbered-wrong-index','duplicate-role','wrong-medium','string-mode','inspect-failure','concurrent-file','session-mismatch','string-pid','missing-status','oversize')){
         Reset-Reboot
         switch($case){
             same-boot {Change-RebootJson 'state/wifi-forwarder/runtime.json' {param($v)$v.start_ticks=$fixture.boot}}
@@ -253,10 +263,12 @@ try{
             foreign-tap {$fixture.foreign=$true;function Assert-ReimsOwnedWifiTap {throw 'Foreign TAP'}}
             nonobserve {Change-RebootJson 'state/wifi-forwarder/status.json' {param($v)$v.hardware_filters.wifi.requested=4}}
             missing-filter {Change-RebootJson 'state/wifi-forwarder/status.json' {param($v)$v.hardware_filters.Remove('tap')}}
+            invalid-old-index {Change-RebootJson 'state/wifi-forwarder/status.json' {param($v)$v.receive.interface_index=0}}
             changed-tap-filter {$fixture.inspection.adapters[0].packet_filter=43}
             active-tap {$fixture.inspection.adapters[0].ndis_mode=3}
             active-wifi {$fixture.inspection.adapters[1].ndis_mode=3}
             wrong-index {$fixture.inspection.adapters[1].interface_index=99}
+            renumbered-wrong-index {$fixture.liveWifiIndex=13}
             duplicate-role {$fixture.inspection.adapters[1].role='tap'}
             wrong-medium {$fixture.inspection.adapters[1].sdk_medium=0;$fixture.inspection.adapters[1].system_medium=0;$fixture.inspection.adapters[1].physical_medium=0}
             string-mode {$fixture.inspection.adapters[0].ndis_mode='0'}

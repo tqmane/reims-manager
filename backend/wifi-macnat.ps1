@@ -353,10 +353,11 @@ function Archive-ReimsWifiPreviousBoot {
     $tap=Get-ReimsWifiNic $record.tap_id;$wifi=Get-ReimsWifiNic $record.uplink_id
     $receive=$last['receive'];$filters=$last['hardware_filters']
     if($receive -isnot [Collections.IDictionary] -or $receive['strategy'] -cne 'native80211-socket-memberships' -or
-        ($receive['interface_index'] -isnot [int] -and $receive['interface_index'] -isnot [long]) -or $receive.interface_index -ne $wifi.InterfaceIndex -or
+        ($receive['interface_index'] -isnot [int] -and $receive['interface_index'] -isnot [long]) -or $receive.interface_index -le 0 -or
         $filters -isnot [Collections.IDictionary] -or $filters['tap'] -isnot [Collections.IDictionary] -or $filters['wifi'] -isnot [Collections.IDictionary] -or
         !$filters.wifi.ContainsKey('requested') -or $null -ne $filters.wifi.requested -or
         ($filters.tap['before'] -isnot [int] -and $filters.tap['before'] -isnot [long]) -or $filters.tap.before -lt 0 -or $filters.tap.before -gt [uint32]::MaxValue){throw 'Only a fully recorded Native80211 observe-only session can recover after reboot.'}
+    # Interface indices can change across boots; inspect the current GUID pair.
     $inspection=Get-ReimsWifiCaptureInspection $record.tap_id $record.uplink_id
     if($inspection -isnot [Collections.IDictionary] -or ($inspection['schema'] -isnot [int] -and $inspection['schema'] -isnot [long]) -or $inspection.schema -ne 1 -or $inspection['adapters'] -isnot [Array] -or $inspection.adapters.Count -ne 2){throw 'Read-only inspection did not return the exact adapter pair.'}
     foreach($role in @('tap','wifi')){
