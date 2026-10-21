@@ -50,6 +50,11 @@ try {
             throw 'Hardware save changed or inspected the retained network, or lost hardware values'
         }
     }
+    $legacy=Get-Content -LiteralPath $configPath -Raw|ConvertFrom-Json
+    $legacy.PSObject.Properties.Remove('network')
+    [IO.File]::WriteAllText($configPath,($legacy|ConvertTo-Json -Depth 10))
+    & "$stub/manager-backend.ps1" @base -PreserveNetwork|Out-Null
+    if((Get-Content -LiteralPath $configPath -Raw|ConvertFrom-Json).PSObject.Properties['network']){throw 'Hardware-only save manufactured a network for a legacy configuration'}
     $bytes=[IO.File]::ReadAllBytes($configPath)
     Reject { & "$stub/manager-backend.ps1" @base -PreserveNetwork -Network nat } 'cannot be combined'
     foreach($name in @('Adapter','PhysicalAdapter','GuestHost')) {
