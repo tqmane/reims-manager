@@ -196,6 +196,10 @@ restores only its recorded owned TAP settings on disable. The UI never reads or
 changes raw router-discovery records.
 
 The hardware draft retains the selected physical GUID and forwarding mode.
+When those network fields have not changed, saving hardware explicitly preserves
+the existing network configuration without checking TAP/Wi-Fi readiness or
+requesting elevation. This also permits memory/CPU edits while a saved connection
+is unavailable. Changed network selections still use their preparation checks.
 Wi-Fi preparation can run while unrelated hardware or identity edits are still
 pending. Only committed network fields are rebased after the status refresh;
 other edits remain pending for Apply or Cancel. Failed or incomplete preparation
