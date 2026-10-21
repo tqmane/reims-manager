@@ -60,6 +60,18 @@ internal static class WifiUiChecks
         File.WriteAllText(file,"{\"schema\":1,\"prepared\":true,\"configured\":true,\"restart_required\":false}");
         if(!WifiPrepareResult.Read(file,DateTime.UtcNow.AddSeconds(-10)).Configured) throw new Exception("Fresh Wi-Fi result was lost.");
         Reject(()=>WifiPrepareResult.Read(file,DateTime.UtcNow.AddMinutes(1)));
+        const string prepareError="選択した Wi-Fi の準備に失敗しました。";
+        File.WriteAllText(file,JsonSerializer.Serialize(new {schema=1,prepared=false,configured=false,restart_required=false,error=prepareError}));
+        var failedPrepare=WifiPrepareResult.Read(file,DateTime.UtcNow.AddSeconds(-10));
+        if(failedPrepare.Error!=prepareError || failedPrepare.Prepared || failedPrepare.Configured || failedPrepare.RestartRequired) throw new Exception("Fresh Wi-Fi prepare error was lost or reported success.");
+        File.SetLastWriteTimeUtc(file,DateTime.UtcNow.AddMinutes(-1));
+        Reject(()=>WifiPrepareResult.Read(file,DateTime.UtcNow.AddSeconds(-10)));
+        foreach(object? error in new object?[]{123,null,new string('x',2049)}) {
+            File.WriteAllText(file,JsonSerializer.Serialize(new {schema=1,prepared=false,configured=false,restart_required=false,error}));
+            Reject(()=>WifiPrepareResult.Read(file,DateTime.MinValue));
+        }
+        File.WriteAllText(file,JsonSerializer.Serialize(new {schema=1,prepared=true,configured=true,restart_required=false,error=prepareError}));
+        Reject(()=>WifiPrepareResult.Read(file,DateTime.MinValue));
         File.WriteAllText(file,"{\"schema\":1,\"prepared\":false,\"configured\":false,\"restart_required\":true}");
         if(!WifiPrepareResult.Read(file,DateTime.MinValue).RestartRequired) throw new Exception("Driver restart was treated as completed configuration.");
         foreach(string json in new[]{"{\"schema\":2,\"prepared\":true,\"configured\":true,\"restart_required\":false}",

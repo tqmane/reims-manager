@@ -259,10 +259,24 @@ switch ($Action) {
         $result | ConvertTo-Json -Depth 5 -Compress
     }
     PrepareWifi {
-        . "$PSScriptRoot/wifi-driver.ps1"
-        $result=Prepare-ReimsWifi $Root $Adapter $PhysicalAdapter $GuestHost ([bool]$AcceptPacketFilterTerms)
-        Write-ReimsJson (Join-Path $VmRoot 'state/wifi-prepare-result.json') $result
-        $result | ConvertTo-Json -Depth 6 -Compress
+        try {
+            . "$PSScriptRoot/wifi-driver.ps1"
+            $result=Prepare-ReimsWifi $Root $Adapter $PhysicalAdapter $GuestHost ([bool]$AcceptPacketFilterTerms)
+            Write-ReimsJson (Join-Path $VmRoot 'state/wifi-prepare-result.json') $result
+            $result | ConvertTo-Json -Depth 6 -Compress
+        } catch {
+            $prepareError=$_
+            $message=$prepareError.Exception.Message
+            if($message.Length -gt 2048){
+                $message=$message.Substring(0,2048)
+                if([char]::IsHighSurrogate($message[$message.Length-1])){$message=$message.Substring(0,$message.Length-1)}
+            }
+            # Failure can follow a partial host change; this is not a rollback receipt.
+            try {
+                Write-ReimsJson (Join-Path $VmRoot 'state/wifi-prepare-result.json') @{schema=1;prepared=$false;configured=$false;restart_required=$false;error=$message}
+            } catch { } # Preserve the operation's original failure if the receipt cannot be saved.
+            throw $prepareError
+        }
     }
     DisableWifi { Disable-ReimsWifiMacNat | ConvertTo-Json -Depth 6 -Compress }
     ImportDisk {

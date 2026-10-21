@@ -148,7 +148,16 @@ public partial class MainWindow
         string resultFile=System.IO.Path.Combine(VmDirectory,"state","wifi-prepare-result.json");
         var entry=selectedEntry;DateTime started=DateTime.UtcNow;
         applyingSettings=true;UpdatePowerControls();
-        try { if (await Operate("PrepareWifi",arguments,true) && entry==selectedEntry && !closing) {
+        try {
+            bool completed=await Operate("PrepareWifi",arguments,true);
+            if(entry!=selectedEntry || closing) return false;
+            if(!completed) {
+                try {
+                    string? error=WifiPrepareResult.Read(resultFile,started).Error;
+                    if(!string.IsNullOrWhiteSpace(error)) ShowError("Wi-Fi の準備に失敗しました。一部の設定が変更済みの可能性があるため、状態を確認してください。\n"+error);
+                } catch { } // A missing/stale/malformed optional receipt must not replace the original error.
+                return false;
+            }
             try {
                 var result=WifiPrepareResult.Read(resultFile,started);
                 if (result.RestartRequired) {
@@ -158,7 +167,7 @@ public partial class MainWindow
                 } else if (!result.Prepared || !result.Configured) { ShowError("Wi-Fi の準備は未完了です。転送状態とログを確認してください。"); }
                 return !result.RestartRequired && result.Prepared && result.Configured;
             } catch (Exception error) { ShowError("Wi-Fi の準備結果を確認できません。変更済みの可能性があるため、状態とログを確認してください。\n"+error.Message); }
-        }} finally { applyingSettings=false;UpdatePowerControls(); }
+        } finally { applyingSettings=false;UpdatePowerControls(); }
         return false;
     }
 

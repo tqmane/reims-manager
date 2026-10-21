@@ -20,6 +20,11 @@ function Write-ReimsJson($Path,$Value){
 }
 function Prepare-ReimsWifi($EngineRoot,$TapId,$UplinkId,$GuestHost,$Consent){
     if(!$Consent -or $TapId -or $UplinkId -ne '11111111-1111-4111-8111-111111111111'){throw 'Prepare dispatch/consent mismatch'}
+    $failure=Join-Path $VmRoot 'fail-prepare'
+    if(Test-Path -LiteralPath $failure){
+        [IO.File]::WriteAllText((Join-Path $VmRoot 'partial-state'),'changed')
+        throw [IO.IOException]::new([IO.File]::ReadAllText($failure))
+    }
     @{schema=1;prepared=$true;configured=$true;restart_required=$false}
 }
 '@)
@@ -39,11 +44,25 @@ try{
     $prepare=& "$stub/manager-backend.ps1" @prepareParameters
     $path=Join-Path $selected 'state/wifi-prepare-result.json'
     if((Get-Content -Raw -LiteralPath $path | ConvertFrom-Json).configured -ne $true -or !($prepare|ConvertFrom-Json).prepared){throw 'Prepare result not saved/echoed'}
+    foreach($message in @('Fixture prepare failure: 選択した Wi-Fi が利用できません。',(('x'*2047)+[char]::ConvertFromUtf32(0x1f6a7)+'tail'))){
+        [IO.File]::WriteAllText((Join-Path $selected 'fail-prepare'),$message)
+        [IO.File]::SetLastWriteTimeUtc($path,[DateTime]::UtcNow.AddMinutes(-1))
+        $started=[DateTime]::UtcNow
+        $output=@(& (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File "$stub/manager-backend.ps1" -Root "$work/no-engine" -VmDirectory $selected -Action PrepareWifi -PhysicalAdapter '11111111-1111-4111-8111-111111111111' -AcceptPacketFilterTerms 2>&1)
+        if($LASTEXITCODE -eq 0){throw 'Failed prepare dispatch returned success'}
+        $failed=Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+        if($failed.schema -ne 1 -or $failed.prepared -isnot [bool] -or $failed.prepared -or $failed.configured -isnot [bool] -or $failed.configured -or $failed.restart_required -isnot [bool] -or $failed.restart_required -or
+            $failed.error -isnot [string] -or !$failed.error -or $failed.error.Length -gt 2048 -or [IO.File]::GetLastWriteTimeUtc($path) -lt $started){throw 'Fresh bounded prepare failure receipt was not written'}
+        if($message.Length -le 2048 -and ($failed.error -ne $message -or ($output -join "`n") -notlike '*Fixture prepare failure*')){throw 'Original prepare exception was replaced'}
+        if(!(Test-Path -LiteralPath (Join-Path $selected 'partial-state'))){throw 'Partial host state was incorrectly treated as rollback'}
+    }
+    Remove-Item -LiteralPath (Join-Path $selected 'fail-prepare')
+    $null=& "$stub/manager-backend.ps1" @prepareParameters
     $before=[IO.File]::ReadAllText($path)
     [IO.File]::WriteAllText((Join-Path $selected 'deny-result'),'fixture')
     $output=@(& (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File "$stub/manager-backend.ps1" -Root "$work/no-engine" -VmDirectory $selected -Action PrepareWifi -PhysicalAdapter '11111111-1111-4111-8111-111111111111' -AcceptPacketFilterTerms 2>&1)
     if($LASTEXITCODE -eq 0 -or [IO.File]::ReadAllText($path) -ne $before){throw 'Failed elevated handoff claimed success or replaced old result'}
-    'PASS Wi-Fi global no-VM dispatch, explicit consent, selected GUID forwarding, fixed UAC results and nonzero write failure'
+    'PASS Wi-Fi global no-VM dispatch, consent, GUID, fixed UAC results, fresh bounded errors, original throw, partial-state preservation and nonzero write failure'
 }finally{
     $prefix=[IO.Path]::GetFullPath("$PSScriptRoot/../../.work/tmp")+[IO.Path]::DirectorySeparatorChar
     if($work.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){Remove-Item -LiteralPath $work -Recurse -Force}
