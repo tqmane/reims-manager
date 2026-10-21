@@ -236,6 +236,57 @@ function Get-ReimsStoppedUsbInventory($Config, [ValidateRange(100,15000)][int]$T
     }
 }
 
+function Get-ReimsUsbProductName($Name) {
+    if ($Name -isnot [string]) { return }
+    # Some bus product strings append a serial; names must not persist it.
+    $name=($Name -replace '(?i)\s+_SN:\S+\s*$','').Trim()
+    if (!$name -or $name -match '^(?i:Android(?: Device| Phone)?|MTP(?: USB (?:Device|デバイス))?|USB (?:Composite Device|Device|複合デバイス|デバイス)|(?:.*\s)?ADB (?:Interface|インターフェ[イー]ス))$') { return }
+    return $name
+}
+
+function Get-ReimsUsbProductNames($Pnp, $Descriptions) {
+    $names=@{}
+    $groups=@{}
+    foreach ($device in $Pnp) {
+        if ($device.InstanceId -notmatch '^USB\\VID_([0-9A-F]{4})&PID_([0-9A-F]{4})(?:&|\\)') { continue }
+        $key="$($Matches[1]):$($Matches[2])"
+        if (!$groups.ContainsKey($key)) { $groups[$key]=[Collections.Generic.List[object]]::new() }
+        $groups[$key].Add($device)
+    }
+    foreach ($key in $groups.Keys) {
+        $roots=@($groups[$key] | Where-Object InstanceId -NotMatch '&MI_[0-9A-F]{2}(?:&|\\)')
+        if ($roots.Count -gt 1) {
+            # VID/PID alone cannot associate these models with QEMU bus/port.
+            # A shared name is safe only when every physical root supplies it.
+            $rootNames=@(foreach ($root in $roots) {
+                $name=Get-ReimsUsbProductName $Descriptions[$root.InstanceId]
+                if (!$name) { $name=Get-ReimsUsbProductName $root.FriendlyName }
+                if ($name) { $name }
+            })
+            $unique=@($rootNames | Sort-Object -Unique)
+            if ($rootNames.Count -eq $roots.Count -and $unique.Count -eq 1) { $names[$key]=$unique[0] }
+            continue
+        }
+        $interfaces=@($groups[$key] | Where-Object InstanceId -Match '&MI_[0-9A-F]{2}(?:&|\\)')
+        $wpd=@($interfaces | Where-Object { $_.PSObject.Properties['Class'] -and $_.Class -eq 'WPD' })
+        # Candidate tiers, rather than enumeration order, select the product.
+        $tiers=@(
+            @{devices=$roots;bus=$true}, @{devices=$roots;bus=$false},
+            @{devices=$wpd;bus=$false}, @{devices=$wpd;bus=$true},
+            @{devices=$interfaces;bus=$true}, @{devices=$interfaces;bus=$false}
+        )
+        foreach ($tier in $tiers) {
+            $candidates=@(@(foreach ($device in $tier.devices) {
+                $value=if ($tier.bus) { $Descriptions[$device.InstanceId] } else { $device.FriendlyName }
+                Get-ReimsUsbProductName $value
+            }) | Sort-Object -Unique)
+            if ($candidates.Count -eq 1) { $names[$key]=$candidates[0]; break }
+            if ($candidates.Count -gt 1) { break }
+        }
+    }
+    return $names
+}
+
 function Get-ReimsUsbDevices {
     $config = Get-ReimsVmConfig
     $saved = @(Get-ReimsUsbSelections $config)
@@ -250,19 +301,12 @@ function Get-ReimsUsbDevices {
         $text = Get-ReimsStoppedUsbInventory $config
     }
     if ($text -match 'not available|unknown command') { throw 'USB 転送に対応した QEMU へ更新してください。' }
-    $names = @{}
     $pnp = @(Get-PnpDevice -PresentOnly | Where-Object InstanceId -Like 'USB\VID_*')
     $descriptions = @{}
     foreach ($property in Get-ReimsPnpProperties @($pnp | ForEach-Object InstanceId) DEVPKEY_Device_BusReportedDeviceDesc -Optional) {
         if ($property.PSObject.Properties['Data']) { $descriptions[$property.InstanceId]=$property.Data }
     }
-    foreach ($device in $pnp) {
-        if ($device.InstanceId -match 'VID_([0-9A-F]{4})&PID_([0-9A-F]{4})') {
-            $key="$($Matches[1]):$($Matches[2])"
-            $description=$descriptions[$device.InstanceId]
-            $names[$key]=if ($description) { $description } else { $device.FriendlyName }
-        }
-    }
+    $names=Get-ReimsUsbProductNames $pnp $descriptions
     $devices = @(ConvertFrom-ReimsUsbInventory $text $names (Get-ReimsProtectedUsbIds))
     foreach ($device in $saved) {
         $row = $devices | Where-Object id -EQ $device.id | Select-Object -First 1

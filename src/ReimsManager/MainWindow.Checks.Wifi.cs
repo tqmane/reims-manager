@@ -46,8 +46,11 @@ public partial class MainWindow
                 throw new Exception("Cancelling settings upgraded or dropped the legacy IPv4 profile.");
             UpdatePowerControls();
             if(!PrepareWifiButton.IsEnabled || !DisableWifiButton.IsEnabled || !WifiForwarderDetail.Text.Contains("再実行") ||
-                !WifiForwarderDetail.Text.Contains("Reapply PrepareWifi for IPv6") || ValidateHardware())
-                throw new Exception("Legacy Wi-Fi was silently qualified or cannot prepare/clean up its owned TAP.");
+                !WifiForwarderDetail.Text.Contains("Reapply PrepareWifi for IPv6") || !ValidateHardware())
+                throw new Exception("Legacy Wi-Fi blocked unrelated hardware edits or cannot prepare/clean up its owned TAP.");
+            string legacyHost=GuestHost.Text;GuestHost.Text="changed-guest.local";
+            if(ValidateHardware()) throw new Exception("A changed legacy Wi-Fi profile bypassed preparation.");
+            GuestHost.Text=legacyHost;hardwareDirty=false;
             Feedback.Visibility=Visibility.Collapsed;WifiForwarderSummary.BringIntoView();await ArrangeCheck();SaveImage(Path.Combine(folder,"wifi-compat-legacy.png"));
             currentState="stopped";State.Text="完全停止";latest=WifiUiChecks.Snapshot();ReadWifiStatus();hardwareForwarder=WifiForwarderState.MacNat;
             loadingHardware=true;
@@ -62,7 +65,7 @@ public partial class MainWindow
             UpdatePowerControls();
             if(!DisableWifiButton.IsEnabled || !ValidateHardware()) throw new Exception("Configured Wi-Fi cannot preserve its owned GUID without TAP plumbing.");
             await CheckWifiDraftRetention();
-            File.WriteAllText(Path.Combine(folder,"wifi-page-result.json"),"{\"single_wifi_card\":true,\"terms_before_missing_driver\":true,\"missing_status_unconfirmed\":true,\"ready_is_worker_only\":true,\"errors_visible\":true,\"stopped_only\":true,\"draft_forwarder_retained\":true,\"unrelated_edits_preserved\":true,\"no_host_network_calls\":true,\"ipv6_capability_not_lan\":true,\"legacy_ipv4_cancel_retains_profile\":true,\"legacy_requires_reprepare_allows_cleanup\":true,\"prepare_disable_preserve_hardware_identity_drafts\":true,\"cancel_retains_committed_network_only\":true,\"failure_restart_preserve_network_draft\":true,\"failed_status_poll_recovers_network_baseline\":true,\"context_reset_clears_pending_network_refresh\":true,\"save_reveals_network_preparation\":true}");
+            File.WriteAllText(Path.Combine(folder,"wifi-page-result.json"),"{\"single_wifi_card\":true,\"terms_before_missing_driver\":true,\"missing_status_unconfirmed\":true,\"ready_is_worker_only\":true,\"errors_visible\":true,\"stopped_only\":true,\"draft_forwarder_retained\":true,\"unrelated_edits_preserved\":true,\"no_host_network_calls\":true,\"ipv6_capability_not_lan\":true,\"legacy_ipv4_cancel_retains_profile\":true,\"legacy_requires_reprepare_allows_cleanup\":true,\"prepare_disable_preserve_hardware_identity_drafts\":true,\"cancel_retains_committed_network_only\":true,\"failure_restart_preserve_network_draft\":true,\"failed_status_poll_recovers_network_baseline\":true,\"context_reset_clears_pending_network_refresh\":true,\"save_reveals_network_preparation\":true,\"unchanged_unconfigured_wifi_saves_cpu_memory\":true,\"unchanged_errored_wifi_saves_cpu_memory\":true,\"preserved_network_arguments_omitted\":true,\"cpu_memory_save_no_network_actions\":true,\"changed_network_still_requires_preparation\":true}");
         } finally {
             committedHardware=oldDraft;hardwareDirty=true;identityDirty=false;RestoreSettingsDrafts();committedHardware=oldCommitted;
             latest=oldLatest;wifiForwarder=oldWifi;wifiStatusError=oldStatusError;hardwareForwarder=oldDraft.Forwarder;currentState=oldState;State.Text=oldStateText;loadedHardware=oldLoaded;
@@ -83,17 +86,22 @@ public partial class MainWindow
         var previousPhysicalValue=Physical.SelectedValue;var previousBridgeTap=BridgeTap.SelectedItem;var previousSnapshot=Snapshots.SelectedItem;
         var previousUsbItems=UsbDevices.ItemsSource;var previousUsbSelection=UsbDevices.SelectedItem;bool previousUsbCurrent=usbInventoryContext==contextVersion;
         bool? previousInstaller=ConnectIso.IsChecked,previousTerms=PacketFilterTerms.IsChecked;bool previousDetached=consoleDetached;int previousPage=Tabs.SelectedIndex;
-        bool configured=false,failWrite=false,restart=false,failStatus=false;int memory=8192,writes=0;
+        bool configured=false,failWrite=false,restart=false,failStatus=false,forwarderReady=true,allowHardwareSave=false;
+        int memory=8192,cpus=1,writes=0,hardwareWrites=0;string? forwarderError=null;
         string host="saved-guest.local";const string id="aaaaaaaa-1111-4111-8111-111111111111",tap="Owned fixture TAP";
         string Status() => JsonSerializer.Serialize(new {
-            state="stopped",prepared=true,snapshots=Array.Empty<string>(),taps=new[]{tap},memory_mib=memory,cpus=1,disk_gib=128,disk="fixture.qcow2",iso="",
+            state="stopped",prepared=true,snapshots=Array.Empty<string>(),taps=new[]{tap},memory_mib=memory,cpus,disk_gib=128,disk="fixture.qcow2",iso="",
             with_installer=false,connect_installer=false,network=configured?"bridge":"nat",network_adapter=configured?tap:"",network_uplink_id=configured?id:"",
             guest_host=host,audio="none",microphone=false,usb_backend="winusb",resolution="1920x1080",
-            network_forwarder=new {kind=configured?WifiForwarderState.MacNat:"none",installed=true,configured,running=false,ready=false,pid=(int?)null,error=(string?)null,ipv4_only=!configured,ipv6_enabled=configured}
+            network_forwarder=new {kind=configured?WifiForwarderState.MacNat:"none",installed=true,configured=configured&&forwarderReady,running=false,ready=false,pid=(int?)null,error=forwarderError,ipv4_only=!(configured&&forwarderReady),ipv6_enabled=configured&&forwarderReady}
         });
         controlFixtureBackend = action => {
             if(action=="GetNetworkUplinks") return Task.FromResult(OnboardingChecks.Network);
             if(action=="Status") { if(failStatus) throw new IOException("Fixture status unavailable.");return Task.FromResult(Status()); }
+            if(action=="SetHardware" && allowHardwareSave) {
+                hardwareWrites++;memory=int.Parse(Memory.Text);cpus=int.Parse(Cpus.Text);
+                return Task.FromResult("Authored CPU/memory-only commit.");
+            }
             if(action is not ("PrepareWifi" or "DisableWifi")) throw new Exception("Unexpected Wi-Fi fixture write: "+action);
             writes++;if(failWrite) throw new IOException("Fixture preparation failed.");
             if(action=="PrepareWifi") {
@@ -157,6 +165,40 @@ public partial class MainWindow
             failStatus=false;memory=16384;await RefreshState(full:false);
             if(!loadedHardware || Memory.Text!="16384" || Cpus.Text!="1" || committedHardware?.Memory!="16384")
                 throw new Exception("A stale network rebase skipped the new VM's full hardware load.");
+            foreach(string? error in new string?[]{null,"Authored Wi-Fi preparation error"}) {
+                configured=true;forwarderReady=false;forwarderError=error;allowHardwareSave=true;
+                memory=8192;cpus=1;host="saved host with spaces";LoadBaseline();
+                if(wifiForwarder is not {Kind:WifiForwarderState.MacNat,Configured:false} || wifiForwarder.Error!=error || wifiStatusError is not null)
+                    throw new Exception("Hardware save fixture must use a valid unprepared/error Wi-Fi status.");
+                var network=CaptureHardwareDraft();var unchangedIdentity=CaptureIdentityDraft();
+                foreach(var changed in new[]{network with{Nat=true},network with{Tap=null},network with{Uplink=""},
+                    network with{Host="changed-guest.local"},network with{Forwarder="none"}})
+                    if(SameNetwork(network,changed)) throw new Exception("A changed network field was classified as preserved.");
+                var baseline=committedHardware;committedHardware=null;
+                if(!NetworkDraftChanged) throw new Exception("An unknown network baseline was classified as preserved.");
+                committedHardware=baseline;
+                Memory.Text="4097";
+                if(ValidateHardware()) throw new Exception("Preserving a network bypassed memory validation.");
+                Memory.Text="12288";Cpus.Text=Math.Min(2,Environment.ProcessorCount).ToString();
+                if(NetworkDraftChanged || !hardwareDirty || !ValidateHardware())
+                    throw new Exception("Unchanged unconfigured/errored Wi-Fi blocked CPU/memory edits.");
+                string[] arguments=HardwareArguments();
+                if(arguments.Count(value=>value=="-PreserveNetwork")!=1 ||
+                    arguments.Any(value=>value is "-Network" or "-Adapter" or "-PhysicalAdapter" or "-GuestHost") ||
+                    arguments[Array.IndexOf(arguments,"-MemoryMiB")+1]!="12288" || arguments[Array.IndexOf(arguments,"-Cpus")+1]!=Cpus.Text)
+                    throw new Exception("CPU/memory-only save sent network configuration or lost hardware arguments.");
+                GuestHost.Text="changed-guest.local";
+                string[] changedArguments=HardwareArguments();
+                if(!NetworkDraftChanged || ValidateHardware() || Tabs.SelectedIndex!=7 || changedArguments.Contains("-PreserveNetwork") ||
+                    !new[]{"-Network","-Adapter","-PhysicalAdapter","-GuestHost"}.All(changedArguments.Contains))
+                    throw new Exception("Changed unprepared Wi-Fi bypassed its preparation guard.");
+                GuestHost.Text=host;
+                int networkWrites=writes,saves=hardwareWrites;
+                if(!await ApplySettingsDrafts() || hardwareWrites!=saves+1 || writes!=networkWrites || memory!=12288 ||
+                    committedHardware?.Memory!="12288" || !SameNetwork(CaptureHardwareDraft(),network) ||
+                    CaptureIdentityDraft()!=unchangedIdentity || hardwareDirty || identityDirty)
+                    throw new Exception("CPU/memory-only save changed networking, invoked preparation or left the hardware unsaved.");
+            }
         } finally {
             loadingHardware=loadingIdentity=true;
             try {

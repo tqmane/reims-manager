@@ -196,6 +196,10 @@ restores only its recorded owned TAP settings on disable. The UI never reads or
 changes raw router-discovery records.
 
 The hardware draft retains the selected physical GUID and forwarding mode.
+When those network fields have not changed, saving hardware explicitly preserves
+the existing network configuration without checking TAP/Wi-Fi readiness or
+requesting elevation. This also permits memory/CPU edits while a saved connection
+is unavailable. Changed network selections still use their preparation checks.
 Wi-Fi preparation can run while unrelated hardware or identity edits are still
 pending. Only committed network fields are rebased after the status refresh;
 other edits remain pending for Apply or Cancel. Failed or incomplete preparation
@@ -206,6 +210,9 @@ binding restoration to the backend; changing the hardware radio to NAT alone
 cannot bypass cleanup. Preparation reads only the fixed, fresh schema-1 result
 after successful elevated process exit, with a 64 KiB input limit. An unreadable
 result reports possible partial changes rather than assuming rollback.
+Failed preparation records a fresh, bounded error in the same receipt so the
+elevated exception can be shown in the UI. Missing, stale or malformed failure
+receipts leave the original error visible; an earlier success is never reused.
 
 CPU fixtures cover status parsing, typed IPv6 capability and legacy migration,
 error/readiness precedence, explicit consent, stopped-state policy and

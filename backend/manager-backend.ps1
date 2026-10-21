@@ -23,6 +23,7 @@ param(
     [switch]$Microphone,
     [ValidateSet('winusb','usbdk')][string]$UsbBackend = 'winusb',
     [switch]$WithInstaller,
+    [switch]$PreserveNetwork,
     [Alias('AcceptDriverTerms')][switch]$AcceptPacketFilterTerms
 )
 $ErrorActionPreference='Stop'
@@ -258,10 +259,24 @@ switch ($Action) {
         $result | ConvertTo-Json -Depth 5 -Compress
     }
     PrepareWifi {
-        . "$PSScriptRoot/wifi-driver.ps1"
-        $result=Prepare-ReimsWifi $Root $Adapter $PhysicalAdapter $GuestHost ([bool]$AcceptPacketFilterTerms)
-        Write-ReimsJson (Join-Path $VmRoot 'state/wifi-prepare-result.json') $result
-        $result | ConvertTo-Json -Depth 6 -Compress
+        try {
+            . "$PSScriptRoot/wifi-driver.ps1"
+            $result=Prepare-ReimsWifi $Root $Adapter $PhysicalAdapter $GuestHost ([bool]$AcceptPacketFilterTerms)
+            Write-ReimsJson (Join-Path $VmRoot 'state/wifi-prepare-result.json') $result
+            $result | ConvertTo-Json -Depth 6 -Compress
+        } catch {
+            $prepareError=$_
+            $message=$prepareError.Exception.Message
+            if($message.Length -gt 2048){
+                $message=$message.Substring(0,2048)
+                if([char]::IsHighSurrogate($message[$message.Length-1])){$message=$message.Substring(0,$message.Length-1)}
+            }
+            # Failure can follow a partial host change; this is not a rollback receipt.
+            try {
+                Write-ReimsJson (Join-Path $VmRoot 'state/wifi-prepare-result.json') @{schema=1;prepared=$false;configured=$false;restart_required=$false;error=$message}
+            } catch { } # Preserve the operation's original failure if the receipt cannot be saved.
+            throw $prepareError
+        }
     }
     DisableWifi { Disable-ReimsWifiMacNat | ConvertTo-Json -Depth 6 -Compress }
     ImportDisk {
@@ -407,14 +422,19 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
     }
     SetHardware {
         Assert-ReimsVmStopped
+        if ($PreserveNetwork -and @('Network','Adapter','PhysicalAdapter','GuestHost').Where({$PSBoundParameters.ContainsKey($_)}).Count) {
+            throw 'PreserveNetwork cannot be combined with network change arguments.'
+        }
         $savedConfig = Get-ReimsVmConfig
         Assert-ReimsUsbBackendChange $savedConfig $UsbBackend
         if ($MemoryMiB % 4 -ne 0) { throw 'メモリは 4 MiB 単位で指定してください。' }
         $hostInfo = Get-CimInstance Win32_ComputerSystem
         if ($Cpus -gt $hostInfo.NumberOfLogicalProcessors -or [long]$MemoryMiB * 1MB -ge $hostInfo.TotalPhysicalMemory) { throw 'ホストの CPU / メモリ容量以内で設定してください。' }
-        if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
-        if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid guest address.' }
-        $selectedNetwork=Get-ReimsSavedNetwork $savedConfig $Network $Adapter $GuestHost $PhysicalAdapter
+        if (!$PreserveNetwork) {
+            if ($Network -eq 'bridge' -and $Adapter -notin @(Get-ReimsTapAdapters | ForEach-Object Name)) { throw 'TAP adapter not found.' }
+            if ($GuestHost -and $GuestHost -notmatch '^[A-Za-z0-9][A-Za-z0-9.:-]*$') { throw 'Invalid guest address.' }
+            $selectedNetwork=Get-ReimsSavedNetwork $savedConfig $Network $Adapter $GuestHost $PhysicalAdapter
+        }
         if ($WithInstaller -and !$Iso) { throw 'インストーラーを接続する場合は ISO を選択してください。' }
         if ($Iso) { & "$PSScriptRoot/prepare-vm.ps1" -Iso $Iso | Out-Null }
         $config = Get-ReimsVmConfig
@@ -425,7 +445,7 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         $config | Add-Member -Force microphone ([bool]$Microphone)
         $config | Add-Member -Force usb_backend $UsbBackend
         $config | Add-Member -Force connect_installer ([bool]$WithInstaller)
-        $config | Add-Member -Force network $selectedNetwork
+        if (!$PreserveNetwork) { $config | Add-Member -Force network $selectedNetwork }
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         '仮想マシン設定を保存しました。次回起動に適用します。'
     }

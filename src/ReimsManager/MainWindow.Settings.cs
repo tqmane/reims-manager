@@ -21,6 +21,12 @@ public partial class MainWindow
     private void RememberHardwareDraft() => committedHardware = CaptureHardwareDraft();
     private void RememberIdentityDraft() => committedIdentity = CaptureIdentityDraft();
 
+    private static bool SameNetwork(HardwareDraft left, HardwareDraft right) =>
+        left.Nat == right.Nat && Equals(left.Tap, right.Tap) && left.Uplink == right.Uplink &&
+        left.Host == right.Host && left.Forwarder == right.Forwarder;
+    private bool NetworkDraftChanged => !loadedHardware || committedHardware is not { } saved ||
+        !SameNetwork(CaptureHardwareDraft(), saved);
+
     private void OpenSettings(object sender, RoutedEventArgs e)
     {
         if (IsUiBusy || !HasVm) return;
