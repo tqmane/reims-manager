@@ -210,6 +210,9 @@ binding restoration to the backend; changing the hardware radio to NAT alone
 cannot bypass cleanup. Preparation reads only the fixed, fresh schema-1 result
 after successful elevated process exit, with a 64 KiB input limit. An unreadable
 result reports possible partial changes rather than assuming rollback.
+Failed preparation records a fresh, bounded error in the same receipt so the
+elevated exception can be shown in the UI. Missing, stale or malformed failure
+receipts leave the original error visible; an earlier success is never reused.
 
 CPU fixtures cover status parsing, typed IPv6 capability and legacy migration,
 error/readiness precedence, explicit consent, stopped-state policy and
