@@ -402,14 +402,21 @@ public partial class MainWindow : Window
     private async void RestoreSnapshot(object sender,RoutedEventArgs e) { if (RequireAction("SnapshotRestore") && Snapshots.SelectedIndex >= 0 && Confirm("選択したスナップショットに切り替えます。現在のディスクも保持します。")) await Operate("SnapshotRestore",["-Name",Selected(Snapshots)]); }
     private async void ForceExit(object sender,RoutedEventArgs e) { if (RequireAction("ForceExit") && Confirm("未保存の macOS 作業を失います。強制終了しますか？")) await Operate("ForceExit"); }
     private async void SaveHardware(object sender,RoutedEventArgs e) => await SaveHardwareCore();
-    private async Task<bool> SaveHardwareCore() {
-        if (!RequireAction("SetHardware") || !ValidateHardware()) return false;
-        var args=new List<string> {"-Cpus",Cpus.Text.Trim(),"-MemoryMiB",Memory.Text.Trim(),"-Resolution",Selected(Resolution),"-Iso",HardwareIsoPath.Text.Trim(),"-Network",Bridge.IsChecked==true?"bridge":"nat","-Adapter",Selected(Tap),"-GuestHost",GuestHost.Text.Trim(),"-Audio",Sound.IsChecked==true?"dsound":"none"};
-        if (Bridge.IsChecked == true && SelectedUplink.Length > 0) args.AddRange(["-PhysicalAdapter", SelectedUplink]);
+    private string[] HardwareArguments() {
+        var args=new List<string> {"-Cpus",Cpus.Text.Trim(),"-MemoryMiB",Memory.Text.Trim(),"-Resolution",Selected(Resolution),"-Iso",HardwareIsoPath.Text.Trim(),"-Audio",Sound.IsChecked==true?"dsound":"none"};
+        if (!NetworkDraftChanged) args.Add("-PreserveNetwork");
+        else {
+            args.AddRange(["-Network",Bridge.IsChecked==true?"bridge":"nat","-Adapter",Selected(Tap),"-GuestHost",GuestHost.Text.Trim()]);
+            if (Bridge.IsChecked == true && SelectedUplink.Length > 0) args.AddRange(["-PhysicalAdapter", SelectedUplink]);
+        }
         if (Microphone.IsChecked==true) args.Add("-Microphone");
         args.AddRange(["-UsbBackend",UsbBackend.SelectedIndex==1?"usbdk":"winusb"]);
         if (HardwareIso.IsChecked==true) args.Add("-WithInstaller");
-        bool saved = await Operate("SetHardware",args.ToArray());
+        return args.ToArray();
+    }
+    private async Task<bool> SaveHardwareCore() {
+        if (!RequireAction("SetHardware") || !ValidateHardware()) return false;
+        bool saved = await Operate("SetHardware",HardwareArguments());
         if (saved) {
             // The backend committed these values even if the following status read fails.
             RememberHardwareDraft();
