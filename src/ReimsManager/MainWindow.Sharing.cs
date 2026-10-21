@@ -64,7 +64,8 @@ public partial class MainWindow
         var token = clipboardCancel.Token;
         try {
             string? host = Clipboard.ContainsText() ? Clipboard.GetText() : null;
-            if (host is not null && host != lastClipboard) {
+            bool coldUnknown = currentState == "unknown" && lastClipboard is null;
+            if (GuestClipboard.ShouldPush(currentState, host, lastClipboard)) {
                 await GuestClipboard.Transfer(directory, host, token);
                 token.ThrowIfCancellationRequested();
                 lastClipboard = host;
@@ -74,7 +75,9 @@ public partial class MainWindow
                 string? current = Clipboard.ContainsText() ? Clipboard.GetText() : null;
                 // A new local copy made during SSH always wins over an older guest read.
                 if (guest != lastClipboard && current == host && guest.Length > 0) Clipboard.SetText(guest);
-                if (current == host) lastClipboard = guest;
+                // Establish the guest baseline on the first unknown-state read, so
+                // a newer local copy can win on the next tick without being overwritten.
+                if (current == host || coldUnknown) lastClipboard = guest;
             }
             token.ThrowIfCancellationRequested();
             ClipboardStatus.Text = "テキストを共有しています。";

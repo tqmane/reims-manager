@@ -128,6 +128,11 @@ internal static class SelfChecks
         if (VmActionPolicy.CanRun("PowerOff", "paused", true, true) || VmActionPolicy.CanRun("Restart", "paused", true, true) ||
             VmActionPolicy.CanRun("ForceExit", "unknown", true, true) || !VmActionPolicy.CanRun("Resume", "paused", true, true))
             throw new Exception("Pause and unknown-state policy failed");
+        if (GuestClipboard.ShouldPush("unknown", "old local", null) || GuestClipboard.ShouldPush("unknown", null, null) ||
+            !GuestClipboard.ShouldPush("running", "old local", null) || GuestClipboard.ShouldPush("unknown", "shared", "shared") ||
+            !GuestClipboard.ShouldPush("unknown", "new local", "guest baseline") ||
+            !GuestClipboard.ShouldPush("running", "new local", "guest baseline") || GuestClipboard.ShouldPush("paused", "new local", "guest baseline"))
+            throw new Exception("Cold unknown clipboard must pull first and preserve a newer local copy against the guest baseline.");
         if (!VmActionPolicy.StartArguments(true).SequenceEqual(new[] { "-WithInstaller" }) || VmActionPolicy.StartArguments(false).Length != 0)
             throw new Exception("Installer preference is not applied consistently");
         if (!ManagerValidation.Integer(" 8196 ", 4096, 131072, 4, out _) ||

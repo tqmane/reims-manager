@@ -12,6 +12,9 @@ internal static class GuestClipboard
 {
     internal const int MaxBytes = 1024 * 1024;
 
+    internal static bool ShouldPush(string state, string? host, string? previous) =>
+        host is not null && host != previous && (state == "running" || state == "unknown" && previous is not null);
+
     internal static string KnownHostsOption(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || path.IndexOfAny(['"', '\r', '\n', '\0']) >= 0)
