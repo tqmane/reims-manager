@@ -62,11 +62,16 @@ download generic QEMU as a substitute: it lacks the Reims device.
 ## Components and source pins
 
 `backend/engine-lock.json` is the reviewed source of version pins. It selects
-Reims `bf36211a`, QEMU `b17ae091` and metal2vulkan `ea5d6b87`, rather than
+Reims `3bdf7474`, QEMU `b17ae091` and metal2vulkan `325bf315`, rather than
 following moving `windows-native-tahoe` branches. The latter runtime is the
 pin in Reims's Cargo manifest; later runtime development commits are not
-silently substituted. The build pin is `engine-bf36211a-b17ae091-4`; a pin
+silently substituted. The build pin is `engine-3bdf7474-b17ae091-5`; a pin
 does not by itself mean its release has been published or qualified.
+This branch prepares that pin as a private, unqualified candidate, pending
+the macOS 26.7.1 boot check. Its proposed compatible-engine entry must not be
+published as qualified before that check. The original required engine and
+recorded guest-bridge qualifications remain unchanged. The previous archive
+byte count is omitted until the source-matched candidate ZIP has been built.
 Guest bridge source, recorded qualification and limits are
 independently pinned in `guest-bridge-lock.json`; setup checks release readiness
 rather than assuming that any available engine/addon combination is qualified.
