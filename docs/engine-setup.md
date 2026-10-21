@@ -67,11 +67,11 @@ following moving `windows-native-tahoe` branches. The latter runtime is the
 pin in Reims's Cargo manifest; later runtime development commits are not
 silently substituted. The build pin is `engine-3bdf7474-b17ae091-5`; a pin
 does not by itself mean its release has been published or qualified.
-This branch prepares that pin as a private, unqualified candidate, pending
-the macOS 26.7.1 boot check. Its proposed compatible-engine entry must not be
-published as qualified before that check. The original required engine and
-recorded guest-bridge qualifications remain unchanged. The previous archive
-byte count is omitted until the source-matched candidate ZIP has been built.
+This pin completed a macOS 26.7.1 cold boot on Windows with WHPX; GPU rendering,
+Android USB and bidirectional clipboard operation were confirmed on that guest.
+The original required engine and recorded guest-bridge qualifications remain
+unchanged. This does not qualify additional guest versions or system-dialog
+cursor behavior.
 Guest bridge source, recorded qualification and limits are
 independently pinned in `guest-bridge-lock.json`; setup checks release readiness
 rather than assuming that any available engine/addon combination is qualified.
