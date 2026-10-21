@@ -205,6 +205,7 @@ try {
                 }
                 try {
                     $result=Invoke-ReimsQmp ([pscustomobject]@{qmp_port=$Port}) query-status
+                    if($result -is [Array] -or $result -isnot [pscustomobject]){throw 'QMP returned internal task output instead of only its reply.'}
                     @{ok=$true;status=$result.status;error=''}
                 } catch {@{ok=$false;status='';error=$_.Exception.Message}}
             }
