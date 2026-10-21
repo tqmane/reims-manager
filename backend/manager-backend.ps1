@@ -27,6 +27,7 @@ param(
     [Alias('AcceptDriverTerms')][switch]$AcceptPacketFilterTerms
 )
 $ErrorActionPreference='Stop'
+$PSStyle.OutputRendering='PlainText'
 # GUI pipes use UTF-8 regardless of the Windows console code page.
 $OutputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding=$OutputEncoding

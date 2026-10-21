@@ -159,9 +159,29 @@ function Assert-ReimsVmStopped {
 
 function Invoke-ReimsQmp($Runtime, [string]$Command, [hashtable]$Arguments = @{}) {
     if (!(Get-ReimsVmProcess $Runtime)) { throw 'The recorded VM is no longer running.' }
-    $client = [Net.Sockets.TcpClient]::new()
+    $port=[int]$Runtime.qmp_port
+    if($port -lt 1024 -or $port -gt 65535){throw 'Invalid QMP port.'}
+    # QEMU accepts one monitor client; polling and mutations share this lease.
+    $mutex=[Threading.Mutex]::new($false,"Local\ReimsManager.Qmp.$port")
+    $locked=$false;$client=$null;$reader=$null;$writer=$null
     try {
-        if (!$client.ConnectAsync('127.0.0.1', [int]$Runtime.qmp_port).Wait(5000)) { throw 'QMP connection timed out.' }
+        try{$locked=$mutex.WaitOne(5000)}catch [Threading.AbandonedMutexException]{$locked=$true}
+        if(!$locked){throw 'VM の管理接続を使用中です。操作の完了後に再試行してください。'}
+        if (!(Get-ReimsVmProcess $Runtime)) { throw 'The recorded VM is no longer running.' }
+        $clock=[Diagnostics.Stopwatch]::StartNew()
+        do {
+            $client=[Net.Sockets.TcpClient]::new()
+            try {
+                $remaining=[Math]::Max(1,5000-[int]$clock.ElapsedMilliseconds)
+                $client.ConnectAsync('127.0.0.1',$port).WaitAsync([TimeSpan]::FromMilliseconds($remaining)).GetAwaiter().GetResult()
+                break
+            } catch {
+                $failure=$_.Exception.GetBaseException();$client.Dispose();$client=$null
+                if($failure -isnot [Net.Sockets.SocketException] -or $failure.SocketErrorCode -ne [Net.Sockets.SocketError]::ConnectionRefused -or $clock.ElapsedMilliseconds -ge 5000){throw "VM の管理接続に失敗しました: $($failure.Message)"}
+                if (!(Get-ReimsVmProcess $Runtime)) { throw 'The recorded VM is no longer running.' }
+                Start-Sleep -Milliseconds 100
+            }
+        } while($true)
         $stream = $client.GetStream()
         $stream.ReadTimeout = 5000
         $stream.WriteTimeout = 5000
@@ -182,7 +202,18 @@ function Invoke-ReimsQmp($Runtime, [string]$Command, [hashtable]$Arguments = @{}
             if ($response.PSObject.Properties['error']) { throw "QMP $($request.execute): $($response.error.desc)" }
         }
         return ,$response.return
-    } finally { $client.Dispose() }
+    } finally {
+        try {
+            try { if($writer){$writer.Dispose()} }
+            finally { if($reader){$reader.Dispose()} }
+        } finally {
+            try { if($client){$client.Dispose()} }
+            finally {
+                if($locked){$mutex.ReleaseMutex()}
+                $mutex.Dispose()
+            }
+        }
+    }
 }
 
 function ConvertTo-ReimsQemuPath([string]$Path) { return $Path.Replace('\', '/').Replace(',', ',,') }

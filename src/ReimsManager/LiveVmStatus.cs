@@ -33,7 +33,21 @@ internal sealed record LiveVmStatus(string State, JsonElement? Runtime)
         return new(await Query(port, cancellation), runtime);
     }
 
-    internal static async Task<string> Query(int port, CancellationToken cancellation = default)
+    internal static Task<string> Query(int port, CancellationToken cancellation = default) => Task.Run(() => {
+        if (port is < 1024 or > 65535) throw new InvalidDataException("VM の管理ポートが不正です。");
+        using var mutex = new Mutex(false, $"Local\\ReimsManager.Qmp.{port}");
+        bool locked = false;
+        try {
+            try { locked = WaitHandle.WaitAny([mutex, cancellation.WaitHandle], TimeSpan.FromSeconds(5)) == 0; }
+            catch (AbandonedMutexException) { locked = true; }
+            cancellation.ThrowIfCancellationRequested();
+            if (!locked) throw new IOException("VM の管理接続を使用中です。操作の完了後に再試行してください。");
+            // A named mutex must be released by its acquiring thread.
+            return QueryCore(port, cancellation).GetAwaiter().GetResult();
+        } finally { if (locked) mutex.ReleaseMutex(); }
+    }, cancellation);
+
+    private static async Task<string> QueryCore(int port, CancellationToken cancellation)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(4));
