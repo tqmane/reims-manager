@@ -178,7 +178,10 @@ internal static class SelfChecks
         var listener=new TcpListener(IPAddress.Loopback,0); listener.Start();
         int port=((IPEndPoint)listener.LocalEndpoint).Port;
         Task server=Task.Run(async ()=> {
+            for(int attempt=0;attempt<2;attempt++) {
             using var socket=await listener.AcceptTcpClientAsync();
+            using var lease=new Mutex(false,$"Local\\ReimsManager.Qmp.{port}");
+            if(lease.WaitOne(0)) { lease.ReleaseMutex();throw new Exception("QMP query did not acquire the shared connection lease"); }
             using var stream=socket.GetStream();
             using var reader=new StreamReader(stream,Encoding.UTF8,false,1024,true);
             using var writer=new StreamWriter(stream,new UTF8Encoding(false),1024,true) {AutoFlush=true};
@@ -193,11 +196,12 @@ internal static class SelfChecks
                     : (object)new {@return=new {status="running"},id};
                 await writer.WriteLineAsync(JsonSerializer.Serialize(response));
             }
+            }
         });
         try {
             try {
-                string result=await LiveVmStatus.Query(port);
-                if(error || result!="running") throw new Exception("QMP response validation failed");
+                string[] results=await Task.WhenAll(LiveVmStatus.Query(port),LiveVmStatus.Query(port));
+                if(error || results.Any(result=>result!="running")) throw new Exception("QMP response validation failed");
             } catch (IOException) when(error) { }
             await server.WaitAsync(TimeSpan.FromSeconds(5));
         } finally { listener.Stop(); }
