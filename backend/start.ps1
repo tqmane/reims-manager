@@ -173,7 +173,7 @@ function Invoke-ReimsQmp($Runtime, [string]$Command, [hashtable]$Arguments = @{}
             $client=[Net.Sockets.TcpClient]::new()
             try {
                 $remaining=[Math]::Max(1,5000-[int]$clock.ElapsedMilliseconds)
-                $client.ConnectAsync('127.0.0.1',$port).WaitAsync([TimeSpan]::FromMilliseconds($remaining)).GetAwaiter().GetResult()
+                [void]$client.ConnectAsync('127.0.0.1',$port).WaitAsync([TimeSpan]::FromMilliseconds($remaining)).GetAwaiter().GetResult()
                 break
             } catch {
                 $failure=$_.Exception.GetBaseException();$client.Dispose();$client=$null
