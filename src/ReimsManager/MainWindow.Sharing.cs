@@ -10,6 +10,8 @@ public partial class MainWindow
     private CancellationTokenSource clipboardCancel = new();
     private bool clipboardBusy, loadingClipboard;
     private string? lastClipboard;
+    // SSH verifies the recorded process and pairing independently of QMP status.
+    private bool CanShareClipboard => VmActionPolicy.CanRun("Clipboard", currentState, HasVm, HasEngine);
 
     private void ResetClipboard() { clipboardCancel.Cancel(); clipboardCancel.Dispose(); clipboardCancel = new(); lastClipboard = null; }
     private void ClipboardChanged(object sender, RoutedEventArgs e)
@@ -45,7 +47,7 @@ public partial class MainWindow
         if (ClipboardSharing.IsChecked != true) {
             if (clipboardTimer.IsEnabled) { clipboardTimer.Stop(); ResetClipboard(); }
             ClipboardStatus.Text = "自動共有はオフです。この VM の設定として保存されます。";
-        } else if (!HasVm || !HasEngine || currentState != "running" || closing) {
+        } else if (!CanShareClipboard || closing) {
             if (clipboardTimer.IsEnabled) { clipboardTimer.Stop(); ResetClipboard(); }
             ClipboardStatus.Text = "自動共有はオンです。VM が実行中になり、SSH に接続できると共有を再開します。";
         } else if (!clipboardTimer.IsEnabled) {
@@ -56,13 +58,14 @@ public partial class MainWindow
 
     private async Task SyncClipboard()
     {
-        if (clipboardBusy || busy || ClipboardSharing.IsChecked != true || latest.ValueKind != JsonValueKind.Object || currentState != "running") return;
+        if (clipboardBusy || busy || ClipboardSharing.IsChecked != true || !CanShareClipboard || closing) return;
         clipboardBusy = true;
         string directory = VmDirectory;
         var token = clipboardCancel.Token;
         try {
             string? host = Clipboard.ContainsText() ? Clipboard.GetText() : null;
-            if (host is not null && host != lastClipboard) {
+            bool coldUnknown = currentState == "unknown" && lastClipboard is null;
+            if (GuestClipboard.ShouldPush(currentState, host, lastClipboard)) {
                 await GuestClipboard.Transfer(directory, host, token);
                 token.ThrowIfCancellationRequested();
                 lastClipboard = host;
@@ -72,7 +75,9 @@ public partial class MainWindow
                 string? current = Clipboard.ContainsText() ? Clipboard.GetText() : null;
                 // A new local copy made during SSH always wins over an older guest read.
                 if (guest != lastClipboard && current == host && guest.Length > 0) Clipboard.SetText(guest);
-                if (current == host) lastClipboard = guest;
+                // Establish the guest baseline on the first unknown-state read, so
+                // a newer local copy can win on the next tick without being overwritten.
+                if (current == host || coldUnknown) lastClipboard = guest;
             }
             token.ThrowIfCancellationRequested();
             ClipboardStatus.Text = "テキストを共有しています。";
@@ -83,7 +88,7 @@ public partial class MainWindow
 
     private async void CopyToGuest(object sender, RoutedEventArgs e)
     {
-        if (clipboardBusy || busy || !HasVm || !HasEngine || currentState != "running") return; clipboardBusy = true;
+        if (clipboardBusy || !CanOperate("Clipboard") || closing) return; clipboardBusy = true;
         var token = clipboardCancel.Token;
         try { if (Clipboard.ContainsText()) { await GuestClipboard.Transfer(VmDirectory, Clipboard.GetText(), token); token.ThrowIfCancellationRequested(); ClipboardStatus.Text = "macOS にコピーしました。"; } }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -92,7 +97,7 @@ public partial class MainWindow
     }
     private async void CopyFromGuest(object sender, RoutedEventArgs e)
     {
-        if (clipboardBusy || busy || !HasVm || !HasEngine || currentState != "running") return; clipboardBusy = true;
+        if (clipboardBusy || !CanOperate("Clipboard") || closing) return; clipboardBusy = true;
         var token = clipboardCancel.Token;
         try { string text = await GuestClipboard.Transfer(VmDirectory, null, token); token.ThrowIfCancellationRequested(); if (text.Length > 0) Clipboard.SetText(text); ClipboardStatus.Text = "Windows にコピーしました。"; }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
