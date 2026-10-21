@@ -129,7 +129,8 @@ public partial class MainWindow : Window
             if (action == "SnapshotRestore") hardwareDirty = identityDirty = false;
         } catch (Exception error) { AppendLog(error.Message + "\n"); ShowError(error.Message); }
         finally {
-            if (action is "RemoveBridge" or "PrepareWifi" or "DisableWifi") loadedHardware = false;
+            if (action == "RemoveBridge") loadedHardware = false;
+            if (action is "PrepareWifi" or "DisableWifi") networkDraftRefreshPending = true;
             busy = false; completingOperation = true; currentState = "unknown";
             OperationProgress.Visibility = Visibility.Collapsed; UpdatePowerControls();
         }
@@ -161,7 +162,7 @@ public partial class MainWindow : Window
         try {
             while (refreshPending && !busy && !closing) {
                 refreshPending = false;
-                bool loadDetails = refreshFull || !loadedHardware || latest.ValueKind != JsonValueKind.Object || selfTest && controlFixtureBackend is not null;
+                bool loadDetails = refreshFull || networkDraftRefreshPending || !loadedHardware || latest.ValueKind != JsonValueKind.Object || selfTest && controlFixtureBackend is not null;
                 refreshFull = false;
                 if (!HasVm || !HasEngine) {
                     currentState = "unprepared";
@@ -210,6 +211,7 @@ public partial class MainWindow : Window
                             string[] taps = latest.GetProperty("taps").EnumerateArray().Select(x => x.GetString()!).ToArray();
                             Fill(Tap, taps, true); Fill(BridgeTap, taps, true);
                         } finally { loadingHardware = false; }
+                        RebaseNetworkDraft();
                         if (!loadedHardware && !hardwareDirty) {
                             if (latest.GetProperty("prepared").GetBoolean()) LoadHardware();
                             loadedHardware = true;

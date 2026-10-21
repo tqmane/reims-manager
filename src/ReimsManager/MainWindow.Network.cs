@@ -10,6 +10,46 @@ public partial class MainWindow
     private WifiForwarderState? wifiForwarder;
     private string? wifiStatusError;
     private string hardwareForwarder = "";
+    private bool networkDraftRefreshPending;
+
+    private void RebaseNetworkDraft()
+    {
+        if (!networkDraftRefreshPending || committedHardware is not { } saved ||
+            currentState is not ("stopped" or "shutdown" or "running" or "paused" or "suspended" or "prelaunch") ||
+            wifiForwarder is not { KnownKind: true } || !latest.GetProperty("prepared").GetBoolean()) return;
+        string mode = latest.GetProperty("network").GetString() ?? "";
+        if (mode is not ("nat" or "bridge")) return;
+        string adapter = latest.GetProperty("network_adapter").GetString() ?? "";
+        string uplink = latest.GetProperty("network_uplink_id").GetString() ?? "";
+        string host = latest.GetProperty("guest_host").GetString() ?? "";
+        string forwarder = wifiForwarder.Kind ?? "";
+        var draft = CaptureHardwareDraft();
+        loadingHardware = true;
+        try {
+            if (adapter.Length > 0 && !Tap.Items.Cast<string>().Contains(adapter))
+                Fill(Tap, Tap.Items.Cast<string>().Append(adapter), true);
+            object? tap = adapter.Length == 0 ? null : Tap.Items.Cast<string>().First(x => x == adapter);
+            bool nat = mode == "nat";
+            // Only changed backend fields replace network edits. Failed/restart-only
+            // preparation must not erase a draft when the saved field stayed put.
+            Nat.IsChecked = nat == saved.Nat ? draft.Nat : nat; Bridge.IsChecked = Nat.IsChecked != true;
+            Tap.SelectedItem = Equals(tap, saved.Tap) ? draft.Tap : tap;
+            SelectSavedUplink(uplink == saved.Uplink ? draft.Uplink : uplink);
+            GuestHost.Text = host == saved.Host ? draft.Host : host;
+            hardwareForwarder = forwarder == saved.Forwarder ? draft.Forwarder : forwarder;
+            committedHardware = saved with { Nat = nat, Tap = tap, Uplink = uplink, Host = host, Forwarder = forwarder };
+            hardwareDirty = CaptureHardwareDraft() != committedHardware;
+            loadedHardware = true;
+            networkDraftRefreshPending = false;
+        } finally { loadingHardware = false; }
+    }
+
+    private bool NetworkPreparationRequired(string message)
+    {
+        OpenBridgeTab(this, new RoutedEventArgs());
+        ShowError(message);
+        return false;
+    }
 
     private async Task RefreshNetworkChoices()
     {
@@ -88,22 +128,22 @@ public partial class MainWindow
 
     private bool CanCommitWifiOperation()
     {
-        var saved=committedHardware;
-        if (identityDirty || hardwareDirty && (saved is null || CaptureHardwareDraft() != (saved with {
-            Nat = Nat.IsChecked == true, Tap = Tap.SelectedItem, Uplink = SelectedUplink, Host = GuestHost.Text }))) {
-            ShowError("先にネットワーク以外の未保存設定を適用またはキャンセルしてください。");return false;
+        if (!loadedHardware || committedHardware is null) {
+            ShowError("元の設定をまだ読み込めていません。変更を保持しました。状態を更新して確認してください。");return false;
         }
         return true;
     }
 
-    private async void PrepareWifi(object sender, RoutedEventArgs e)
+    private async void PrepareWifi(object sender, RoutedEventArgs e) => await PrepareWifiCore();
+
+    private async Task<bool> PrepareWifiCore()
     {
-        if (!RequireAction("PrepareWifi") || !CanCommitWifiOperation()) return;
-        if (Physical.SelectedItem is not NetworkUplink { Kind: "wifi" } physical || wifiForwarder is not { KnownKind: true }) { ShowError("物理 Wi-Fi と転送状態を確認してください。");return; }
+        if (!RequireAction("PrepareWifi") || !CanCommitWifiOperation()) return false;
+        if (Physical.SelectedItem is not NetworkUplink { Kind: "wifi" } physical || wifiForwarder is not { KnownKind: true }) { ShowError("物理 Wi-Fi と転送状態を確認してください。");return false; }
         string[] arguments;
         try { arguments = WifiForwarderState.PrepareArguments(physical.Id,wifiForwarder.Installed,PacketFilterTerms.IsChecked == true); }
-        catch(Exception error) { ShowError(error.Message);return; }
-        if (!ManagerValidation.Host(GuestHost.Text.Trim())) { ShowError("macOS の IP アドレス・ホスト名を確認してください。");return; }
+        catch(Exception error) { ShowError(error.Message);return false; }
+        if (!ManagerValidation.Host(GuestHost.Text.Trim())) { ShowError("macOS の IP アドレス・ホスト名を確認してください。");return false; }
         if (GuestHost.Text.Trim().Length>0) arguments=arguments.Concat(new[]{"-GuestHost",GuestHost.Text.Trim()}).ToArray();
         string resultFile=System.IO.Path.Combine(VmDirectory,"state","wifi-prepare-result.json");
         var entry=selectedEntry;DateTime started=DateTime.UtcNow;
@@ -112,18 +152,23 @@ public partial class MainWindow
             try {
                 var result=WifiPrepareResult.Read(resultFile,started);
                 if (result.RestartRequired) {
-                    MessageBox.Show(this,"準備を続けるには Windows の再起動が必要です。作業を保存して再起動し、Wi-Fi の準備をもう一度実行してください。","Wi-Fi 互換接続",MessageBoxButton.OK,MessageBoxImage.Information);
+                    string message="準備を続けるには Windows の再起動が必要です。未保存の変更は保持しています。再起動前に保存または破棄し、Wi-Fi の準備をもう一度実行してください。";
+                    if (selfTest) ShowError(message);
+                    else MessageBox.Show(this,message,"Wi-Fi 互換接続",MessageBoxButton.OK,MessageBoxImage.Information);
                 } else if (!result.Prepared || !result.Configured) { ShowError("Wi-Fi の準備は未完了です。転送状態とログを確認してください。"); }
-                if (result.Configured) { hardwareDirty=false;loadedHardware=false;await RefreshState(); }
+                return !result.RestartRequired && result.Prepared && result.Configured;
             } catch (Exception error) { ShowError("Wi-Fi の準備結果を確認できません。変更済みの可能性があるため、状態とログを確認してください。\n"+error.Message); }
         }} finally { applyingSettings=false;UpdatePowerControls(); }
+        return false;
     }
 
-    private async void DisableWifi(object sender, RoutedEventArgs e)
+    private async void DisableWifi(object sender, RoutedEventArgs e) => await DisableWifiCore();
+
+    private async Task<bool> DisableWifiCore()
     {
-        if (!RequireAction("DisableWifi") || !CanCommitWifiOperation()) return;
+        if (!RequireAction("DisableWifi") || !CanCommitWifiOperation()) return false;
         applyingSettings=true;UpdatePowerControls();
-        try { if (await Operate("DisableWifi",[],true)) { hardwareDirty=false;loadedHardware=false;await RefreshState(); } }
+        try { return await Operate("DisableWifi",[],true); }
         finally { applyingSettings=false;UpdatePowerControls(); }
     }
 
