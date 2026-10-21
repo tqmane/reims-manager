@@ -99,6 +99,7 @@ jobs:
             .work/checks-*/result.json
             .work/checks-*/ssh-config.json
             .work/checks-*/settings-reliability-result.json
+            .work/checks-*/wifi-page-result.json
             .work/checks-*/usb-workflow-result.json
             .work/checks-*/usb-wizard-result.json
             .work/checks-*/onboarding-recovery-result.json
