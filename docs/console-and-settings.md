@@ -196,8 +196,12 @@ restores only its recorded owned TAP settings on disable. The UI never reads or
 changes raw router-discovery records.
 
 The hardware draft retains the selected physical GUID and forwarding mode.
-Unrelated unsaved memory/identity changes must be applied or cancelled before
-the immediate preparation action. `解除して NAT に戻す` delegates owned TAP
+Wi-Fi preparation can run while unrelated hardware or identity edits are still
+pending. Only committed network fields are rebased after the status refresh;
+other edits remain pending for Apply or Cancel. Failed or incomplete preparation
+does not discard those edits or report them saved. A save that needs Wi-Fi
+preparation opens the preparation page with its staged values intact.
+`解除して NAT に戻す` delegates owned TAP
 binding restoration to the backend; changing the hardware radio to NAT alone
 cannot bypass cleanup. Preparation reads only the fixed, fresh schema-1 result
 after successful elevated process exit, with a 64 KiB input limit. An unreadable
