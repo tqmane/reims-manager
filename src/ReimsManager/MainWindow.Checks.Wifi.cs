@@ -93,7 +93,7 @@ public partial class MainWindow
             state="stopped",prepared=true,snapshots=Array.Empty<string>(),taps=new[]{tap},memory_mib=memory,cpus,disk_gib=128,disk="fixture.qcow2",iso="",
             with_installer=false,connect_installer=false,network=configured?"bridge":"nat",network_adapter=configured?tap:"",network_uplink_id=configured?id:"",
             guest_host=host,audio="none",microphone=false,usb_backend="winusb",resolution="1920x1080",
-            network_forwarder=new {kind=configured?WifiForwarderState.MacNat:"none",installed=true,configured=configured&&forwarderReady,running=false,ready=false,pid=(int?)null,error=forwarderError,ipv4_only=!configured,ipv6_enabled=configured&&forwarderReady}
+            network_forwarder=new {kind=configured?WifiForwarderState.MacNat:"none",installed=true,configured=configured&&forwarderReady,running=false,ready=false,pid=(int?)null,error=forwarderError,ipv4_only=!(configured&&forwarderReady),ipv6_enabled=configured&&forwarderReady}
         });
         controlFixtureBackend = action => {
             if(action=="GetNetworkUplinks") return Task.FromResult(OnboardingChecks.Network);
@@ -168,6 +168,8 @@ public partial class MainWindow
             foreach(string? error in new string?[]{null,"Authored Wi-Fi preparation error"}) {
                 configured=true;forwarderReady=false;forwarderError=error;allowHardwareSave=true;
                 memory=8192;cpus=1;host="saved host with spaces";LoadBaseline();
+                if(wifiForwarder is not {Kind:WifiForwarderState.MacNat,Configured:false} || wifiForwarder.Error!=error || wifiStatusError is not null)
+                    throw new Exception("Hardware save fixture must use a valid unprepared/error Wi-Fi status.");
                 var network=CaptureHardwareDraft();var unchangedIdentity=CaptureIdentityDraft();
                 foreach(var changed in new[]{network with{Nat=true},network with{Tap=null},network with{Uplink=""},
                     network with{Host="changed-guest.local"},network with{Forwarder="none"}})
