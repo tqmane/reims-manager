@@ -71,7 +71,7 @@ public partial class MainWindow : Window
         if (input is not null) { info.RedirectStandardInput=true; info.StandardInputEncoding=new UTF8Encoding(false); }
         if (elevate) { info.Verb="runas"; info.WindowStyle=ProcessWindowStyle.Hidden; }
         else { info.RedirectStandardOutput=true; info.RedirectStandardError=true; info.StandardOutputEncoding=Encoding.UTF8; info.StandardErrorEncoding=Encoding.UTF8; }
-        bool readOnly = action is "Status" or "GetIdentity" or "ListUsb" or "GetPrerequisites" or "GetNetworkUplinks";
+        bool readOnly = action is "Status" or "GetIdentity" or "ListUsb" or "GetPrerequisites" or "GetNetworkUplinks" or "Arm64Status";
         string? usbResultPath = null;
         try {
             if (action == "InstallUsbDk") {
