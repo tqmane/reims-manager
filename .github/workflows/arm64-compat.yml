@@ -1,0 +1,74 @@
+name: Reims ARM64 application compatibility
+on:
+  pull_request:
+    paths:
+      - .github/workflows/arm64-compat.yml
+      - tools/collect-arm64-sysroot.py
+      - backend/arm64-compat.ps1
+      - backend/arm64-guest-install.sh
+      - backend/tests/arm64-compat.ps1
+      - src/ReimsManager/MainWindow.Arm64.cs
+      - src/ReimsManager/MainWindow.xaml
+      - src/ReimsManager/VmActionPolicy.cs
+      - docs/arm64-compat.md
+  workflow_dispatch:
+    inputs:
+      collect_apple_sysroot:
+        description: 'Export Apple Silicon dyld cache as a short-lived artifact (check Apple license first)'
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+jobs:
+  maclator:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build pinned Maclator for Intel macOS guests
+        shell: bash
+        env:
+          MACLATOR_SHA: bd80650fc494bc8bcdb7a291b9e97d5c0a38cb03
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          git clone --no-checkout https://github.com/linuxkid473/maclator.git "$RUNNER_TEMP/maclator"
+          git -C "$RUNNER_TEMP/maclator" checkout --detach "$MACLATOR_SHA"
+          test "$(git -C "$RUNNER_TEMP/maclator" rev-parse HEAD)" = "$MACLATOR_SHA"
+          rustup target add x86_64-apple-darwin
+          (cd "$RUNNER_TEMP/maclator" && cargo build --locked --release --target x86_64-apple-darwin -p maclator)
+          (cd "$RUNNER_TEMP/maclator" && bash gpu/build.sh)
+          mkdir -p artifacts/arm64-runtime/gpu
+          cp "$RUNNER_TEMP/maclator/target/x86_64-apple-darwin/release/maclator" artifacts/arm64-runtime/maclator
+          cp "$RUNNER_TEMP/maclator/gpu/out/libmclbridge.dylib" artifacts/arm64-runtime/gpu/
+          cp "$RUNNER_TEMP/maclator/gpu/out/libmclmetal.dylib" artifacts/arm64-runtime/gpu/
+          cp "$RUNNER_TEMP/maclator/LICENSE" artifacts/arm64-runtime/LICENSE-MACLATOR
+          cp "$RUNNER_TEMP/maclator/NOTICE" artifacts/arm64-runtime/NOTICE-MACLATOR
+          printf '%s\n' "$MACLATOR_SHA" > artifacts/arm64-runtime/SOURCE-COMMIT
+          lipo -archs artifacts/arm64-runtime/maclator | grep -w x86_64
+          lipo -archs artifacts/arm64-runtime/gpu/libmclbridge.dylib | grep -w x86_64
+          lipo -archs artifacts/arm64-runtime/gpu/libmclmetal.dylib | grep -w arm64
+          shasum -a 256 artifacts/arm64-runtime/maclator artifacts/arm64-runtime/gpu/* > artifacts/arm64-runtime/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ReimsArm64Maclator
+          path: artifacts/arm64-runtime/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+  apple-sysroot:
+    if: github.event_name == 'workflow_dispatch' && inputs.collect_apple_sysroot
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Collect arm64e dyld and all split subcaches from Apple Silicon runner
+        run: python3 tools/collect-arm64-sysroot.py --output artifacts/arm64-sysroot
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ReimsArm64AppleSysroot
+          path: artifacts/arm64-sysroot/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
