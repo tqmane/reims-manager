@@ -49,7 +49,7 @@ jobs:
           lipo -archs artifacts/arm64-runtime/maclator | grep -w x86_64
           lipo -archs artifacts/arm64-runtime/gpu/libmclbridge.dylib | grep -w x86_64
           lipo -archs artifacts/arm64-runtime/gpu/libmclmetal.dylib | grep -w arm64
-          shasum -a 256 artifacts/arm64-runtime/maclator artifacts/arm64-runtime/gpu/* > artifacts/arm64-runtime/SHA256SUMS
+          (cd artifacts/arm64-runtime && shasum -a 256 maclator gpu/* > SHA256SUMS)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ReimsArm64Maclator
