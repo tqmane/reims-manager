@@ -54,6 +54,9 @@ def collect(output: Path, *, source: Path, dyld: Path, version: str, build: str)
     (output / "sysroot-manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    (output / "SHA256SUMS").write_text(
+        "".join(f"{item['sha256']}  {name}\n" for name, item in manifest["files"].items()), encoding="utf-8"
+    )
     return manifest
 
 
