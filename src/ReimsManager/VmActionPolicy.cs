@@ -17,6 +17,7 @@ internal static class VmActionPolicy
             "Setup" or "ImportDisk" => state == "unprepared",
             "Start" => state is "stopped" or "shutdown",
             "Clipboard" => state is "running" or "unknown",
+            "Arm64Status" or "InstallArm64Compat" => state == "running",
             "PowerOff" or "Restart" or "Pause" or "Pair" or "ApplyResolution" or "AttachUsb" or "EnableCursorAid" or "DisableCursorAid" or "MoveCursorToMainDisplay" or "MoveCursorToExtendedDisplay" or "HideHostCursor" or "LightenExtendedDisplay" or "RestoreExtendedDisplay" => state == "running",
             "ShowHostCursor" => state is "running" or "paused" or "stopped" or "shutdown" or "prelaunch" or "suspended",
             "ListUsb" => state is "running" or "stopped" or "shutdown" or "paused" or "prelaunch" or "suspended",
@@ -57,7 +58,8 @@ internal static class VmActionPolicy
         "LightenExtendedDisplay" => "拡張画面を軽量化", "RestoreExtendedDisplay" => "拡張画面の画質を戻す",
         "ApplyResolution" => "ゲストの解像度を変更",
         "ListUsb" => "USB デバイスを取得", "AttachUsb" => "USB の接続を確認", "DetachUsb" => "USB の登録を解除",
-        "InstallUsbDk" => "USB 転送ドライバーを導入", _ => action
+        "InstallUsbDk" => "USB 転送ドライバーを導入",
+        "Arm64Status" => "ARM64 互換機能を確認", "InstallArm64Compat" => "ARM64 互換機能を VM に導入", _ => action
     };
 }
 
