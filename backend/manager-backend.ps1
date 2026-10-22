@@ -5,8 +5,9 @@ param(
     [string]$Qemu,
     [string]$ToolsRoot,
     [string]$VmDirectory,
-    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','HideHostCursor','ShowHostCursor','EnableCursorAid','DisableCursorAid','MoveCursorToMainDisplay','MoveCursorToExtendedDisplay','LightenExtendedDisplay','RestoreExtendedDisplay','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs')][string]$Action = 'Status',
+    [ValidateSet('Status','GetPrerequisites','GetNetworkUplinks','GetWifiMacNat','InstallWifiDriver','PrepareWifi','DisableWifi','HideHostCursor','ShowHostCursor','EnableCursorAid','DisableCursorAid','MoveCursorToMainDisplay','MoveCursorToExtendedDisplay','LightenExtendedDisplay','RestoreExtendedDisplay','Setup','ImportDisk','GetIdentity','SetIdentity','PrepareUpdates','ListUsb','InstallUsbDk','AttachUsb','DetachUsb','BuildEngine','EnableWhpx','Start','PowerOff','Restart','Exit','ForceExit','Pause','Resume','SnapshotCreate','SnapshotRestore','GenerateIdentity','EnableAppleAccount','DisableAppleAccount','ApplyBootProfile','EnableGuestBridge','DisableGuestBridge','SetResolution','ApplyResolution','SetNetwork','SetHardware','ExpandDisk','OptimizeDisk','CreateBridge','RemoveBridge','InstallTap','Pair','CollectLogs','Arm64Status','InstallArm64Compat')][string]$Action = 'Status',
     [string]$DiskPath,
+    [string]$RuntimeArchive, [string]$SysrootArchive,
     [ValidateRange(0,255)][int]$UsbBus, [ValidateRange(1,127)][int]$UsbAddress = 1,
     [string]$UsbId, [string]$UsbResultPath,
     [string]$Iso,
@@ -178,7 +179,7 @@ $managerMutation = $null
 try {
     # Separate Manager processes must recheck runtime/config under the same lock.
     # Read-only status and diagnostics remain available during long operations.
-    if ($Action -notin @('Status', 'GetIdentity', 'ListUsb', 'GetWifiMacNat', 'CollectLogs')) {
+    if ($Action -notin @('Status', 'GetIdentity', 'ListUsb', 'GetWifiMacNat', 'CollectLogs', 'Arm64Status')) {
         $managerMutation = Enter-ReimsVmMutation
     }
 if ($Action -eq 'Status') {
@@ -513,6 +514,14 @@ print(json.dumps(dict(model=g['SystemProductName'],serial=g['SystemSerialNumber'
         @($lines) + $line | Set-Content -LiteralPath $known -Encoding utf8NoBOM
         Write-ReimsJson (Join-Path $VmRoot 'state/guest.json') @{user=$User;host_key_alias=$alias}
         'SSH ホスト鍵を照合し、接続設定を保存しました。'
+    }
+    Arm64Status {
+        . "$PSScriptRoot/arm64-compat.ps1"
+        Invoke-ReimsArm64Compatibility -Mode status
+    }
+    InstallArm64Compat {
+        . "$PSScriptRoot/arm64-compat.ps1"
+        Invoke-ReimsArm64Compatibility -Mode install -RuntimeArchive $RuntimeArchive -SysrootArchive $SysrootArchive
     }
     CollectLogs { & "$PSScriptRoot/collect-logs.ps1" -Screenshot }
 }
