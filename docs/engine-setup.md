@@ -65,7 +65,7 @@ download generic QEMU as a substitute: it lacks the Reims device.
 Reims `e26a85b4`, QEMU `b17ae091` and metal2vulkan `9d6506af`, rather than
 following moving `windows-native-tahoe` branches. The latter runtime is the
 pin in Reims's Cargo manifest; later runtime development commits are not
-silently substituted. The build pin is `engine-e26a85b4-b17ae091-8`; a pin
+silently substituted. The build pin is `engine-e2e30dc4-b17ae091-9`; a pin
 does not by itself mean its release has been published or qualified.
 An earlier engine completed a macOS 26.7.1 cold boot on Windows with WHPX;
 GPU rendering, Android USB and bidirectional clipboard were confirmed there.
@@ -222,6 +222,7 @@ not copied from a developer machine. USB drivers and microphone permission
 remain explicit host setup steps. No Apple binaries, macOS installer, guest
 disk, serialized GPU data, credentials or personal SMBIOS values are shipped.
 
-This engine-8 pin is a private optimization candidate until the matching GNU
-Release build, integration checks and macOS boot are qualified. Its compatibility
-entry retains the immutable addon artifact and does not add an OS qualification.
+This engine-9 pin adds private resource-creation diagnostics and makes no new
+performance claim. The matching GNU Release build, integration checks and macOS
+boot need their own receipts. Its compatibility entry retains the immutable addon
+artifact and does not add an OS qualification.
