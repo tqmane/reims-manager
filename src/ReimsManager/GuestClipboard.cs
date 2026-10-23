@@ -42,7 +42,80 @@ internal static class GuestClipboard
             ?? throw new InvalidOperationException("設定された TAP インターフェースを確認できません。");
         int index = adapter.GetIPProperties().GetIPv6Properties()?.Index ?? 0;
         if (index <= 0) throw new InvalidOperationException("設定された TAP の IPv6 インターフェース番号を確認できません。");
-        return SelectScopedHost(host, await Dns.GetHostAddressesAsync(host, cancellation), index);
+        return SelectScopedHost(host, await ResolveAddresses(ResolverStartInfo(), host, cancellation), index);
+    }
+
+    internal static ProcessStartInfo ResolverStartInfo()
+    {
+        string shell = Path.Combine(AppContext.BaseDirectory, "runtimes/pwsh/pwsh.exe");
+        if (!File.Exists(shell)) shell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32/WindowsPowerShell/v1.0/powershell.exe");
+        var info = new ProcessStartInfo(shell) {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = new UTF8Encoding(false, true),
+            StandardErrorEncoding = new UTF8Encoding(false, true)
+        };
+        foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-Command", """
+            $ErrorActionPreference='Stop'
+            [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
+            [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+            try {
+                $name=[Console]::In.ReadToEnd()
+                $addresses=@([Net.Dns]::GetHostAddresses($name) | ForEach-Object { $_.ToString() })
+                [Console]::Out.Write((ConvertTo-Json -InputObject $addresses -Compress))
+            } catch { [Console]::Error.Write('Guest name resolution failed.'); exit 1 }
+            """ }) info.ArgumentList.Add(argument);
+        return info;
+    }
+
+    internal static async Task<IPAddress[]> ResolveAddresses(ProcessStartInfo info, string host, CancellationToken cancellation)
+    {
+        if (!Regex.IsMatch(host, "^[A-Za-z0-9][A-Za-z0-9.:-]*$")) throw new ArgumentException("Invalid guest hostname.");
+        cancellation.ThrowIfCancellationRequested();
+        // A native name-provider loop must not outlive its owned resolver process.
+        using var process = Process.Start(info) ?? throw new IOException("名前解決プロセスを起動できません。");
+        using var capture = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        Task<string> output = ReadBounded(process.StandardOutput), error = ReadBounded(process.StandardError);
+        try {
+            await process.StandardInput.WriteAsync(host.AsMemory(), cancellation).ConfigureAwait(false);
+            process.StandardInput.Close();
+            await Task.WhenAll(output, error, process.WaitForExitAsync(cancellation)).ConfigureAwait(false);
+            cancellation.ThrowIfCancellationRequested();
+            if (process.ExitCode != 0) throw new IOException("macOS の接続先を名前解決できませんでした。" + error.Result);
+            using var document = JsonDocument.Parse(output.Result);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) throw new InvalidDataException("名前解決の応答が不正です。");
+            return document.RootElement.EnumerateArray().Select(value =>
+                value.ValueKind == JsonValueKind.String && IPAddress.TryParse(value.GetString(), out var address)
+                    ? address : throw new InvalidDataException("名前解決のアドレスが不正です。")).ToArray();
+        } finally {
+            capture.Cancel();
+            Stop();
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            // Observe both pipe reads even when writing stdin or waiting for exit failed.
+            try { await Task.WhenAll(output, error).ConfigureAwait(false); }
+            catch { }
+        }
+
+        void Stop()
+        {
+            try { if (!process.HasExited) process.Kill(); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) when (process.HasExited) { }
+        }
+
+        async Task<string> ReadBounded(StreamReader reader)
+        {
+            var result = new StringBuilder();
+            char[] buffer = new char[1024];
+            try {
+                int count;
+                while ((count = await reader.ReadAsync(buffer.AsMemory(), capture.Token).ConfigureAwait(false)) != 0) {
+                    if (result.Length + count > 65536) throw new InvalidDataException("名前解決の応答が上限を超えました。");
+                    result.Append(buffer, 0, count);
+                }
+                return result.ToString();
+            } catch { Stop(); throw; }
+        }
     }
 
     internal static async Task<string> Transfer(string vmDirectory, string? text, CancellationToken cancellation = default)
