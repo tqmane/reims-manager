@@ -11,6 +11,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Validate ARM64 compatibility ZIP imports (synthetic)
+        shell: pwsh
+        run: ./backend/tests/arm64-compat.ps1
       - name: Archive exact review source
         shell: pwsh
         run: |
