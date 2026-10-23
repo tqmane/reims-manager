@@ -92,12 +92,14 @@ internal static class SshConfigChecks
             try {
                 if (cancel) {
                     var clock = Stopwatch.StartNew();
-                    while (!File.Exists(metadata)) {
+                    JsonDocument? ready = null;
+                    while (ready is null) {
                         if (run.IsCompleted) { await run; throw new Exception("Resolver exited before fixture readiness"); }
                         if (clock.Elapsed > TimeSpan.FromSeconds(10)) throw new Exception("Resolver fixture did not publish its owned PID");
-                        await Task.Delay(20).ConfigureAwait(false);
+                        try { ready = ReadReceipt(metadata); }
+                        catch (IOException) { await Task.Delay(20).ConfigureAwait(false); }
                     }
-                    using var document = JsonDocument.Parse(File.ReadAllText(metadata));
+                    using var document = ready;
                     child = Process.GetProcessById(document.RootElement.GetProperty("pid").GetInt32());
                     _ = child.SafeHandle;
                     if (child.StartTime.ToUniversalTime().Ticks != document.RootElement.GetProperty("start").GetInt64())
@@ -111,7 +113,7 @@ internal static class SshConfigChecks
                 } catch (OperationCanceledException) when (cancel && cancellation.IsCancellationRequested) { }
                 catch (Exception failure) when (expected is null && !cancel && failure is JsonException or InvalidDataException or IOException or DecoderFallbackException) { }
                 if (child is not null && !child.HasExited) throw new Exception("Cancellation returned before the resolver was reaped");
-                using var receipt = JsonDocument.Parse(File.ReadAllText(metadata));
+                using var receipt = ReadReceipt(metadata);
                 try {
                     using var remaining = Process.GetProcessById(receipt.RootElement.GetProperty("pid").GetInt32());
                     if (!remaining.HasExited && remaining.StartTime.ToUniversalTime().Ticks == receipt.RootElement.GetProperty("start").GetInt64())
@@ -122,6 +124,12 @@ internal static class SshConfigChecks
                 try { await run.ConfigureAwait(false); } catch { }
                 child?.Dispose();
             }
+        }
+
+        static JsonDocument ReadReceipt(string path)
+        {
+            using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonDocument.Parse(stream);
         }
     }
 
