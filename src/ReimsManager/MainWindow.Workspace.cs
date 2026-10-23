@@ -143,6 +143,7 @@ public partial class MainWindow
         ConsoleView.Detach(); ConsoleView.Visibility = Visibility.Hidden; ConsolePlaceholder.Visibility = Visibility.Visible;
         consoleDetached = false;
         RestoreClipboardPreference();
+        Arm64InstallStatus.Text = "未確認";
         loadingIdentity = loadingHardware = true;
         try {
             foreach (TextBox field in new[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityRom, IdentityUuid, Iso, HardwareIsoPath, GuestHost, GuestUser, Fingerprint }) field.Clear();
