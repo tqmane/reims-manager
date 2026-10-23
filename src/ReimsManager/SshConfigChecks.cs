@@ -109,7 +109,7 @@ internal static class SshConfigChecks
                     if (expected is null || GuestClipboard.SelectScopedHost(host, addresses, 24) != expected)
                         throw new Exception("Resolver fixture accepted invalid output or changed scoped selection");
                 } catch (OperationCanceledException) when (cancel && cancellation.IsCancellationRequested) { }
-                catch (Exception failure) when (expected is null && !cancel && failure is JsonException or IOException or DecoderFallbackException) { }
+                catch (Exception failure) when (expected is null && !cancel && failure is JsonException or InvalidDataException or IOException or DecoderFallbackException) { }
                 if (child is not null && !child.HasExited) throw new Exception("Cancellation returned before the resolver was reaped");
                 using var receipt = JsonDocument.Parse(File.ReadAllText(metadata));
                 try {
