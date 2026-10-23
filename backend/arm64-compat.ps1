@@ -66,14 +66,15 @@ function Get-ReimsArm64ScpArguments {
     if ($hostName -notmatch '^[A-Za-z0-9][A-Za-z0-9.:%-]*$') { throw '接続先が不正です。' }
     $scp = Join-Path $env:SystemRoot 'System32/OpenSSH/scp.exe'
     if (!(Test-Path -LiteralPath $scp)) { throw 'Windows OpenSSH の scp.exe がありません。' }
-    $args = @('-F','NUL','-q','-O','-o','ConnectTimeout=5','-o','BatchMode=yes',
+    $args = @('-F','NUL','-q','-o','ConnectTimeout=5','-o','BatchMode=yes',
         '-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes',
         '-o',(Get-ReimsSshKnownHostsOption $known),'-o','KexAlgorithms=curve25519-sha256',
         '-P',[string]$endpoint.port,'-i',$key)
     if ($guest.PSObject.Properties['host_key_alias'] -and $guest.host_key_alias) {
         $args += @('-o', "HostKeyAlias=$($guest.host_key_alias)")
     }
-    return @{Executable=$scp;Args=$args;Remote="$user@$hostName"}
+    $scpHost = if ($hostName.Contains(':')) { "[$hostName]" } else { $hostName }
+    return @{Executable=$scp;Args=$args;Remote="$user@$scpHost"}
 }
 
 function Copy-ReimsArm64Archive([hashtable]$Connection,[string]$Archive,[string]$RemoteName) {
