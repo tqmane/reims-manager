@@ -1,13 +1,12 @@
 {
   "schema": 1,
-  "id": "engine-3bdf7474-b17ae091-5",
+  "id": "engine-eb4d6cc0-b17ae091-6",
   "release_repository": "tqmane/reims-manager",
   "asset": "ReimsEngine-win-x64.zip",
-  "bytes": 92097170,
   "sources": {
-    "reims": { "repository": "https://github.com/tqmane/reims-vgpu", "commit": "3bdf74749045b422428dbfc946767089aaf261d3" },
+    "reims": { "repository": "https://github.com/tqmane/reims-vgpu", "commit": "eb4d6cc0eb051f22d93f9fc5e524239ae2911bae" },
     "qemu": { "repository": "https://github.com/tqmane/qemu-reims-vgpu", "commit": "b17ae0919ec29f7989a568b27651c32400fb4504" },
-    "metal2vulkan": { "repository": "https://github.com/tqmane/metal2vulkan", "commit": "325bf315dbc44e19647e664efca4cd19a15df2b9" }
+    "metal2vulkan": { "repository": "https://github.com/tqmane/metal2vulkan", "commit": "f9aac64b76f63ca450d071dd4c2e2b35f775fa77" }
   },
   "opencore": {
     "version": "1.0.8",
