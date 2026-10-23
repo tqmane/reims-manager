@@ -28,6 +28,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Test ARM64 cache collector without Apple binaries
         run: python3 tools/tests/arm64-sysroot.py
+      - name: Probe Apple Silicon dyld cache availability (no proprietary artifact)
+        run: python3 tools/collect-arm64-sysroot.py --probe
       - name: Build pinned Maclator for Intel macOS guests
         shell: bash
         env:
