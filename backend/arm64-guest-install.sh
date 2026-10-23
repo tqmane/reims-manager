@@ -23,7 +23,8 @@ base="$parent/reims-arm64"
 stage="$parent/.reims-arm64-stage-$token"
 previous="$parent/.reims-arm64-previous-$token"
 mkdir -p "$parent" "$stage/runtime" "$stage/sysroot"
-cleanup() { rm -rf "$stage" "$incoming"; }
+wrapper="$HOME/bin/.reims-arm64-$token"
+cleanup() { rm -rf "$stage" "$incoming" "$wrapper"; }
 trap cleanup EXIT HUP INT TERM
 /usr/bin/unzip -qq "$incoming/runtime.zip" -d "$stage/runtime"
 /usr/bin/unzip -qq "$incoming/sysroot.zip" -d "$stage/sysroot"
@@ -41,6 +42,15 @@ test -f "$stage/sysroot/SHA256SUMS"
 /usr/bin/lipo -archs "$stage/runtime/gpu/libmclmetal.dylib" | /usr/bin/grep -qw arm64
 /usr/bin/lipo -archs "$stage/sysroot/dyld" | /usr/bin/grep -Eq 'arm64|arm64e'
 chmod 755 "$stage/runtime/maclator"
+# Prepare and validate the launcher *before* touching an existing installation.
+mkdir -p "$HOME/bin"
+cat > "$wrapper" <<'WRAPPER'
+#!/bin/sh
+set -eu
+base="$HOME/.local/share/reims-arm64"
+exec "$base/runtime/maclator" --sysroot "$base/sysroot" --dyld "$base/sysroot/dyld" "$@"
+WRAPPER
+chmod 755 "$wrapper"
 if [ -e "$previous" ]; then
   echo "Previous interrupted installation requires manual inspection" >&2
   exit 1
@@ -52,16 +62,12 @@ if ! mv "$stage" "$base"; then
   echo "Failed to activate ARM64 compatibility" >&2
   exit 1
 fi
-mkdir -p "$HOME/bin"
-wrapper="$HOME/bin/.reims-arm64-$token"
-cat > "$wrapper" <<'WRAPPER'
-#!/bin/sh
-set -eu
-base="$HOME/.local/share/reims-arm64"
-exec "$base/runtime/maclator" --sysroot "$base/sysroot" --dyld "$base/sysroot/dyld" "$@"
-WRAPPER
-chmod 755 "$wrapper"
-mv -f "$wrapper" "$HOME/bin/reims-arm64"
+if ! mv -f "$wrapper" "$HOME/bin/reims-arm64"; then
+  rm -rf "$base"
+  if [ "$had_previous" = yes ]; then mv "$previous" "$base"; fi
+  echo "Failed to install launcher; restored previous runtime" >&2
+  exit 1
+fi
 if [ "$had_previous" = yes ]; then rm -rf "$previous"; fi
 echo "Installed Reims ARM64 compatibility: ~/bin/reims-arm64"
 echo "Example: ~/bin/reims-arm64 /path/to/App.app/Contents/MacOS/Executable"
