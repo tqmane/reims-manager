@@ -40,7 +40,20 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/maclator" rev-parse HEAD)" = "$MACLATOR_SHA"
           rustup target add x86_64-apple-darwin
           (cd "$RUNNER_TEMP/maclator" && cargo build --locked --release --target x86_64-apple-darwin -p maclator)
-          (cd "$RUNNER_TEMP/maclator" && bash gpu/build.sh)
+          # Build only the bridge dylibs. Upstream's gpu/build.sh also runs
+          # an optional native ARM64 loopback smoke binary whose test source
+          # is not part of the pinned upstream commit.
+          (
+            cd "$RUNNER_TEMP/maclator/gpu"
+            mkdir -p out
+            clang -arch x86_64 -dynamiclib -fobjc-arc -O2 \
+              -framework Foundation -framework Metal -framework IOSurface -framework CoreGraphics \
+              -install_name @rpath/libmclbridge.dylib mclbridge.m -o out/libmclbridge.dylib
+            clang -arch arm64 -dynamiclib -fno-objc-arc -O2 \
+              -framework Foundation -framework Metal -framework IOSurface \
+              -install_name @rpath/libmclmetal.dylib mclmetal.m -o out/libmclmetal.dylib
+            codesign -f -s - out/libmclbridge.dylib out/libmclmetal.dylib
+          )
           mkdir -p artifacts/arm64-runtime/gpu
           cp "$RUNNER_TEMP/maclator/target/x86_64-apple-darwin/release/maclator" artifacts/arm64-runtime/maclator
           cp "$RUNNER_TEMP/maclator/gpu/out/libmclbridge.dylib" artifacts/arm64-runtime/gpu/
