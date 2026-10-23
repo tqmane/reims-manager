@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Check guest installer shell syntax
+        run: sh -n backend/arm64-guest-install.sh
       - name: Test ARM64 cache collector without Apple binaries
         run: python3 tools/tests/arm64-sysroot.py
       - name: Probe Apple Silicon dyld cache availability (no proprietary artifact)
