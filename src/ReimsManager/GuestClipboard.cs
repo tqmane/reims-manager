@@ -75,6 +75,11 @@ internal static class GuestClipboard
         // A native name-provider loop must not outlive its owned resolver process.
         using var process = Process.Start(info) ?? throw new IOException("名前解決プロセスを起動できません。");
         using var capture = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        using var kill = cancellation.Register(() => {
+            try { if (!process.HasExited) process.Kill(); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
+        });
         Task<string> output = ReadBounded(process.StandardOutput), error = ReadBounded(process.StandardError);
         try {
             await process.StandardInput.WriteAsync(host.AsMemory(), cancellation).ConfigureAwait(false);
