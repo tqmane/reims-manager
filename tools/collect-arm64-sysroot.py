@@ -62,12 +62,24 @@ def collect(output: Path, *, source: Path, dyld: Path, version: str, build: str)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--probe", action="store_true", help="Check available Apple Silicon cache files without copying them")
     args = parser.parse_args()
     if platform.machine() != "arm64":
         raise RuntimeError("The sysroot export must run on a native Apple Silicon runner")
     src = choose_source()
     dyld = Path("/usr/lib/dyld")
+    if not dyld.is_file():
+        raise RuntimeError("Apple Silicon /usr/lib/dyld was not accessible")
+    parts = sorted(p for p in src.iterdir() if p.is_file() and p.name.startswith(PREFIX + "."))
+    if not parts:
+        raise RuntimeError("No dyld_shared_cache_arm64e subcaches on this runner")
+    if args.probe:
+        print(f"Available cache: {src}, parts={len(parts)}, total_bytes=" +
+              str(sum(p.stat().st_size for p in [src / PREFIX, *parts])))
+        return
+    if args.output is None:
+        parser.error("--output is required unless --probe is set")
     version = subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip()
     build = subprocess.check_output(["sw_vers", "-buildVersion"], text=True).strip()
     collect(args.output, source=src, dyld=dyld, version=version, build=build)
