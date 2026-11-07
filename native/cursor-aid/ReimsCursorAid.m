@@ -72,6 +72,14 @@ static BOOL NeedsContentDisplay(BOOL glyphChanged, BOOL shown, NSRect previous, 
     return glyphChanged || !shown || !NSEqualSizes(previous.size, frame.size);
 }
 
+static BOOL NeedsWindowOrdering(BOOL cursorVisible, BOOL hasGlyph, BOOL shown, BOOL wasVisible, BOOL visible, BOOL pending) {
+    return cursorVisible && hasGlyph && (!shown || (wasVisible && !visible) || pending);
+}
+
+static BOOL NeedsOcclusionRecovery(BOOL shown, BOOL panelVisible, BOOL wasVisible, BOOL visible) {
+    return shown && panelVisible && wasVisible && !visible;
+}
+
 static BOOL DisplayCenter(CGRect bounds, CGPoint *point) {
     if (!isfinite(bounds.origin.x) || !isfinite(bounds.origin.y) ||
         !isfinite(bounds.size.width) || !isfinite(bounds.size.height) ||
@@ -438,6 +446,22 @@ static int SelfTest(void) {
     CHECK(NeedsContentDisplay(YES, YES, previousFrame, previousFrame), "changed glyph redraws");
     CHECK(NeedsContentDisplay(NO, NO, previousFrame, previousFrame), "first show redraws");
     CHECK(NeedsContentDisplay(NO, YES, previousFrame, NSMakeRect(95,65,56,80)), "changed size redraws");
+    CHECK(NeedsWindowOrdering(YES, YES, NO, NO, NO, NO), "first cursor show orders window");
+    CHECK(NeedsWindowOrdering(YES, YES, YES, YES, NO, NO), "external hide invalidates shown latch");
+    CHECK(NeedsWindowOrdering(YES, YES, YES, YES, YES, YES), "occlusion recovery orders at current level");
+    CHECK(!NeedsWindowOrdering(YES, YES, YES, YES, YES, NO), "stable visible panel does not reorder each tick");
+    CHECK(!NeedsWindowOrdering(YES, YES, YES, NO, NO, NO), "persistent hiding does not repeat recovery");
+    CHECK(!NeedsWindowOrdering(YES, YES, YES, YES, YES, NO) &&
+        !NeedsContentDisplay(NO, YES, previousFrame, movedFrame), "ordinary movement neither reorders nor redraws");
+    for (unsigned mask = 0; mask < 16; mask++) {
+        CHECK(!NeedsWindowOrdering(NO, YES, mask & 1, mask & 2, mask & 4, mask & 8), "hidden cursor overrides ordering recovery");
+        CHECK(!NeedsWindowOrdering(YES, NO, mask & 1, mask & 2, mask & 4, mask & 8), "missing glyph overrides ordering recovery");
+    }
+    CHECK(NeedsOcclusionRecovery(YES, YES, YES, NO), "newly occluded visible panel requests recovery");
+    CHECK(!NeedsOcclusionRecovery(NO, YES, YES, NO), "intentionally hidden panel does not request recovery");
+    CHECK(!NeedsOcclusionRecovery(YES, NO, YES, NO), "ordered-out panel is handled by actual visibility");
+    CHECK(!NeedsOcclusionRecovery(YES, YES, NO, NO), "persistent occlusion does not repeat recovery");
+    CHECK(!NeedsOcclusionRecovery(YES, YES, NO, YES) && !NeedsOcclusionRecovery(YES, YES, YES, YES), "visible transitions do not request recovery");
     CHECK(BoundedData(28,40,112,4480), "bounded provider");
     CHECK(!BoundedData(28,0,112,4480), "empty raster");
     CHECK(!BoundedData(28,40,SIZE_MAX,4480), "stride overflow");
@@ -570,6 +594,7 @@ static void DrainOwnEvents(NSApplication *application) {
 static int RunAid(double duration) {
     NSPanel *panel = nil;
     GlyphWorker *worker = nil;
+    id occlusionObserver = nil;
     double start = Now(), deadline = duration ? start + duration : INFINITY;
     if (duration && !isfinite(deadline)) return 2;
     int result = 0;
@@ -585,6 +610,7 @@ static int RunAid(double duration) {
         panel.hasShadow = NO;
         panel.ignoresMouseEvents = YES;
         panel.acceptsMouseMovedEvents = NO;
+        panel.canHide = NO;
         panel.hidesOnDeactivate = NO;
         panel.becomesKeyOnlyIfNeeded = YES;
         panel.level = CGWindowLevelForKey(kCGCursorWindowLevelKey);
@@ -594,7 +620,16 @@ static int RunAid(double duration) {
         view.imageScaling = NSImageScaleNone;
         panel.contentView = view;
         CursorGlyph *cache = nil;
-        BOOL shown = NO, dirtyGlyph = NO;
+        __block BOOL shown = NO, reorderPending = NO;
+        __block BOOL wasUnoccluded = (panel.occlusionState & NSWindowOcclusionStateVisible) != 0;
+        BOOL dirtyGlyph = NO, panelWasVisible = NO;
+        occlusionObserver = [NSNotificationCenter.defaultCenter addObserverForName:NSWindowDidChangeOcclusionStateNotification
+            object:panel queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+                NSWindow *window = notification.object;
+                BOOL visible = (window.occlusionState & NSWindowOcclusionStateVisible) != 0;
+                if (NeedsOcclusionRecovery(shown, window.visible, wasUnoccluded, visible)) reorderPending = YES;
+                wasUnoccluded = visible;
+            }];
         NSRect previous = NSZeroRect;
         worker = StartGlyphWorker();
         if (!worker) { fprintf(stderr, "Cannot start cursor snapshot worker\n"); return 1; }
@@ -615,17 +650,27 @@ static int RunAid(double duration) {
                     if (fresh) view.image = fresh.image;
                     dirtyGlyph = YES;
                 }
-                if (!CGCursorIsVisible() || !cache) {
-                    if (shown) { [panel orderOut:nil]; shown = NO; }
+                BOOL cursorVisible = CGCursorIsVisible();
+                BOOL panelVisible = panel.visible;
+                if (!cursorVisible || !cache) {
+                    reorderPending = panelWasVisible = NO;
+                    if (shown || panelVisible) { shown = NO; [panel orderOut:nil]; }
                 } else {
                     NSPoint mouse = NSEvent.mouseLocation;
                     if (ValidPoint(mouse)) {
                         NSRect frame = CursorFrame(mouse, cache.size, cache.hotSpot);
-                        BOOL dirty = NeedsContentDisplay(dirtyGlyph, shown, previous, frame);
+                        BOOL dirty = NeedsContentDisplay(dirtyGlyph, shown && panelVisible, previous, frame);
                         if (!NSEqualRects(previous, frame)) { [panel setFrame:frame display:NO]; previous = frame; }
-                        if (!shown) { [panel orderFrontRegardless]; shown = YES; }
-                        if (dirty) [panel displayIfNeeded];
-                        dirtyGlyph = NO;
+                        BOOL order = NeedsWindowOrdering(cursorVisible, cache != nil, shown, panelWasVisible, panelVisible, reorderPending);
+                        panelWasVisible = panelVisible;
+                        if (order) {
+                            [panel orderFrontRegardless]; shown = YES; reorderPending = NO;
+                            panelWasVisible = panel.visible;
+                        }
+                        if (panel.visible) {
+                            if (dirty) [panel displayIfNeeded];
+                            dirtyGlyph = NO;
+                        }
                     }
                 }
                 [application updateWindows];
@@ -637,6 +682,7 @@ static int RunAid(double duration) {
         fprintf(stderr, "%s: %s\n", exception.name.UTF8String, exception.reason.UTF8String);
         result = 1;
     } @finally {
+        if (occlusionObserver) [NSNotificationCenter.defaultCenter removeObserver:occlusionObserver];
         [worker.input closeFile];
         if (worker.task.running) [worker.task terminate];
         [panel orderOut:nil];

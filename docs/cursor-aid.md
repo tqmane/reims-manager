@@ -5,6 +5,22 @@ content so screen sharing can include it. It uses the system cursor's image,
 hot spot and visibility. Its panel accepts no mouse or keyboard input, does
 not become the key window, and stays above the Dock and menus. Its stationary
 collection behavior keeps Mission Control from moving it with ordinary windows.
+It also opts out of application hiding, separately from hiding on deactivation.
+At each position tick it checks the panel's actual ordered-in visibility instead
+of trusting its previous show request. An observed hide transition or a
+transition to full occlusion requests one reorder at the existing cursor window
+level; persistent hiding or occlusion does not repeat that request. Ordinary
+movement does not reorder the panel. Reordering
+does not activate the application or change the key or main window. Hidden
+system-cursor state or a missing glyph still suppresses the aid and discards
+pending recovery. Its own occlusion observer is removed on shutdown.
+
+This recovers external hiding or ordering changes. It does not establish that
+every macOS permission, authentication or system confirmation dialog includes
+the cursor correctly. Those dialogs and the actual source/captured pixels need
+separate runtime qualification; the window level and capture policy are not
+raised or bypassed for them.
+
 It does not
 automatically move the pointer, hide the native cursor, change capture permissions or
 modify another application.
