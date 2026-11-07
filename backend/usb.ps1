@@ -317,7 +317,7 @@ function Get-ReimsUsbDevices {
     $blocked=Get-ReimsProtectedUsbIds
     $devices = @(ConvertFrom-ReimsUsbInventory $text $names $blocked | Where-Object {
         # Retain old registrations so they can be explicitly removed.
-        $_.vendor -ne '05ac' -or $_.product -notmatch '^(12a8|128[0-3]|122[0-7])$' -or $_.id -in $savedIds
+        $_.vendor -ne '05ac' -or $_.product -notmatch '^(12a8|12ab|128[0-3]|122[0-7])$' -or $_.id -in $savedIds
     })
     foreach ($device in $saved) {
         $row = $devices | Where-Object id -EQ $device.id | Select-Object -First 1

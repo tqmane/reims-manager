@@ -68,6 +68,7 @@ try {
 
     $originalInventory=$script:inventory
     $script:inventory += "`n  Bus 2, Addr 20, Port 9, Speed 480 Mb/s`n    Class 00: USB device 05ac:12a8"
+    $script:inventory += "`n  Bus 2, Addr 21, Port 10, Speed 480 Mb/s`n    Class 00: USB device 05ac:12ab"
     $phoneId='hostiphone-'+('a'*64)
     $script:iphoneRows=@([pscustomobject]@{id=$phoneId;label='Authored iPhone';present=$true;selected=$false;active=$false;attached=$false})
     Write-ReimsJson (Join-Path $VmRoot 'state/config.json') @{schema=1}

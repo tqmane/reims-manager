@@ -109,8 +109,8 @@ def phone_reply(value=None, error=False):
     return struct.pack(">I", len(data)) + data
 
 
-def row(serial=UDID):
-    return {"DeviceID": 42, "Properties": {"ConnectionType": "USB", "ProductID": 0x12A8, "SerialNumber": serial}}
+def row(serial=UDID, product=0x12A8, device=42):
+    return {"DeviceID": device, "Properties": {"ConnectionType": "USB", "ProductID": product, "SerialNumber": serial}}
 
 
 class Peer:
@@ -134,7 +134,7 @@ class Peer:
 
 
 class IdentityTests(unittest.TestCase):
-    def run_case(self, devices=None, actual=UDID, ecid=0xBEEF, error=False):
+    def run_case(self, devices=None, actual=UDID, ecid=0xBEEF, error=False, instance=INSTANCE):
         peers = [Peer(mux_reply({"DeviceList": [row()] if devices is None else devices}, 1)),
                  Peer(mux_reply({"MessageType": "Result", "Number": 0}, 2) +
                       phone_reply(actual) + phone_reply(ecid, error))]
@@ -144,7 +144,22 @@ class IdentityTests(unittest.TestCase):
             self.assertEqual(endpoint, ("127.0.0.1", 27015))
             self.assertEqual(timeout, 5)
             return next(pending)
-        return peers, lambda: identity.identify(INSTANCE, connect)
+        return peers, lambda: identity.identify(instance, connect)
+
+    def test_ipad_uses_exact_product_and_serial_without_opening_phone(self):
+        ipad = INSTANCE.replace('12A8', '12AB')
+        devices = [row('00008120-000000000000CAFE', device=41), row(product=0x12AB)]
+        peers, run = self.run_case(devices=devices, instance=ipad)
+        with patch.object(identity.C, 'CDLL', side_effect=AssertionError('Normal iPad loaded native DLL')):
+            self.assertEqual(run()['ecid'], '000000000000beef')
+        self.assertEqual(plistlib.loads(peers[1].writes[0][16:])['DeviceID'], 42)
+        self.assertTrue(all(peer.closed for peer in peers))
+
+    def test_ipad_rejects_phone_product_even_with_matching_serial(self):
+        peers, run = self.run_case(instance=INSTANCE.replace('12A8', '12AB'))
+        with self.assertRaisesRegex(ValueError, 'absent or ambiguous'):
+            run()
+        self.assertFalse(peers[1].writes)
 
     def test_selected_identity_and_ecid(self):
         peers, run = self.run_case()

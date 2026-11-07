@@ -40,6 +40,65 @@ function Get-ReimsRuntime {$runtime}
 function Get-ReimsIphoneUsbSessionRoot($Session){Join-Path $root $Session}
 $script:fixture=$null
 try {
+    $ipad='USB\VID_05AC&PID_12AB\AUTHORED-IPAD'
+    $ipadProfile=@{id=(Get-ReimsIphoneUsbId $ipad);initial_instance=$ipad;ecid='000000000000cafe';enabled=$true;session_id=('b'*32)}
+    Assert (Test-ReimsIphoneUsbInstance $ipad) 'iPad normal parent is routed to dedicated Apple transfer'
+    Assert (!(Test-ReimsIphoneUsbInstance ($ipad.Replace('12AB','12AB&MI_01')))) 'iPad interface is not a physical parent'
+    $multi=[pscustomobject]@{usb_devices=@();iphone_usb=[pscustomobject]$profile.Clone();iphone_usb_devices=@([pscustomobject]$ipadProfile)}
+    Assert (@(Get-ReimsIphoneUsbProfiles $multi).Count -eq 2 -and (Get-ReimsIphoneUsbProfile $multi $ipadProfile.id).ecid -ceq $ipadProfile.ecid) 'Both Apple profiles are retained and selected by exact ID'
+    foreach($field in @('id','ecid','session_id')) {
+        $duplicate=$ipadProfile.Clone();$duplicate[$field]=$profile[$field]
+        Reject {Get-ReimsIphoneUsbProfiles ([pscustomobject]@{iphone_usb=[pscustomobject]$profile;iphone_usb_devices=@([pscustomobject]$duplicate)})} '無効|重複'
+    }
+    Reject {Get-ReimsIphoneUsbProfiles ([pscustomobject]@{iphone_usb_devices='bad'})} '無効'
+    & {
+        Set-StrictMode -Version Latest
+        $empty=[pscustomobject]@{}
+        Assert (@(Get-ReimsIphoneUsbProfiles $empty).Count -eq 0) 'Missing Apple settings remain compatible in strict production mode'
+        Set-ReimsIphoneUsbProfile $empty $profile.Clone()
+        Set-ReimsIphoneUsbProfile $empty $ipadProfile.Clone()
+        Assert (@(Get-ReimsIphoneUsbProfiles $empty).Count -eq 2) 'First and additional registrations are safe in strict production mode'
+        $onlyAdditional=[pscustomobject]@{iphone_usb_devices=@([pscustomobject]$ipadProfile.Clone())}
+        Set-ReimsIphoneUsbProfile $onlyAdditional $profile.Clone()
+        Assert (@(Get-ReimsIphoneUsbProfiles $onlyAdditional).Count -eq 2) 'Collection-only configurations do not require an absent legacy field'
+    }
+    $excluded=$snapshot.Clone();$excluded.other_instances=@($ipad)
+    Assert (@(Get-ReimsIphoneUsbOtherInstances $excluded)[0] -ceq $ipad) 'Another registered Apple instance is excluded before identity or binding'
+    $excluded.other_instances=@($normal)
+    Reject {Get-ReimsIphoneUsbOtherInstances $excluded} 'Invalid excluded'
+    $excluded.other_instances=@('USB\VID_05AC&PID_12AB\*')
+    Reject {Get-ReimsIphoneUsbOtherInstances $excluded} 'Invalid excluded'
+    $oneStatus=(Get-Command Get-ReimsIphoneUsbStatus).ScriptBlock
+    $oneIdentity=(Get-Command Get-ReimsIphoneUsbIdentity).ScriptBlock
+    $oneConfig=$script:config
+    try {
+        $script:config=[pscustomobject]@{usb_devices=@();iphone_usb=[pscustomobject]$profile.Clone();usb_backend='winusb'}
+        $script:candidates=@([pscustomobject]@{InstanceId=$normal},[pscustomobject]@{InstanceId=$ipad})
+        $script:primaryBefore=$script:config.iphone_usb|ConvertTo-Json -Depth 8 -Compress
+        $script:multiStatus=@{};$script:multiStatus[$profile.id]=@{state='connected';active=$true;instance=$normal;pid=321;qemu_pid=$runtime.pid;qemu_start_ticks=$runtime.start_ticks}
+        $script:multiIdentityCalls=[Collections.Generic.List[string]]::new()
+        function Get-ReimsIphoneUsbStatus($Profile){$script:multiStatus[$Profile.id]}
+        function Get-ReimsIphoneUsbIdentity($Instance,$Context){$script:multiIdentityCalls.Add($Instance);if($Instance -ine $ipad){throw 'Existing phone must not be identified again'};@{ecid=$ipadProfile.ecid;udid='00008120-000000000000CAFE'}}
+        Set-ReimsIphoneUsbSelection $ipadProfile.id $true|Out-Null
+        $newProfile=Get-ReimsIphoneUsbProfile $script:config $ipadProfile.id
+        Assert (($script:config.iphone_usb|ConvertTo-Json -Depth 8 -Compress) -ceq $script:primaryBefore -and $script:elevations.Count -eq 1) 'Adding iPad keeps the active primary profile byte-equivalent and elevates only the new worker'
+        Assert ($newProfile.ecid -ceq $ipadProfile.ecid -and $newProfile.session_id -cne $profile.session_id -and $script:multiIdentityCalls.Count -eq 1) 'Second device has its own exact identity and session'
+        $written=Get-Content -LiteralPath (Join-Path $VmRoot "state/iphone-$($newProfile.session_id).json") -Raw|ConvertFrom-Json
+        Assert ($written.other_instances -contains $normal -and $written.profile.id -ceq $ipadProfile.id) 'New worker excludes the live first phone in its immutable snapshot'
+        $script:multiStatus[$ipadProfile.id]=@{state='connected';active=$true;instance=$ipad;pid=322;qemu_pid=$runtime.pid;qemu_start_ticks=$runtime.start_ticks}
+        $rows=@(Get-ReimsIphoneUsbRows $script:config)
+        Assert ($rows.Count -eq 2 -and @($rows|Where-Object attached).Count -eq 2 -and @($rows|Where-Object label -Match '^iPad').Count -eq 1) 'Both connected rows retain separate status and the iPad label'
+        $beforeElevations=$script:elevations.Count
+        Start-ReimsIphoneUsbAutoConnect $script:config $runtime
+        Assert ($script:elevations.Count -eq $beforeElevations) 'Starting healthy registered profiles does not restart either worker'
+        Set-ReimsIphoneUsbSelection $ipadProfile.id $false|Out-Null
+        Assert (($script:config.iphone_usb|ConvertTo-Json -Depth 8 -Compress) -ceq $script:primaryBefore -and !(Get-ReimsIphoneUsbProfile $script:config $ipadProfile.id).enabled) 'Disconnecting iPad leaves the first phone enabled and unchanged'
+        Assert (!(Test-Path -LiteralPath (Get-ReimsIphoneUsbAdvisoryStopPath $VmRoot $profile.session_id)) -and (Test-Path -LiteralPath (Get-ReimsIphoneUsbAdvisoryStopPath $VmRoot $newProfile.session_id))) 'Only the selected device receives a cancellation marker'
+    } finally {
+        Set-Item Function:Get-ReimsIphoneUsbStatus $oneStatus
+        Set-Item Function:Get-ReimsIphoneUsbIdentity $oneIdentity
+        $script:config=$oneConfig;$script:status=$null;$script:candidates=@([pscustomobject]@{InstanceId=$normal});$script:elevations=@();$script:normalWrites.Clear()
+    }
     Assert ((Get-ReimsIphoneUsbId $normal) -ceq (Get-ReimsIphoneUsbId $normal.ToLowerInvariant())) 'Initial PnP ID hashes canonically'
     Assert ((Get-ReimsIphoneUsbId $normal) -cmatch '^hostiphone-[0-9a-f]{64}$') 'Phone row has stable distinct prefix'
     $rows=@(Get-ReimsIphoneUsbRows $config)
@@ -240,6 +299,12 @@ try {
     $folder=New-Fixture 'cancel-after-bind'
     Invoke-ReimsIphoneUsbSession $snapshot $folder
     Assert ($fixture.events.Contains('bind') -and $fixture.events.Contains('restore') -and !$fixture.added.Count -and !$fixture.events.Contains('remove') -and $fixture.states[-1] -ceq 'restored') 'Cancellation after binding restores without issuing QMP add or claiming an unissued object'
+    $folder=New-Fixture 'skip-other-registered-device'
+    $fixture.candidates=@($normal,$recovery)
+    $isolated=$snapshot.Clone();$isolated.other_instances=@($recovery)
+    Invoke-ReimsIphoneUsbSession $isolated $folder
+    Assert ($fixture.added.Count -eq 1 -and $fixture.added[0]['host-instance-id'] -ceq $normal -and
+        @($fixture.events|Where-Object {$_ -ceq 'identity'}).Count -eq 1 -and $fixture.models[$recovery].Service -ceq 'usbccgp') 'Resident loop never identifies, binds or adds the other registered Apple device'
     $folder=New-Fixture 'normal'
     Invoke-ReimsIphoneUsbSession $snapshot $folder
     Assert ($fixture.events.Contains('bind') -and $fixture.events.Contains('remove') -and $fixture.events.Contains('restore') -and $fixture.states[-1] -ceq 'restored') "Connect/remove/restore order failed: events=$($fixture.events -join ','); states=$($fixture.states -join ','); error=$($fixture.lastError)"

@@ -34,8 +34,20 @@ or termination of the supervisor can interrupt recovery: open Manager and
 use the USB disconnect operation to resume it. Do not delete a pending
 receipt or treat a reboot request as verified restoration.
 
-Only one iPhone profile per VM is supported. Remove old generic iPhone
-registrations before using the new identity-based handoff.
+Multiple iPhones and iPads can be registered to the same VM. The original
+`iphone_usb` profile is preserved; additional registrations are stored in
+`iphone_usb_devices`. Each device keeps its own ECID, supervisor, cancellation
+marker and protected driver receipts. Connecting or disconnecting one device
+does not restart the others. Normal-mode product IDs 12A8 and 12AB use the
+same exact-identity Apple-service path; recovery and DFU retain their existing
+checks. New supervisors skip the known instances of other registrations.
+Remove old generic Apple USB registrations before using the dedicated path.
+When upgrading a running WinUSB VM, unregister only the old, disconnected
+iPad row, refresh the device list and connect the dedicated iPad entry.
+Keep the already connected iPhone registered. If Windows requests
+reconnection after the driver switch, reconnect only the iPad cable. This
+does not require restarting Manager or the VM. Changing the VM's USB
+backend remains a separate operation that requires a full VM exit.
 
 ## Validation
 
@@ -55,6 +67,15 @@ guest USB mux service. A standard lockdown query matched its ECID, and the
 user confirmed its appearance in Finder. QEMU's xHCI short-transfer repair
 preserves the first ISP event and also reports the tail IOC event; suppressing
 that second event had stalled guest communication despite completed host I/O.
+
+On 2026-11-07, the multiple-device backend was applied to an already running
+Windows engine `engine-28979c8c-fbba9f15-15`. The original iPhone profile,
+supervisor and QEMU attachment stayed unchanged while a 12AB iPad used its
+own profile and supervisor. After reconnecting only the iPad cable, both
+supervisors reported connected and both exact QEMU objects were attached.
+The user confirmed that the iPad connected. Neither Manager nor the VM was
+restarted. This qualifies this normal-mode two-device session, not physical
+recovery, DFU or firmware restoration.
 
 Physical recovery, DFU and guest-driven firmware restoration remain
 unqualified; the normal-mode check does not authorize or prove an erase or

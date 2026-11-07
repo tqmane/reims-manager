@@ -156,10 +156,11 @@ def identify(instance_id, connect=socket.create_connection, native_library=None)
     mode = re.fullmatch(r"USB\\VID_05AC&PID_(128[0-3]|122[0-7])(?:&REV_[0-9A-F]{4})?\\[^\\/\x00-\x20*?]{1,200}", instance_id, re.I)
     if mode and instance_id.isascii():
         return identify_mode(instance_id, int(mode[1], 16), native_library)
-    match = re.fullmatch(r"USB\\VID_05AC&PID_12A8(?:&REV_[0-9A-F]{4})?\\([0-9A-F-]{16,64})", instance_id, re.I)
+    match = re.fullmatch(r"USB\\VID_05AC&PID_(?P<product>12A8|12AB)(?:&REV_[0-9A-F]{4})?\\(?P<serial>[0-9A-F-]{16,64})", instance_id, re.I)
     if not match:
-        raise ValueError("Select exactly one normal iPhone parent instance")
-    expected = normalized_udid(match[1])
+        raise ValueError("Select exactly one normal iPhone or iPad parent instance")
+    expected = normalized_udid(match['serial'])
+    product = int(match['product'], 16)
     endpoint = ("127.0.0.1", 27015)
     with connect(endpoint, timeout=5) as stream:
         result = mux(stream, {"MessageType": "ListDevices", "ProgName": "ReimsManager", "kLibUSBMuxVersion": 3}, 1)
@@ -171,7 +172,7 @@ def identify(instance_id, connect=socket.create_connection, native_library=None)
         if not isinstance(row, dict) or not isinstance(row.get("Properties"), dict):
             raise ValueError("Invalid Apple USB device entry")
         properties = row["Properties"]
-        if properties.get("ConnectionType") != "USB" or properties.get("ProductID") != 0x12A8:
+        if properties.get("ConnectionType") != "USB" or properties.get("ProductID") != product:
             continue
         if normalized_udid(properties.get("SerialNumber")) == expected:
             matches.append(row)
