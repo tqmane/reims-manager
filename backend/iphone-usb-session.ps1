@@ -138,7 +138,17 @@ function Test-ReimsIphoneUsbStopRequested($Snapshot,[string]$Root) {
         (Test-Path -LiteralPath (Get-ReimsIphoneUsbAdvisoryStopPath $Snapshot.vm_root $Snapshot.profile.session_id))
 }
 
+function Get-ReimsIphoneUsbOtherInstances($Snapshot) {
+    if(!$Snapshot.ContainsKey('other_instances')){return}
+    if($Snapshot.other_instances -isnot [Array] -or $Snapshot.other_instances.Count -gt 128){throw 'Invalid excluded Apple USB instances.'}
+    foreach($instance in $Snapshot.other_instances) {
+        if($instance -isnot [string] -or !(Test-ReimsIphoneUsbInstance $instance) -or $instance -ieq $Snapshot.profile.initial_instance){throw 'Invalid excluded Apple USB instance.'}
+        $instance
+    }
+}
+
 function Invoke-ReimsIphoneUsbSession($Snapshot,[string]$Root,[switch]$RestoreOnly) {
+    $otherInstances=@(Get-ReimsIphoneUsbOtherInstances $Snapshot)
     $mutex=[Threading.Mutex]::new($false,"Global\ReimsManager.IphoneUsb.$($Snapshot.profile.ecid)");$held=$false
     try {
         try{$held=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$held=$true}
@@ -169,6 +179,7 @@ function Invoke-ReimsIphoneUsbSession($Snapshot,[string]$Root,[switch]$RestoreOn
                     $candidates=@(Get-ReimsIphoneUsbCandidates);$matches=@();$identityFailure=''
                     foreach($candidate in $candidates) {
                         $id=$candidate.InstanceId;$key=Get-ReimsIphoneUsbId $id
+                        if($otherInstances -icontains $id){continue}
                         $receiptPath=Join-Path $Root "private/receipts/$key.json"
                         $receipt=if(Test-Path -LiteralPath $receiptPath){Read-ReimsUsbDriverBindingReceipt $receiptPath}
                         if($receipt -and $lease.instances.ContainsKey($key) -and $receipt.phase -cne 'restored') {
