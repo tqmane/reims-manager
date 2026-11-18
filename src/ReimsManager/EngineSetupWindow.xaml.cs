@@ -64,20 +64,20 @@ public partial class EngineSetupWindow : Window
             if (!Path.IsPathFullyQualified(Destination.Text.Trim())) throw new ArgumentException(UiText.T("エンジンの保存先を参照ボタンから選択するか、完全なパスを指定してください。"));
             string destination=Path.GetFullPath(Destination.Text.Trim());
             if (Existing.IsChecked != true && (Directory.Exists(destination) || File.Exists(destination))) throw new IOException(UiText.T("既存のフォルダーには上書きしません。「再利用」を選択するか、新しい保存先を指定してください。"));
-            string script=Path.Combine(AppContext.BaseDirectory,"scripts/install-engine.ps1");
-            string pwsh=Path.Combine(AppContext.BaseDirectory,"runtimes/pwsh/pwsh.exe");
-            if (!File.Exists(pwsh)) pwsh=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"PowerShell/7/pwsh.exe");
-            var info=new ProcessStartInfo(pwsh) { UseShellExecute=false, CreateNoWindow=true,
-                RedirectStandardOutput=true, RedirectStandardError=true, StandardOutputEncoding=Encoding.UTF8, StandardErrorEncoding=Encoding.UTF8 };
             if (Existing.IsChecked == true) {
                 Status.Text=UiText.T("導入済みのエンジンを検証しています…");
-                foreach (string arg in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",Path.Combine(AppContext.BaseDirectory,"scripts/manager-backend.ps1"),
-                    "-Action","GetPrerequisites","-Root",destination,"-ToolsRoot",Path.Combine(AppContext.BaseDirectory,"runtimes"),"-Cpus",Math.Min(4,Environment.ProcessorCount).ToString(),"-MemoryMiB","4096"}) info.ArgumentList.Add(arg);
-                var requirements = SetupRequirements.Parse(await BackendCommand.Run(info, null, true));
+                string prereqJson = await ReimsManager.Services.NativeStatusService.GetPrerequisitesJsonAsync(
+                    destination, Path.Combine(AppContext.BaseDirectory, "runtimes"), Math.Min(4, Environment.ProcessorCount), 4096, CancellationToken.None);
+                var requirements = SetupRequirements.Parse(prereqJson);
                 var engine = requirements.Checks.FirstOrDefault(check => check.Id == "engine");
                 if (engine?.Ready != true) throw new IOException(engine?.Message ?? UiText.T("対応エンジンの検証結果を確認できません。"));
                 InstalledDirectory=destination; installing=false; DialogResult=true; return;
             }
+            string script=Path.Combine(AppContext.BaseDirectory,"scripts/install-engine.ps1");
+            string pwsh=ReimsManager.Services.NativeUsbService.FindPwshExecutable();
+            if (!File.Exists(pwsh)) pwsh=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"PowerShell/7/pwsh.exe");
+            var info=new ProcessStartInfo(pwsh) { UseShellExecute=false, CreateNoWindow=true,
+                RedirectStandardOutput=true, RedirectStandardError=true, StandardOutputEncoding=Encoding.UTF8, StandardErrorEncoding=Encoding.UTF8 };
             foreach (string arg in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",script,"-Destination",destination}) info.ArgumentList.Add(arg);
             if (Local.IsChecked==true) {
                 if (!File.Exists(Archive.Text)) throw new FileNotFoundException(UiText.T("エンジン ZIP を選択してください。"));

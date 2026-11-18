@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+﻿#Requires -Version 7.2
 $ErrorActionPreference='Stop'
 $root=Join-Path ([IO.Path]::GetTempPath()) ('reims-iphone-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($root)
@@ -373,6 +373,26 @@ try {
     Write-ReimsIphoneUsbSessionJson (Join-Path $folder 'private/leases.json') @{qmp_instance=$normal;instances=@{}}
     Invoke-ReimsIphoneUsbSession $snapshot $folder -RestoreOnly
     Assert ($fixture.events.Contains('restore') -and !$fixture.events.Contains('identity') -and !$fixture.events.Contains('bind') -and $fixture.states[-1] -ceq 'restored') 'Explicit detach resumes protected recovery after process loss without a new capture'
+
+    $folder=New-Fixture 'updated-original-restore';$fixture.exitTick=0
+    $receiptPath=Join-Path $folder "private/receipts/$($profile.id).json"
+    [void](Set-ReimsUsbDriverBinding -InstanceId $normal -ReceiptPath $receiptPath -PackageInf (Join-Path $root 'libusb0.inf'))
+    $fixture.events.Clear()
+    $updated=$fixture.models[$normal]=(Read-ReimsUsbDriverBindingReceipt $receiptPath).original.Clone()
+    $updated.Version='552.0.0.0'
+    $updated.InfHash='c'*64
+    $updated.InfPath=Join-Path $root 'oem194.inf'
+    $fixture.stacks[$normal]='usbccgp'
+    Invoke-ReimsIphoneUsbSession $snapshot $folder -RestoreOnly
+    $receipt=Read-ReimsUsbDriverBindingReceipt $receiptPath
+    Assert (!$fixture.events.Contains('restore') -and $fixture.states[-1] -ceq 'restored' -and $receipt.phase -ceq 'restored' -and $receipt.live_verification.updated_original) 'Session restore accepts updated same-provider original driver without downgrading'
+
+    $folder=New-Fixture 'reset-stale-error';$fixture.exitTick=0
+    $receiptPath=Join-Path $folder "private/receipts/$($profile.id).json"
+    [void](Set-ReimsUsbDriverBinding -InstanceId $normal -ReceiptPath $receiptPath -PackageInf (Join-Path $root 'libusb0.inf'))
+    $fixture.present[$normal]=$false
+    Reset-ReimsIphoneUsbSession $snapshot $folder
+    Assert ($fixture.states[-1] -ceq 'restored' -and (Read-ReimsUsbDriverBindingReceipt $receiptPath).phase -ceq 'restored') 'Explicit reset clears an absent stuck receipt when device is no longer bound to libusb0'
     $folder=New-Fixture 'resume-unknown-intent';$fixture.exitTick=3
     $receiptPath=Join-Path $folder "private/receipts/$($profile.id).json"
     [void](Set-ReimsUsbDriverBinding -InstanceId $normal -ReceiptPath $receiptPath -PackageInf (Join-Path $root 'libusb0.inf'))

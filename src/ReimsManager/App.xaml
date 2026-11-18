@@ -28,9 +28,10 @@
       <Style TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="Padding" Value="16,8"/><Setter Property="Margin" Value="0,0,8,8"/><Setter Property="ToolTipService.ShowOnDisabled" Value="True"/></Style>
       <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
       <Style x:Key="MutedText" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Opacity" Value="0.72"/></Style>
-      <Style x:Key="PageHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="23"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,10"/></Style>
-      <Style x:Key="SectionHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="17"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,28,0,12"/></Style>
-      <Style x:Key="FieldLabel" TargetType="TextBlock"><Setter Property="Margin" Value="0,22,0,8"/></Style>
+      <Style x:Key="PageHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="21"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,6"/></Style>
+      <Style x:Key="SectionHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="16"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,20,0,8"/></Style>
+      <Style x:Key="FieldLabel" TargetType="TextBlock"><Setter Property="Margin" Value="0,14,0,6"/></Style>
+      <Style x:Key="ErrorNoticeCard" TargetType="Border" BasedOn="{StaticResource NoticeCard}"><Setter Property="BorderBrush" Value="#D13438"/><Setter Property="BorderThickness" Value="3,1,1,1"/><Setter Property="Background" Value="#14D13438"/></Style>
       <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="Padding" Value="18,9"/><Setter Property="Margin" Value="0,0,8,8"/><Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/><Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/></Style>
     </ResourceDictionary>
   </Application.Resources>

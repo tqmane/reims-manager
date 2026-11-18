@@ -127,6 +127,23 @@ try {
     Reject { Restore $f } 'foreign'
     Assert (!$f.Calls.Contains('restore') -and (Read-ReimsUsbDriverBindingReceipt $f.Path).phase -eq 'bound') 'Foreign restore refusal retains receipt without clobbering driver'
 
+    # Windows Update / Apple driver upgrade to a newer version of the same provider+service must be accepted as already restored without downgrading.
+    $f=New-Fixture 'updated-original';Bind $f | Out-Null
+    $f.Current=$f.Original.Clone()
+    $f.Current.InfPath=Join-Path (Split-Path $f.Original.InfPath) 'updated-apple.inf'
+    $f.Current.InfHash='c'*64
+    $f.Current.Version='552.0.0.0'
+    $result=Restore $f
+    Assert ($result.restored -and $result.state -eq 'restored' -and !$f.Calls.Contains('restore') -and (Read-ReimsUsbDriverBindingReceipt $f.Path).phase -eq 'restored' -and $f.Current.Version -eq '552.0.0.0') 'Updated same-provider original driver must complete restoration without downgrading'
+
+    # Foreign provider with same service name must still be rejected.
+    $f=New-Fixture 'foreign-provider';Bind $f | Out-Null
+    $f.Current=$f.Original.Clone()
+    $f.Current.Provider='ThirdPartyVendor'
+    $f.Current.InfHash='d'*64
+    Reject { Restore $f } 'foreign'
+    Assert (!$f.Calls.Contains('restore') -and (Read-ReimsUsbDriverBindingReceipt $f.Path).phase -eq 'bound') 'Foreign provider replacement must still be refused'
+
     $f=New-Fixture 'absent';Bind $f | Out-Null;$target=$f.Current;$f.Current=@{Present=$false}
     $result=Restore $f
     Assert (!$result.restored -and $result.state -eq 'restore-pending' -and !$f.Calls.Contains('restore')) 'Disconnected device restoration remains explicitly pending'

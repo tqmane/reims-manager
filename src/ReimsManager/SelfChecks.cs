@@ -60,6 +60,85 @@ internal static class SelfChecks
         File.WriteAllText(escaped,"{\"schema\":1,\"name\":\"Escaped\",\"directory\":\"../outside\"}");
         try { VmLibrary.Open(escaped); throw new Exception("A VM path outside its package was accepted"); }
         catch (InvalidDataException) { }
+
+        await CheckNativeServicesAsync(folder);
+    }
+
+    private static async Task CheckNativeServicesAsync(string folder)
+    {
+        string rawPsError = "\x1B[31;1mException: D:\\Reims\\Manager\\scripts\\iphone-usb.ps1:176\r\nLine |\r\n 176 |     if($failures.Count){throw ($failures -join \"`n\")}\r\n     |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n     | 前回の iPhone の復元が未完了です。\x1B[0m";
+        if (Services.BackendErrorFormatter.CleanMessage(rawPsError) != "前回の iPhone の復元が未完了です。")
+            throw new Exception("BackendErrorFormatter failed to strip PowerShell error frame.");
+        if (!Services.BackendErrorFormatter.CleanMessage("Current driver is foreign to this receipt; refusing to overwrite it.").Contains("リセット", StringComparison.Ordinal))
+            throw new Exception("BackendErrorFormatter did not translate foreign driver receipt diagnostic.");
+
+        string nativeVm = Path.Combine(folder, "native-service-vm");
+        string stateDir = Path.Combine(nativeVm, "state");
+        Directory.CreateDirectory(stateDir);
+        string plistPath = Path.Combine(nativeVm, "config.plist");
+        byte[] romRaw = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
+        File.WriteAllText(plistPath, $"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <plist version="1.0">
+            <dict>
+              <key>PlatformInfo</key>
+              <dict>
+                <key>Generic</key>
+                <dict>
+                  <key>SystemProductName</key><string>MacPro7,1</string>
+                  <key>SystemSerialNumber</key><string>F5K123456789</string>
+                  <key>MLB</key><string>F5K12345678901234</string>
+                  <key>SystemUUID</key><string>11111111-2222-3333-4444-555555555555</string>
+                  <key>ROM</key><data>{Convert.ToBase64String(romRaw)}</data>
+                </dict>
+              </dict>
+            </dict>
+            </plist>
+            """, Encoding.UTF8);
+        File.WriteAllText(Path.Combine(stateDir, "opencore.json"), JsonSerializer.Serialize(new { config = plistPath }));
+        var identity = Services.NativeOpenCore.ReadIdentity(folder, nativeVm);
+        if (identity.Model != "MacPro7,1" || identity.Serial != "F5K123456789" || identity.Mlb != "F5K12345678901234" ||
+            identity.Uuid != "11111111-2222-3333-4444-555555555555" || identity.Rom != "112233445566")
+            throw new Exception("NativeOpenCore XML identity parsing mismatch.");
+
+        string escapedOc = Path.Combine(folder, "native-outside.plist");
+        File.WriteAllText(escapedOc, "<plist/>");
+        File.WriteAllText(Path.Combine(stateDir, "opencore.json"), JsonSerializer.Serialize(new { config = escapedOc }));
+        try { Services.NativeOpenCore.ReadIdentity(Path.Combine(folder, "isolated-root"), nativeVm); throw new Exception("NativeOpenCore accepted an escaping plist path."); }
+        catch (InvalidDataException) { }
+
+        File.WriteAllText(Path.Combine(stateDir, "config.json"), JsonSerializer.Serialize(new {
+            schema = 1, cpus = 4, memory_mib = 8192, disk_gib = 128, active_disk = "disk.qcow2", resolution = "1920x1080",
+            network = new { mode = "nat", adapter = "", guest_host = "" }, audio = "none", microphone = false, usb_backend = "winusb"
+        }));
+        File.WriteAllText(Path.Combine(stateDir, "host-cursor.json"), "{\"schema\":1,\"host_cursor_hidden\":true}");
+        using var cur = Process.GetCurrentProcess();
+        File.WriteAllText(Path.Combine(stateDir, "runtime.json"), JsonSerializer.Serialize(new {
+            pid = cur.Id, start_ticks = cur.StartTime.ToUniversalTime().Ticks + 100, executable = Environment.ProcessPath, qmp_port = 4445
+        }));
+        string statusJson = await Services.NativeStatusService.GetStatusJsonAsync(folder, nativeVm);
+        using (var doc = JsonDocument.Parse(statusJson)) {
+            var root = doc.RootElement;
+            if (root.GetProperty("state").GetString() != "stopped" ||
+                !root.GetProperty("host_cursor_hidden").GetBoolean() ||
+                root.GetProperty("cpus").GetInt32() != 4)
+                throw new Exception("NativeStatusService returned unexpected fixture status.");
+        }
+
+        var netInv = NetworkInventory.Parse(Services.NativeHostNetwork.GetNetworkInventoryJson());
+        if (netInv is null) throw new Exception("NativeHostNetwork returned null inventory.");
+
+        if (!Services.NativePnpUsb.IsAppleCandidateInstance(@"USB\VID_05AC&PID_12A8\0000811000123456") ||
+            Services.NativePnpUsb.IsAppleCandidateInstance(@"USB\VID_05AC&PID_9999\1234") ||
+            Services.NativePnpUsb.IsAppleCandidateInstance(@"USB\VID_05AC&PID_12A8\..\bad"))
+            throw new Exception("NativePnpUsb Apple candidate validation failed.");
+
+        var names = Services.NativePnpUsb.BuildProductNames([
+            new(@"USB\VID_0781&PID_55A9\12345", "USB", "USB Composite Device", "SanDisk 3.2Gen1 _SN:ABC"),
+            new(@"USB\VID_0781&PID_55A9&MI_00\12345", "WPD", "MTP USB Device", "Ignored")
+        ]);
+        if (!names.TryGetValue("0781:55a9", out string? prodName) || prodName != "SanDisk 3.2Gen1")
+            throw new Exception("NativePnpUsb product name normalization failed.");
     }
 
     private static void CheckUsbDriverResult(string folder)
@@ -104,10 +183,10 @@ internal static class SelfChecks
             }
             if (VmActionPolicy.CanRun("Clipboard", state, true, true) != (state is "running" or "unknown"))
                 throw new Exception("Independent clipboard SSH eligibility failed for " + state);
-            foreach (string action in new[] { "ListUsb", "DetachUsb", "AttachUsb" }) {
+            foreach (string action in new[] { "ListUsb", "DetachUsb", "ResetIphoneUsb", "AttachUsb" }) {
                 bool expected = action switch {
                     "ListUsb" => state is "running" or "stopped" or "shutdown" or "paused" or "prelaunch" or "suspended",
-                    "DetachUsb" => state is "running" or "stopped",
+                    "DetachUsb" or "ResetIphoneUsb" => state is "running" or "stopped",
                     _ => state == "running"
                 };
                 if (VmActionPolicy.CanRun(action, state, true, true) != expected)

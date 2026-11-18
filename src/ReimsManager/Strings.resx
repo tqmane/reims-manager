@@ -2147,4 +2147,16 @@ Windows の LAN が一時的に切断され、IP アドレスが変わる場合�
   <data name="［自動接続・接続待ち］" xml:space="preserve">
     <value>［自動接続・接続待ち］</value>
   </data>
+  <data name="復元エラーをリセット…" xml:space="preserve">
+    <value>復元エラーをリセット…</value>
+  </data>
+  <data name="iPhone 復元エラーをリセット" xml:space="preserve">
+    <value>iPhone 復元エラーをリセット</value>
+  </data>
+  <data name="ライブラリから登録解除…" xml:space="preserve">
+    <value>ライブラリから登録解除…</value>
+  </data>
+  <data name="現在のドライバーが保存済みレシートと一致しないため自動上書きを中止しました。「登録を解除して Windows に戻す」または「復元エラーをリセット」で復旧できます。" xml:space="preserve">
+    <value>現在のドライバーが保存済みレシートと一致しないため自動上書きを中止しました。「登録を解除して Windows に戻す」または「復元エラーをリセット」で復旧できます。</value>
+  </data>
 </root>

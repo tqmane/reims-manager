@@ -1,4 +1,4 @@
-# Importing this module defines functions only. Elevation belongs to its isolated worker.
+﻿# Importing this module defines functions only. Elevation belongs to its isolated worker.
 function Get-ReimsIphoneUsbId([string]$Instance) {
     'hostiphone-'+[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Instance.ToUpperInvariant()))).ToLowerInvariant()
 }
@@ -210,6 +210,21 @@ function Set-ReimsIphoneUsbSelection([string]$Id,[bool]$Connect) {
         Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
         'iPhone の自動接続を解除し、元ドライバーへの復元を要求しました。未接続のモードがある場合は再接続後に復元します。'
     }
+}
+
+function Reset-ReimsIphoneUsbSelection([string]$Id) {
+    if(!(Get-Command Get-ReimsIphoneUsbStatus -ErrorAction SilentlyContinue)){. "$PSScriptRoot/iphone-usb-session.ps1"}
+    $config=Get-ReimsVmConfig;$profile=Get-ReimsIphoneUsbProfile $config $Id
+    if(!$profile -or $profile.id -cne $Id){throw 'この iPhone は登録されていません。'}
+    Write-ReimsJson (Get-ReimsIphoneUsbAdvisoryStopPath $VmRoot $profile.session_id) @{session_id=$profile.session_id;stop=$true}
+    $status=Get-ReimsIphoneUsbStatus $profile
+    $resident=$status -and $status.ContainsKey('pid') -and (Get-ReimsVmProcess $status)
+    if(!$resident -and (Test-Path -LiteralPath (Get-ReimsIphoneUsbSessionRoot $profile.session_id))){
+        [void](Start-ReimsIphoneUsbElevation @('-ResetSession','-SessionId',$profile.session_id,'-CallerSid',[Security.Principal.WindowsIdentity]::GetCurrent().User.Value))
+    }
+    $profile.enabled=$false;Set-ReimsIphoneUsbProfile $config $profile
+    Write-ReimsJson (Join-Path $VmRoot 'state/config.json') $config
+    'iPhone の保留中の復元エラー状態のリセットを要求しました。'
 }
 
 function Get-ReimsIphoneUsbArgument($Profile,[string]$Instance) {

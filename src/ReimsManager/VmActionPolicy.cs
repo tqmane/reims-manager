@@ -20,7 +20,7 @@ internal static class VmActionPolicy
             "PowerOff" or "Restart" or "Pause" or "Pair" or "ApplyResolution" or "AttachUsb" or "EnableCursorAid" or "DisableCursorAid" or "MoveCursorToMainDisplay" or "MoveCursorToExtendedDisplay" or "HideHostCursor" or "LightenExtendedDisplay" or "RestoreExtendedDisplay" => state == "running",
             "ShowHostCursor" => state is "running" or "paused" or "stopped" or "shutdown" or "prelaunch" or "suspended",
             "ListUsb" => state is "running" or "stopped" or "shutdown" or "paused" or "prelaunch" or "suspended",
-            "DetachUsb" => state is "running" or "stopped",
+            "DetachUsb" or "ResetIphoneUsb" => state is "running" or "stopped",
             "Resume" => state is "paused" or "prelaunch" or "suspended",
             "Exit" => state is "running" or "shutdown",
             "ForceExit" => state is "running" or "paused" or "prelaunch" or "suspended" or "shutdown" or "io-error" or "internal-error" or "guest-panicked" or "watchdog",
@@ -57,6 +57,7 @@ internal static class VmActionPolicy
         "LightenExtendedDisplay" => UiText.T("拡張画面を軽量化"), "RestoreExtendedDisplay" => UiText.T("拡張画面の画質を戻す"),
         "ApplyResolution" => UiText.T("ゲストの解像度を変更"),
         "ListUsb" => UiText.T("USB デバイスを取得"), "AttachUsb" => UiText.T("USB の接続を確認"), "DetachUsb" => UiText.T("USB の登録を解除"),
+        "ResetIphoneUsb" => UiText.T("iPhone 復元エラーをリセット"),
         "InstallUsbDk" => UiText.T("USB 転送ドライバーを導入"), _ => action
     };
 }

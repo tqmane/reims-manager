@@ -170,11 +170,14 @@
             </StackPanel>
           </DockPanel>
         </Border>
-        <Border x:Name="Feedback" Visibility="Collapsed" Style="{StaticResource WorkspaceNotice}">
+        <Border x:Name="Feedback" Visibility="Collapsed" Style="{StaticResource ErrorNoticeCard}" Padding="12" Margin="0,0,0,8">
           <DockPanel>
-            <Button Content="{local:Loc &apos;閉じる&apos;}" Click="DismissError" DockPanel.Dock="Right" Margin="16,0,0,0"/>
-            <ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto">
-              <TextBlock x:Name="ErrorNotice" TextWrapping="Wrap" AutomationProperties.LiveSetting="Assertive"/>
+            <Button Content="{local:Loc &apos;閉じる&apos;}" Click="DismissError" DockPanel.Dock="Right" Margin="16,0,0,0" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left" Margin="0,0,10,0">
+              <TextBlock Text="" FontFamily="Segoe Fluent Icons" FontSize="16" Foreground="#D13438" VerticalAlignment="Center"/>
+            </StackPanel>
+            <ScrollViewer MaxHeight="90" VerticalScrollBarVisibility="Auto">
+              <TextBlock x:Name="ErrorNotice" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive"/>
             </ScrollViewer>
           </DockPanel>
         </Border>
@@ -311,6 +314,14 @@
               </StackPanel>
               <Grid Grid.Row="3" Margin="0,0,0,12">
                 <ListBox x:Name="Library" BorderThickness="0" Background="Transparent" SelectionChanged="VmChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="{local:Loc &apos;仮想マシン一覧&apos;}" MouseDoubleClick="OpenLibraryConsole">
+                  <ListBox.ContextMenu>
+                    <ContextMenu>
+                      <MenuItem Header="{local:Loc &apos;起動&apos;}" Tag="Start" Click="MenuAction"/>
+                      <MenuItem Header="{local:Loc &apos;保存先を開く&apos;}" Click="RevealVm"/>
+                      <Separator/>
+                      <MenuItem Header="{local:Loc &apos;ライブラリから登録解除…&apos;}" Click="RemoveVmFromLibrary"/>
+                    </ContextMenu>
+                  </ListBox.ContextMenu>
                   <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource NavigationItem}">
                       <Setter Property="AutomationProperties.Name" Value="{Binding Name}"/>
@@ -636,16 +647,16 @@
         <Border x:Name="SettingsSurface" Grid.Row="1" Grid.Column="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="8">
           <Grid>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <Border x:Name="SettingsStateNotice" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1" Padding="20,14" Visibility="Collapsed">
+            <Border x:Name="SettingsStateNotice" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1" Padding="16,9" Visibility="Collapsed">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel Margin="0,0,16,0">
+                <StackPanel Margin="0,0,12,0" VerticalAlignment="Center">
                   <TextBlock x:Name="SettingsStateHeading" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite"/>
-                  <TextBlock x:Name="SettingsStateDescription" Style="{StaticResource MutedText}" FontSize="12" Margin="0,4,0,0"/>
+                  <TextBlock x:Name="SettingsStateDescription" Style="{StaticResource MutedText}" FontSize="12" Margin="0,2,0,0"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                  <Button x:Name="SettingsStateActionButton" Click="SettingsStateAction" Padding="12,7" Margin="0,0,0,6" Visibility="Collapsed"/>
-                  <Button x:Name="SettingsRefreshButton" Content="{local:Loc &apos;状態を更新&apos;}" Click="RefreshClick" Padding="12,7" Margin="0" ToolTip="{local:Loc &apos;保存済みの構成と VM の状態を再確認 (F5)。入力中の変更は保持します。&apos;}"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                  <Button x:Name="SettingsStateActionButton" Click="SettingsStateAction" Padding="12,6" Margin="0,0,6,0" Visibility="Collapsed"/>
+                  <Button x:Name="SettingsRefreshButton" Content="{local:Loc &apos;状態を更新&apos;}" Click="RefreshClick" Padding="12,6" Margin="0" ToolTip="{local:Loc &apos;保存済みの構成と VM の状態を再確認 (F5)。入力中の変更は保持します。&apos;}"/>
                 </StackPanel>
               </Grid>
             </Border>
@@ -660,7 +671,7 @@
             </TabItem>
             <TabItem Header="{local:Loc &apos;設定&apos;}">
               <ScrollViewer x:Name="HardwareScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <Grid x:Name="Editors" Margin="24,24,24,20">
+                <Grid x:Name="Editors" Margin="20,16,20,16">
                   <StackPanel x:Name="MemoryPage">
                     <TextBlock Text="{local:Loc &apos;メモリ&apos;}" Style="{StaticResource PageHeading}"/>
                     <TextBlock Text="{local:Loc &apos;macOS に割り当てるメモリを選びます。&apos;}" Style="{StaticResource MutedText}"/>
@@ -720,24 +731,65 @@
                   <StackPanel x:Name="UsbPage" Visibility="Collapsed" IsVisibleChanged="UsbPageVisibilityChanged">
                     <TextBlock Text="{local:Loc &apos;USB デバイス&apos;}" Style="{StaticResource PageHeading}"/>
                     <TextBlock Text="{local:Loc &apos;Windows に接続したデバイスを、この VM に接続します。接続中は Windows 側から使用できません。&apos;}" Style="{StaticResource MutedText}"/>
-                    <WrapPanel Margin="0,18,0,12">
+                    <WrapPanel Margin="0,12,0,8">
                       <Button x:Name="UsbRefreshButton" Content="{local:Loc &apos;デバイス一覧を更新&apos;}" Click="RefreshUsb" Tag="ListUsb"/>
                       <Button x:Name="InstallUsbDkButton" Content="{local:Loc &apos;UsbDk を導入…&apos;}" Click="InstallUsbDk" Tag="InstallUsbDk"/>
                     </WrapPanel>
-                    <ListBox x:Name="UsbDevices" MinHeight="140" MaxHeight="220" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" AutomationProperties.Name="{local:Loc &apos;USB デバイスの登録と接続状態&apos;}">
-                      <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayLabel}" TextWrapping="Wrap" Margin="0,3"/></DataTemplate></ListBox.ItemTemplate>
+                    <ListBox x:Name="UsbDevices" MinHeight="104" MaxHeight="176" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" AutomationProperties.Name="{local:Loc &apos;USB デバイスの登録と接続状態&apos;}">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate>
+                          <Grid Margin="2,4">
+                            <Grid.ColumnDefinitions>
+                              <ColumnDefinition Width="26"/>
+                              <ColumnDefinition Width="*"/>
+                              <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="Auto"/>
+                              <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding DeviceGlyph}" FontFamily="Segoe Fluent Icons" FontSize="15" VerticalAlignment="Center" Opacity="0.85"/>
+                            <TextBlock Grid.Column="1" Text="{Binding TitleText}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <Border x:Name="BadgePill" Grid.Column="2" CornerRadius="4" Padding="8,2" BorderThickness="1" BorderBrush="{DynamicResource CardBorderBrush}" Background="{DynamicResource CardBackground}" VerticalAlignment="Center">
+                              <Border.Style>
+                                <Style TargetType="Border">
+                                  <Setter Property="Visibility" Value="Collapsed"/>
+                                  <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasStatusBadge}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+                                    <DataTrigger Binding="{Binding Attached}" Value="True"><Setter Property="Background" Value="#1E107C10"/><Setter Property="BorderBrush" Value="#88107C10"/></DataTrigger>
+                                    <DataTrigger Binding="{Binding IsErrorState}" Value="True"><Setter Property="Background" Value="#1ED13438"/><Setter Property="BorderBrush" Value="#88D13438"/></DataTrigger>
+                                    <DataTrigger Binding="{Binding IsPendingState}" Value="True"><Setter Property="Background" Value="#1E0078D4"/><Setter Property="BorderBrush" Value="#880078D4"/></DataTrigger>
+                                  </Style.Triggers>
+                                </Style>
+                              </Border.Style>
+                              <TextBlock Text="{Binding StatusBadgeText}" FontSize="11.5" FontWeight="SemiBold"/>
+                            </Border>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding CleanErrorText}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" Opacity="0.9">
+                              <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                  <Setter Property="Visibility" Value="Collapsed"/>
+                                  <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasError}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+                                  </Style.Triggers>
+                                </Style>
+                              </TextBlock.Style>
+                            </TextBlock>
+                          </Grid>
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
                     </ListBox>
-                    <TextBlock x:Name="UsbSelectionHint" Style="{StaticResource MutedText}" Margin="0,10,0,0" Text="{local:Loc &apos;一覧を更新してから操作してください。&apos;}"/>
-                    <WrapPanel Margin="0,12,0,0">
+                    <TextBlock x:Name="UsbSelectionHint" Style="{StaticResource MutedText}" Margin="0,8,0,0" Text="{local:Loc &apos;一覧を更新してから操作してください。&apos;}"/>
+                    <WrapPanel Margin="0,8,0,0">
                       <Button x:Name="UsbAttachButton" Content="{local:Loc &apos;接続して自動接続に登録&apos;}" Click="AttachUsb" Tag="AttachUsb"/>
                       <Button x:Name="UsbDetachButton" Content="{local:Loc &apos;登録を解除して Windows に戻す&apos;}" Click="DetachUsb" Tag="DetachUsb"/>
+                      <Button x:Name="UsbResetButton" Content="{local:Loc &apos;復元エラーをリセット…&apos;}" Click="ResetIphoneUsb" Tag="ResetIphoneUsb" Visibility="Collapsed"/>
                     </WrapPanel>
                     <TextBlock Text="{local:Loc &apos;転送方式（変更は次回起動時）&apos;}" Style="{StaticResource FieldLabel}"/>
                     <ComboBox x:Name="UsbBackend" SelectedIndex="0" AutomationProperties.Name="{local:Loc &apos;USB 転送方式&apos;}">
                       <ComboBoxItem>WinUSB（iPhone は一時切替、その他は対応ドライバーが必要）</ComboBoxItem>
                       <ComboBoxItem>UsbDk（汎用転送・ドライバー導入後）</ComboBoxItem>
                     </ComboBox>
-                    <TextBlock x:Name="UsbBackendHint" Style="{StaticResource MutedText}" Margin="0,8,0,12"/>
+                    <TextBlock x:Name="UsbBackendHint" Style="{StaticResource MutedText}" Margin="0,6,0,8"/>
                     <TextBlock x:Name="UsbHint" Style="{StaticResource MutedText}" Text="{local:Loc &apos;「デバイス一覧を更新」で、この VM の USB 登録と接続状態を確認します。&apos;}"/>
                   </StackPanel>
                   <StackPanel x:Name="AudioPage" Visibility="Collapsed">

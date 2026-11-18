@@ -150,7 +150,8 @@ public partial class MainWindow
             _ => ""
         };
 
-        bool requiresStopped = Tabs.SelectedIndex is 1 or 3 or 4 or 7;
+        bool liveSettingsSubpage = loadedHardware && currentState == "running" && Tabs.SelectedIndex == 1 && hardwareCategory is 5 or 7;
+        bool requiresStopped = Tabs.SelectedIndex is 1 or 3 or 4 or 7 && !liveSettingsSubpage;
         bool showState = SettingsOpen && (!HasEngine || currentState == "unknown" ||
             requiresStopped && (currentState != "stopped" || Tabs.SelectedIndex == 1 && !loadedHardware));
         SettingsStateNotice.Visibility = showState ? Visibility.Visible : Visibility.Collapsed;

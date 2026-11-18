@@ -204,6 +204,26 @@ public partial class MainWindow
         } catch (Exception error) { ShowError(error.Message); }
     }
 
+    private async void RemoveVmFromLibrary(object sender, RoutedEventArgs e)
+    {
+        if (IsUiBusy || selectedEntry is not { } entry) return;
+        if (currentState is not ("stopped" or "unprepared" or "unknown")) {
+            ShowError(UiText.T("実行中または一時停止中の VM は一覧から削除できません。先に完全終了してください。"));
+            return;
+        }
+        if (!DiscardPendingChanges()) return;
+        if (!Confirm(UiText.Format($"「{entry.Name}」をライブラリの一覧から削除しますか？\n（VM フォルダーや仮想ディスクなどのファイルは削除しません）")))
+            return;
+        settings.VirtualMachines = settings.VirtualMachines
+            .Where(path => !string.Equals(path, entry.File, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (string.Equals(settings.SelectedVm, entry.File, StringComparison.OrdinalIgnoreCase))
+            settings.SelectedVm = "";
+        SavePreferences();
+        LoadLibrary();
+        await RefreshState();
+    }
+
     private void ShowPowerMenu(object sender, RoutedEventArgs e)
     {
         var menu = ((Button)sender).ContextMenu;

@@ -66,7 +66,7 @@ public partial class MainWindow
     {
         if (closing || ErrorNotice is null) return;
         ExitFullScreen();
-        ErrorNotice.Text = message;
+        ErrorNotice.Text = Services.BackendErrorFormatter.CleanMessage(message);
         Feedback.Visibility = Visibility.Visible;
     }
 

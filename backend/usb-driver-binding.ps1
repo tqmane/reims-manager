@@ -328,16 +328,45 @@ function Test-ReimsUsbDriverBindingRecovery($Current,$Receipt) {
     return $false
 }
 
+function Test-ReimsUsbDriverBindingSameProviderReplacement($Actual,$Original) {
+    if(!$Actual -or !$Original -or !$Actual.Present -or !$Original.Present) { return $false }
+    if(($Actual['ReadState'] -and $Actual['ReadState'] -cne 'bound') -or $Actual.Problem -ne 0) { return $false }
+    if([string]::IsNullOrWhiteSpace($Actual.Service) -or $Actual.Service -ieq 'libusb0') { return $false }
+    if($Actual.Provider -ine $Original.Provider) { return $false }
+    $sameService=$Actual.Service -ieq $Original.Service -and $Actual.ClassGuid -ieq $Original.ClassGuid
+    $appleService=$Actual.Provider -ieq 'Apple, Inc.' -and
+        $Actual.Service -iin @('usbccgp','USBAAPL64','usbaapl') -and
+        $Original.Service -iin @('usbccgp','USBAAPL64','usbaapl')
+    $sameService -or $appleService
+}
+
 function Restore-ReimsUsbDriverBindingCore([string]$Id,[string]$ReceiptPath,$Receipt,$Operations) {
     $current=& $Operations.Read $Id
-    if($Receipt.phase -eq 'restored' -and !(Test-ReimsUsbDriverBindingModel $current $Receipt.original)) { throw 'Completed receipt no longer owns this driver binding.' }
+    if($Receipt.phase -eq 'restored') {
+        if(Test-ReimsUsbDriverBindingModel $current $Receipt.original) {
+            return @{state='restored';needs_reboot=$false;restored=$true;verified_model=$Receipt.original}
+        }
+        if(Test-ReimsUsbDriverBindingSameProviderReplacement $current $Receipt.original) {
+            return @{state='restored';needs_reboot=$false;restored=$true;verified_model=$current}
+        }
+        throw 'Completed receipt no longer owns this driver binding.'
+    }
     if(!$current.Present) {
         $Receipt.phase='restore-pending'; Write-ReimsUsbDriverBindingReceipt $ReceiptPath $Receipt
         return @{state='restore-pending';needs_reboot=[bool]$Receipt.needs_reboot;restored=$false}
     }
     if((Test-ReimsUsbDriverBindingModel $current $Receipt.original) -and $current.Problem -eq 0 -and !$Receipt.needs_reboot) {
         $Receipt.phase='restored'; Write-ReimsUsbDriverBindingReceipt $ReceiptPath $Receipt
-        return @{state='restored';needs_reboot=$false;restored=$true}
+        return @{state='restored';needs_reboot=$false;restored=$true;verified_model=$Receipt.original}
+    }
+    $updatedOriginal=$Receipt.mutation_attempted -and (Test-ReimsUsbDriverBindingSameProviderReplacement $current $Receipt.original)
+    if($updatedOriginal) {
+        if($Receipt.needs_reboot) {
+            $Receipt.phase='restore-reboot-required'; Write-ReimsUsbDriverBindingReceipt $ReceiptPath $Receipt
+            return @{state=$Receipt.phase;needs_reboot=$true;restored=$false;verified_model=$current}
+        }
+        $Receipt.phase='restored'; Write-ReimsUsbDriverBindingReceipt $ReceiptPath $Receipt
+        return @{state='restored';needs_reboot=$false;restored=$true;verified_model=$current}
     }
     $partial=(Test-ReimsUsbDriverBindingModel $current $Receipt.original -IgnoreClass) -and $current.ClassGuid -ieq $Receipt.target.ClassGuid
     $unbound=Test-ReimsUsbDriverBindingRecovery $current $Receipt
@@ -349,12 +378,12 @@ function Restore-ReimsUsbDriverBindingCore([string]$Id,[string]$ReceiptPath,$Rec
     $Receipt.needs_reboot=[bool]$Receipt.needs_reboot -or [bool]$reboot
     if($Receipt.needs_reboot) {
         $Receipt.phase='restore-reboot-required'; Write-ReimsUsbDriverBindingReceipt $ReceiptPath $Receipt
-        return @{state=$Receipt.phase;needs_reboot=$true;restored=$false}
+        return @{state=$Receipt.phase;needs_reboot=$true;restored=$false;verified_model=$Receipt.original}
     }
     $restored=& $Operations.Read $Id
     if(!(Test-ReimsUsbDriverBindingModel $restored $Receipt.original) -or $restored.Problem -ne 0) { throw 'Exact original driver restoration was not confirmed healthy.' }
     $Receipt.phase='restored'; Write-ReimsUsbDriverBindingReceipt $ReceiptPath $Receipt
-    @{state='restored';needs_reboot=$false;restored=$true}
+    @{state='restored';needs_reboot=$false;restored=$true;verified_model=$Receipt.original}
 }
 
 function Set-ReimsUsbDriverBinding {

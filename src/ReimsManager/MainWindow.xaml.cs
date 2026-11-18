@@ -43,7 +43,7 @@ public partial class MainWindow : Window
         if (warning is not null) ShowError(warning);
         Loaded += async (_,_) => { if (!selfTest) { LoadLibrary(); await RefreshState(); timer.Start(); } };
         timer.Tick += async (_,_) => { if (!busy) await RefreshState(false); };
-        Closed += (_,_) => { timer.Stop(); clipboardTimer.Stop(); clipboardCancel.Cancel(); statusCancellation.Cancel(); ConsoleView.Detach(); };
+        Closed += (_,_) => { timer.Stop(); clipboardTimer.Stop(); usbLivePollTimer?.Stop(); clipboardCancel.Cancel(); statusCancellation.Cancel(); ConsoleView.Detach(); };
     }
 
     private async Task<string> Execute(string action, string[] arguments, bool elevate = false, string? input = null, CancellationToken cancellation = default)
@@ -61,47 +61,14 @@ public partial class MainWindow : Window
         if (!HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx" or "InstallUsbDk" or "InstallTap" or "CreateBridge"))
             throw new InvalidOperationException(UiText.T("操作する仮想マシンを選択してください。"));
         string root = Path.GetFullPath(Root.Text);
-        string backend = Path.Combine(AppContext.BaseDirectory,"scripts/manager-backend.ps1");
-        if (!File.Exists(backend)) backend = Path.Combine(root,"scripts/windows/manager-backend.ps1");
-        if (!File.Exists(backend)) throw new Exception(UiText.T("管理スクリプトが見つかりません。Reims のプロジェクトを選択してください。"));
-        string pwsh = Path.Combine(AppContext.BaseDirectory,"runtimes/pwsh/pwsh.exe");
-        if (!File.Exists(pwsh)) pwsh = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"PowerShell/7/pwsh.exe");
-        if (!File.Exists(pwsh)) throw new Exception(UiText.T("PowerShell 7 をインストールしてください。"));
-        var info = new ProcessStartInfo(pwsh) { UseShellExecute=elevate, CreateNoWindow=true, WorkingDirectory=root };
-        foreach (string arg in new[] {"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",backend,"-Root",root,"-Action",action}.Concat(arguments)) info.ArgumentList.Add(arg);
-        if (HasVm && action is not ("GetPrerequisites" or "GetNetworkUplinks" or "EnableWhpx")) { info.ArgumentList.Add("-VmDirectory"); info.ArgumentList.Add(VmDirectory); }
-        info.ArgumentList.Add("-Qemu"); info.ArgumentList.Add(settings.QemuExecutable);
-        info.ArgumentList.Add("-ToolsRoot"); info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"runtimes"));
-        if (input is not null) { info.RedirectStandardInput=true; info.StandardInputEncoding=new UTF8Encoding(false); }
-        if (elevate) { info.Verb="runas"; info.WindowStyle=ProcessWindowStyle.Hidden; }
-        else { info.RedirectStandardOutput=true; info.RedirectStandardError=true; info.StandardOutputEncoding=Encoding.UTF8; info.StandardErrorEncoding=Encoding.UTF8; }
-        bool readOnly = action is "Status" or "GetIdentity" or "ListUsb" or "GetPrerequisites" or "GetNetworkUplinks";
-        string? usbResultPath = null;
-        try {
-            if (action == "InstallUsbDk") {
-                // An elevated helper cannot return stdout and may run as another user.
-                // Give it a unique, caller-owned receipt instead of guessing its profile.
-                string support = Path.Combine(ManagerSettings.DataDirectory, "support");
-                Directory.CreateDirectory(support);
-                usbResultPath = Path.Combine(support, $"usb-install-{Guid.NewGuid():N}.json");
-                using (File.Open(usbResultPath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
-                info.ArgumentList.Add("-UsbResultPath"); info.ArgumentList.Add(usbResultPath);
-            }
-            string output = await BackendCommand.Run(info, input, readOnly, readOnly ? cancellation : CancellationToken.None);
-            if (usbResultPath is not null) {
-                usbDriverInstallResult = UsbDriverInstallResult.Read(usbResultPath);
-                usbDriverRestartPending |= usbDriverInstallResult.RestartRequired;
-                return usbDriverInstallResult.ToJson();
-            }
-            return output;
-        } finally {
-            if (usbResultPath is not null) {
-                try { File.Delete(usbResultPath); }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException) {
-                    AppendLog(UiText.T("UsbDk の一時結果ファイルを削除できませんでした: ") + error.Message + "\n");
-                }
-            }
+        string output = await Services.ActionRouter.ExecuteAsync(
+            action, arguments, root, VmDirectory, HasVm, settings.QemuExecutable, elevate, input,
+            warning => AppendLog(warning), cancellation);
+        if (action == "InstallUsbDk") {
+            usbDriverInstallResult = UsbDriverInstallResult.Parse(output);
+            usbDriverRestartPending |= usbDriverInstallResult.RestartRequired;
         }
+        return output;
     }
 
     private async Task<bool> Operate(string action, string[]? args = null, bool elevate = false, string? input = null)
@@ -135,7 +102,7 @@ public partial class MainWindow : Window
         finally {
             if (action == "RemoveBridge") loadedHardware = false;
             if (action is "PrepareWifi" or "DisableWifi") networkDraftRefreshPending = true;
-            busy = false; completingOperation = true; currentState = "unknown";
+            busy = false; completingOperation = true;
             OperationProgress.Visibility = Visibility.Collapsed; UpdatePowerControls();
         }
         // Keep the selected VM and staged forms stable until the final status read
@@ -405,7 +372,6 @@ public partial class MainWindow : Window
     }
     private async void RestoreSnapshot(object sender,RoutedEventArgs e) { if (RequireAction("SnapshotRestore") && Snapshots.SelectedIndex >= 0 && Confirm(UiText.T("選択したスナップショットに切り替えます。現在のディスクも保持します。"))) await Operate("SnapshotRestore",["-Name",Selected(Snapshots)]); }
     private async void ForceExit(object sender,RoutedEventArgs e) { if (RequireAction("ForceExit") && Confirm(UiText.T("未保存の macOS 作業を失います。強制終了しますか？"))) await Operate("ForceExit"); }
-    private async void SaveHardware(object sender,RoutedEventArgs e) => await SaveHardwareCore();
     private string[] HardwareArguments() {
         var args=new List<string> {"-Cpus",Cpus.Text.Trim(),"-MemoryMiB",Memory.Text.Trim(),"-Resolution",Selected(Resolution),"-Iso",HardwareIsoPath.Text.Trim(),"-Audio",Sound.IsChecked==true?"dsound":"none"};
         if (!NetworkDraftChanged) args.Add("-PreserveNetwork");
@@ -428,14 +394,6 @@ public partial class MainWindow : Window
             ShowSettingsSaved(UiText.T("ハードウェア設定を保存しました。次回起動から使用します。"));
         }
         return saved;
-    }
-    private async void ReloadHardware(object sender,RoutedEventArgs e) {
-        if (!DiscardPendingChanges()) return;
-        long version = contextVersion;
-        bool wasDirty = hardwareDirty;
-        hardwareDirty=false; loadedHardware=false; await RefreshState();
-        // A failed reload must not make the still-visible edits appear saved.
-        if (version == contextVersion && !loadedHardware) { hardwareDirty = wasDirty; UpdatePowerControls(); }
     }
     private async void ExpandDisk(object sender,RoutedEventArgs e) {
         if (!RequireAction("ExpandDisk")) return;

@@ -42,7 +42,9 @@ internal static class GuestClipboard
             ?? throw new InvalidOperationException(UiText.T("設定された TAP インターフェースを確認できません。"));
         int index = adapter.GetIPProperties().GetIPv6Properties()?.Index ?? 0;
         if (index <= 0) throw new InvalidOperationException(UiText.T("設定された TAP の IPv6 インターフェース番号を確認できません。"));
-        return SelectScopedHost(host, await ResolveAddresses(ResolverStartInfo(), host, cancellation), index);
+        if (!Regex.IsMatch(host, "^[A-Za-z0-9][A-Za-z0-9.:-]*$")) throw new ArgumentException("Invalid guest hostname.");
+        var addresses = await Dns.GetHostAddressesAsync(host, cancellation);
+        return SelectScopedHost(host, addresses, index);
     }
 
     internal static ProcessStartInfo ResolverStartInfo()

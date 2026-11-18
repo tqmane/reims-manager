@@ -1,5 +1,5 @@
-# No device/driver operation runs when dot-sourced.
-param([string]$InputPath,[string]$InputHash,[string]$SessionId,[switch]$StopSession,[string]$CallerSid)
+﻿# No device/driver operation runs when dot-sourced.
+param([string]$InputPath,[string]$InputHash,[string]$SessionId,[switch]$StopSession,[switch]$ResetSession,[string]$CallerSid)
 . "$PSScriptRoot/iphone-usb-package.ps1"
 
 function Get-ReimsIphoneUsbSessionRoot([string]$Session) {
@@ -105,9 +105,15 @@ function Restore-ReimsIphoneUsbLeases([string]$Root) {
         if($file.BaseName -cne (Get-ReimsIphoneUsbId $receipt.instance_id)){throw 'Foreign iPhone receipt filename.'}
         if($receipt.phase -ceq 'restored' -and $receipt.ContainsKey('live_verification')){continue}
         $result=Restore-ReimsUsbDriverBinding -InstanceId $receipt.instance_id -ReceiptPath $file.FullName
-        if(($result.restored -or $result.state -ceq 'restore-reboot-required') -and (Test-ReimsIphoneUsbLiveModel $receipt.instance_id $receipt.original)) {
+        $verifiedModel=if($result.ContainsKey('verified_model') -and $result.verified_model){$result.verified_model}else{$receipt.original}
+        if(($result.restored -or $result.state -ceq 'restore-reboot-required') -and (Test-ReimsIphoneUsbLiveModel $receipt.instance_id $verifiedModel)) {
             $receipt=Read-ReimsUsbDriverBindingReceipt $file.FullName
-            $receipt.phase='restored';$receipt.live_verification=@{original_model=$true;problem=0;service_stack=$receipt.original.Service;verified_utc=[DateTime]::UtcNow.ToString('o')}
+            $receipt.phase='restored'
+            $receipt.live_verification=@{
+                original_model=(Test-ReimsUsbDriverBindingModel $verifiedModel $receipt.original)
+                updated_original=!(Test-ReimsUsbDriverBindingModel $verifiedModel $receipt.original)
+                problem=0;service_stack=$verifiedModel.Service;verified_utc=[DateTime]::UtcNow.ToString('o')
+            }
             Write-ReimsUsbDriverBindingReceipt $file.FullName $receipt
         } else {
             $complete=$false
@@ -187,6 +193,11 @@ function Invoke-ReimsIphoneUsbSession($Snapshot,[string]$Root,[switch]$RestoreOn
                             if(!$actual.Present){continue}
                             if((Test-ReimsUsbDriverBindingModel $actual $receipt.target) -or (Test-ReimsUsbDriverBindingModel $actual $receipt.original) -or
                                 (Test-ReimsUsbDriverBindingRecovery $actual $receipt)){$matches+=@{instance=$id;receipt=$receipt;path=$receiptPath};continue}
+                            if((Test-ReimsUsbDriverBindingSameProviderReplacement $actual $receipt.original) -and !$receipt.needs_reboot) {
+                                $null=Restore-ReimsUsbDriverBinding -InstanceId $id -ReceiptPath $receiptPath
+                                $receipt=Read-ReimsUsbDriverBindingReceipt $receiptPath
+                                $matches+=@{instance=$id;receipt=$receipt;path=$receiptPath};continue
+                            }
                             try{Write-ReimsIphoneUsbSessionJson (Join-Path $Root 'private/driver-state-failure.json') @{instance=$id;actual=$actual;original=$receipt.original;target=$receipt.target;phase=$receipt.phase;utc=[DateTime]::UtcNow.ToString('o')}}catch{}
                             throw 'An owned iPhone mode now has a foreign driver; restoration authority was retained.'
                         }
@@ -237,6 +248,7 @@ function Invoke-ReimsIphoneUsbSession($Snapshot,[string]$Root,[switch]$RestoreOn
                 $errorText=$_.Exception.Message;$stopping=$true
                 if($lease.qmp_instance -and $alive){$waitExit=$true}
                 Publish-ReimsIphoneUsbStatus $Snapshot $Root $(if($waitExit){'qmp-wait-exit'}else{'error'}) '' $errorText
+                if(!$waitExit -and $errorText -match 'foreign|pinned signed driver model|never changed|No matching original'){return}
             }
             Start-Sleep -Seconds 2
         }
@@ -257,16 +269,51 @@ function Import-ReimsIphoneUsbQmpFunctions {
     }
 }
 
-function Start-ReimsIphoneUsbSessionWorker([string]$SnapshotPath,[string]$Hash,[string]$Session,[switch]$Stop,[string]$Sid) {
+function Reset-ReimsIphoneUsbSession($Snapshot,[string]$Root) {
+    $mutex=[Threading.Mutex]::new($false,"Global\ReimsManager.IphoneUsb.$($Snapshot.profile.ecid)");$held=$false
+    try {
+        try{$held=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$held=$true}
+        if(!$held){throw 'この iPhone は別の接続セッションが使用中です。'}
+        $leasePath=Join-Path $Root 'private/leases.json'
+        $lease=if(Test-Path -LiteralPath $leasePath){Read-ReimsIphoneUsbSessionJson $leasePath}else{@{qmp_instance='';qmp_arrival=0L;instances=@{}}}
+        if($lease.qmp_instance -and (Get-ReimsVmProcess $Snapshot.runtime)) {
+            $objects=Invoke-ReimsQmp $Snapshot.runtime 'qom-list' @{path='/machine/peripheral'}
+            if($objects | Where-Object name -CEQ $Snapshot.profile.id) {
+                Remove-ReimsUsbObject $Snapshot.runtime $Snapshot.profile.id
+            }
+            $lease.qmp_instance='';$lease.qmp_arrival=0L;Write-ReimsIphoneUsbSessionJson $leasePath $lease
+        }
+        $operations=Get-ReimsUsbDriverBindingOperations
+        foreach($file in Get-ChildItem -LiteralPath (Join-Path $Root 'private/receipts') -Filter '*.json' -File) {
+            $receipt=Read-ReimsUsbDriverBindingReceipt $file.FullName
+            if($file.BaseName -cne (Get-ReimsIphoneUsbId $receipt.instance_id)){throw 'Foreign iPhone receipt filename.'}
+            if($receipt.phase -ceq 'restored'){continue}
+            $current=& $operations.Read $receipt.instance_id
+            if($current.Present -and $current.Service -ieq 'libusb0') {
+                [void](Restore-ReimsUsbDriverBinding -InstanceId $receipt.instance_id -ReceiptPath $file.FullName)
+                $after=& $operations.Read $receipt.instance_id
+                if($after.Present -and $after.Service -ieq 'libusb0') {
+                    throw 'iPhone がまだ仮想化用ドライバー (libusb0) に接続されているためリセットできません。先に「切断」で元ドライバーを復元してください。'
+                }
+            }
+            $receipt=Read-ReimsUsbDriverBindingReceipt $file.FullName
+            $receipt.phase='restored'
+            Write-ReimsUsbDriverBindingReceipt $file.FullName $receipt
+        }
+        Publish-ReimsIphoneUsbStatus $Snapshot $Root 'restored' '' ''
+    } finally {if($held){$mutex.ReleaseMutex()};$mutex.Dispose()}
+}
+
+function Start-ReimsIphoneUsbSessionWorker([string]$SnapshotPath,[string]$Hash,[string]$Session,[switch]$Stop,[switch]$Reset,[string]$Sid) {
     if(!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Administrator required.'}
     . "$PSScriptRoot/iphone-usb-package.ps1"
     . "$PSScriptRoot/iphone-usb.ps1"
     . "$PSScriptRoot/usb.ps1"
     Import-ReimsIphoneUsbQmpFunctions
     $root=Get-ReimsIphoneUsbSessionRoot $Session
-    if($Stop) {
-        # shortcut: after Windows restarts, explicit Detach resumes this protected
-        # recovery ledger; no system service or automatic elevated startup is installed.
+    if($Stop -or $Reset) {
+        # shortcut: after Windows restarts, explicit Detach/Reset resumes or cleans this
+        # protected recovery ledger; no system service or automatic elevated startup is installed.
         Assert-ReimsIphoneUsbSessionRoot $root $Sid
         $snapshot=Read-ReimsIphoneUsbSessionJson (Join-Path $root 'private/snapshot.json')
         if($snapshot.caller_sid -cne $Sid -or $snapshot.profile.session_id -cne $Session){throw 'Foreign iPhone stop session.'}
@@ -293,14 +340,15 @@ function Start-ReimsIphoneUsbSessionWorker([string]$SnapshotPath,[string]$Hash,[
     $env:XDG_CACHE_HOME=Join-Path $temporaryRoot 'private/cache';$env:DOTNET_CLI_HOME=Join-Path $env:XDG_CACHE_HOME 'dotnet-home'
     $env:NUGET_PACKAGES=Join-Path $env:XDG_CACHE_HOME 'nuget';$env:NUGET_HTTP_CACHE_PATH=Join-Path $env:XDG_CACHE_HOME 'nuget-http'
     [void][IO.Directory]::CreateDirectory($env:TEMP)
-    if($Stop) {
+    if($Stop -or $Reset) {
         $statusPath=Join-Path $root 'status.json'
         if(Test-Path -LiteralPath $statusPath){$status=Read-ReimsIphoneUsbSessionJson $statusPath;if(Get-ReimsVmProcess $status){return}}
     }
+    if($Reset) { Reset-ReimsIphoneUsbSession $snapshot $root; return }
     Invoke-ReimsIphoneUsbSession $snapshot $root -RestoreOnly:$Stop
 }
 
 if($MyInvocation.InvocationName -ne '.') {
     $ErrorActionPreference='Stop'
-    Start-ReimsIphoneUsbSessionWorker $InputPath $InputHash $SessionId -Stop:$StopSession -Sid $CallerSid
+    Start-ReimsIphoneUsbSessionWorker $InputPath $InputHash $SessionId -Stop:$StopSession -Reset:$ResetSession -Sid $CallerSid
 }

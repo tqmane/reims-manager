@@ -83,6 +83,13 @@ public partial class MainWindow
                 }
                 return Task.FromResult("Fixture: USB operation committed.");
             }
+            if (action == "ResetIphoneUsb") {
+                var selected = (UsbEntry)UsbDevices.SelectedItem;
+                rows = rows.Select(x => x.Id == selected.Id
+                    ? x with { Selected = false, Active = false, Attached = false, ErrorText = "", Label = "iPhone (12a8)" }
+                    : x).ToArray();
+                return Task.FromResult("Fixture: iPhone reset committed.");
+            }
             throw new Exception("Unexpected USB fixture action: " + action);
         };
         machines.Add(second); UpdateLibraryView();
@@ -198,6 +205,29 @@ public partial class MainWindow
                 throw new Exception("An in-flight USB response leaked across the VM selection boundary.");
             await CheckUsbAutoRefresh(entry, second, Status);
             await CheckUsbDriverOnboarding(folder);
+
+            // Verify iPhone stuck-restore visibility, error formatting, and reset recovery button.
+            controlFixtureBackend = action => {
+                if (action == "ListUsb") return Task.FromResult(Inventory([
+                    new UsbEntry("hostusb-1-5-1234abcd", "USB audio", true, false, false, false),
+                    new UsbEntry("hostiphone-deadbeef", "iPhone (12a8) ［元ドライバーの復元待ち］", true, true, false, false, "Current driver is foreign to this receipt; refusing to overwrite it.")
+                ]));
+                if (action == "Status") return Task.FromResult(Status());
+                if (action == "ResetIphoneUsb") return Task.FromResult("Fixture: reset done.");
+                if (action == "GetNetworkUplinks") return Task.FromResult("{\"schema\":1,\"uplinks\":[],\"tap_adapters\":[]}");
+                throw new Exception("Unexpected iPhone reset fixture action: " + action);
+            };
+            Library.SelectedItem = entry; currentState = fixtureState = "running";
+            Tabs.SelectedIndex = 1; Devices.SelectedIndex = 5;
+            if (!await RefreshUsbCore()) throw new Exception("Failed to refresh iPhone reset fixture.");
+            Select("hostusb-1-5-1234abcd");
+            if (UsbResetButton.Visibility != Visibility.Collapsed) throw new Exception("Generic USB device showed iPhone reset button.");
+            Select("hostiphone-deadbeef");
+            if (UsbResetButton.Visibility != Visibility.Visible || !UsbResetButton.IsEnabled)
+                throw new Exception("Stuck iPhone restore entry did not expose an enabled reset recovery button.");
+            if (!UsbSelectionHint.Text.Contains("リセット", StringComparison.Ordinal))
+                throw new Exception("Foreign driver diagnostic was not shown clearly in selection hint.");
+            if (!await ResetIphoneUsbCore()) throw new Exception("ResetIphoneUsbCore did not invoke ResetIphoneUsb.");
             File.WriteAllText(Path.Combine(folder, "usb-workflow-result.json"), JsonSerializer.Serialize(new {
                 selection_capabilities = true, actual_attachment_state = true, failed_watcher_reconnect = true,
                 disconnected_registration_removed = true, orphan_watcher_release = true, selection_preserved = true,

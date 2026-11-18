@@ -2147,4 +2147,16 @@ Windows LAN may briefly disconnect and its IP address may change. Create the bri
   <data name="［自動接続・接続待ち］" xml:space="preserve">
     <value>[Automatic connection; waiting]</value>
   </data>
+  <data name="復元エラーをリセット…" xml:space="preserve">
+    <value>Reset restore error…</value>
+  </data>
+  <data name="iPhone 復元エラーをリセット" xml:space="preserve">
+    <value>Reset iPhone restore error</value>
+  </data>
+  <data name="ライブラリから登録解除…" xml:space="preserve">
+    <value>Remove from library…</value>
+  </data>
+  <data name="現在のドライバーが保存済みレシートと一致しないため自動上書きを中止しました。「登録を解除して Windows に戻す」または「復元エラーをリセット」で復旧できます。" xml:space="preserve">
+    <value>The current driver no longer matches the saved receipt, so overwriting was skipped. Use "Remove registration and return to Windows" or "Reset restore error" to recover.</value>
+  </data>
 </root>

@@ -145,20 +145,86 @@ public partial class MainWindow
     private sealed record UsbEntry(string Id, string Label, bool Present, bool Selected, bool Active, bool Attached, string ErrorText = "")
     {
         public string DisplayLabel => UiText.UsbLabel(Label);
+        public bool IsAppleDevice => Id.StartsWith("hostiphone-", StringComparison.Ordinal);
+        public string DeviceGlyph => IsAppleDevice ? "\uE8EA" : "\uECF0";
+        public string CleanErrorText => Services.BackendErrorFormatter.CleanMessage(ErrorText);
+        public bool HasError => !string.IsNullOrWhiteSpace(ErrorText);
+        public string StatusBadgeText {
+            get {
+                var match = System.Text.RegularExpressions.Regex.Match(DisplayLabel, @"(?:［([^］]+)］|\[([^\]]+)\])$");
+                if (!match.Success) return "";
+                return match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value;
+            }
+        }
+        public string TitleText => System.Text.RegularExpressions.Regex.Replace(DisplayLabel, @"\s*(?:［[^］]+］|\[[^\]]+\])$", "").Trim();
+        public bool HasStatusBadge => StatusBadgeText.Length > 0;
+        public bool IsErrorState => HasError || Label.Contains("エラー", StringComparison.Ordinal) || Label.Contains("復元待ち", StringComparison.Ordinal) || Label.Contains("確認が必要", StringComparison.Ordinal);
+        public bool IsPendingState => !Attached && !IsErrorState && (Selected || Active);
+        public bool CanResetIphone => IsAppleDevice && !Attached && (HasError || Label.Contains("復元待ち", StringComparison.Ordinal) || Label.Contains("エラー", StringComparison.Ordinal) || Label.Contains("確認が必要", StringComparison.Ordinal) || Label.Contains("完全終了後", StringComparison.Ordinal));
     }
     private long usbRequestVersion, usbInventoryContext = -1;
     private long usbAutoRefreshAttemptContext = -1;
-    private bool refreshingUsb, usbDriverRestartPending;
+    private bool refreshingUsb, usbDriverRestartPending, usbLivePollBusy;
     private bool usbAutoRefreshQueued;
     private Task usbAutoRefreshTask = Task.CompletedTask;
+    private DispatcherTimer? usbLivePollTimer;
 
     private void ResetUsbInventory()
     {
+        usbLivePollTimer?.Stop();
         usbRequestVersion++;
         usbInventoryContext = -1; refreshingUsb = false;
         usbAutoRefreshAttemptContext = -1;
         UsbDevices.ItemsSource = null;
         UsbHint.Text = UiText.T("「デバイス一覧を更新」で、この VM の USB 登録と接続状態を確認します。");
+    }
+
+    private void EnsureUsbLivePoll()
+    {
+        if (selfTest || closing || UsbPage is null || !UsbPage.IsVisible || usbInventoryContext != contextVersion || IsUiBusy || refreshingUsb) {
+            usbLivePollTimer?.Stop();
+            return;
+        }
+        bool hasLiveApple = UsbDevices.ItemsSource is IEnumerable<UsbEntry> entries &&
+            entries.Any(e => e.IsAppleDevice && (e.Active || e.Selected || e.HasError || e.CanResetIphone));
+        if (!hasLiveApple) {
+            usbLivePollTimer?.Stop();
+            return;
+        }
+        if (usbLivePollTimer is null) {
+            usbLivePollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+            usbLivePollTimer.Tick += async (_, _) => await PollAppleUsbAsync();
+        }
+        if (!usbLivePollTimer.IsEnabled) usbLivePollTimer.Start();
+    }
+
+    private async Task PollAppleUsbAsync()
+    {
+        if (usbLivePollBusy || selfTest || closing || IsUiBusy || refreshingUsb || UsbPage is null || !UsbPage.IsVisible || usbInventoryContext != contextVersion || !HasEngine || !HasVm)
+            return;
+        usbLivePollBusy = true;
+        long version = contextVersion;
+        string? selectedId = (UsbDevices.SelectedItem as UsbEntry)?.Id;
+        try {
+            string root = System.IO.Path.GetFullPath(Root.Text);
+            string json = await Services.NativeUsbService.ListAppleUsbRowsJsonAsync(root, VmDirectory, statusCancellation.Token);
+            if (version != contextVersion || closing || IsUiBusy || refreshingUsb || usbInventoryContext != contextVersion) return;
+            using var doc = JsonDocument.Parse(json);
+            var updatedApple = doc.RootElement.EnumerateArray().Select(ParseUsbJsonEntry).ToArray();
+            var existing = (UsbDevices.ItemsSource as IEnumerable<UsbEntry>)?.ToArray() ?? [];
+            var existingNonApple = existing.Where(e => !e.IsAppleDevice).ToArray();
+            var oldApple = existing.Where(e => e.IsAppleDevice).ToArray();
+            if (oldApple.SequenceEqual(updatedApple)) { EnsureUsbLivePoll(); return; }
+            var merged = existingNonApple.Concat(updatedApple).ToArray();
+            UsbDevices.ItemsSource = merged;
+            UsbDevices.SelectedItem = merged.FirstOrDefault(x => x.Id == selectedId);
+            UpdateUsbControls();
+            EnsureUsbLivePoll();
+        } catch {
+            // Keep transient poll quiet; manual RefreshUsb shows errors if needed.
+        } finally {
+            usbLivePollBusy = false;
+        }
     }
 
     private void UpdateUsbControls()
@@ -167,23 +233,29 @@ public partial class MainWindow
         bool current = usbInventoryContext == contextVersion;
         bool available = current && !refreshingUsb && !IsUiBusy;
         var selected = UsbDevices.SelectedItem as UsbEntry;
-        bool iphonePending = selected is { Active: true, Attached: false } && selected.Id.StartsWith("hostiphone-", StringComparison.Ordinal);
+        bool iphonePending = selected is { Active: true, Attached: false, IsAppleDevice: true };
         UsbRefreshButton.IsEnabled = !IsUiBusy && !refreshingUsb && CanOperate("ListUsb");
         InstallUsbDkButton.IsEnabled = !IsUiBusy && !refreshingUsb && CanOperate("InstallUsbDk");
         UsbDevices.IsEnabled = available;
         UsbAttachButton.IsEnabled = available && !iphonePending && CanOperate("AttachUsb") && selected is { Present: true, Attached: false };
         UsbDetachButton.IsEnabled = available && CanOperate("DetachUsb") && selected is not null && (selected.Selected || selected.Active);
+        if (UsbResetButton is not null) {
+            bool showReset = selected is { CanResetIphone: true };
+            UsbResetButton.Visibility = showReset ? Visibility.Visible : Visibility.Collapsed;
+            UsbResetButton.IsEnabled = available && showReset && CanOperate("ResetIphoneUsb");
+        }
         UsbAttachButton.Content = iphonePending ? UiText.T("接続処理中") : selected is { Selected: true } or { Active: true } ? UiText.T("再接続") : UiText.T("接続して自動接続に登録");
         UsbSelectionHint.Text = refreshingUsb ? UiText.T("USB の一覧を確認しています…") : !current
             ? UiText.T("一覧を更新してから操作してください。") : selected is null
                 ? UiText.T("操作する USB デバイスを一覧から選択してください。") : selected.Attached
                     ? UiText.T("VM に接続中です。解除すると自動接続の登録も削除します。") : selected.Selected || selected.Active
                         ? selected.Present ? UiText.T("接続待ちです。「再接続」で転送をやり直せます。") : UiText.T("この機器は接続待ちです。登録の解除は VM の停止中でもできます。")
-                        : selected.Id.StartsWith("hostiphone-", StringComparison.Ordinal)
+                        : selected.IsAppleDevice
                             ? UiText.T("iPhone は署名済みドライバーへ一時的に切り替えます。管理者確認後、再接続が必要な場合があります。解除時は元のドライバーへ戻します。")
                             : UiText.T("接続すると、この VM の次回起動時にも同じ USB ポートから自動接続します。");
         if (iphonePending) UsbSelectionHint.Text = UiText.T("iPhone の接続・復元処理中です。抜き差し待ちの場合は USB を再接続してください。やり直す場合は、一度切断してください。");
-        if (selected is { ErrorText.Length: > 0 }) UsbSelectionHint.Text += "\n" + selected.ErrorText;
+        if (selected is { CleanErrorText.Length: > 0 }) UsbSelectionHint.Text += "\n" + selected.CleanErrorText;
+        EnsureUsbLivePoll();
 
         string Mode(int index) => index == 1 ? "UsbDk" : "WinUSB";
         if (!loadedHardware || committedHardware is null) {
@@ -223,7 +295,11 @@ public partial class MainWindow
         }, DispatcherPriority.Background).Task.Unwrap();
     }
 
-    private void UsbPageVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e) => ScheduleUsbAutoRefresh();
+    private void UsbPageVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        ScheduleUsbAutoRefresh();
+        EnsureUsbLivePoll();
+    }
 
     private async void InstallUsbDk(object sender, RoutedEventArgs e) => await InstallUsbDkCore();
     private async Task<bool> InstallUsbDkCore()
@@ -247,6 +323,20 @@ public partial class MainWindow
         return true;
     }
 
+    private static UsbEntry ParseUsbJsonEntry(JsonElement x)
+    {
+        var entry = new UsbEntry(
+            x.GetProperty("id").GetString() ?? throw new JsonException(UiText.T("USB の識別情報がありません。")),
+            x.GetProperty("label").GetString() ?? UiText.T("USB デバイス"),
+            x.GetProperty("present").GetBoolean(),
+            x.GetProperty("selected").GetBoolean(),
+            x.TryGetProperty("active", out var active) && active.GetBoolean(),
+            x.TryGetProperty("attached", out var attached) && attached.GetBoolean(),
+            x.TryGetProperty("error", out var error) ? error.GetString() ?? "" : "");
+        if (entry.ErrorText.Length > 2048) throw new JsonException(UiText.T("USB エラー情報が長すぎます。"));
+        return entry;
+    }
+
     private async void RefreshUsb(object sender, RoutedEventArgs e) => await RefreshUsbCore();
     private async Task<bool> RefreshUsbCore()
     {
@@ -261,12 +351,7 @@ public partial class MainWindow
         try {
             using var list = JsonDocument.Parse(await Execute("ListUsb", [], cancellation: cancellation));
             if (version != contextVersion || request != usbRequestVersion || closing || cancellation.IsCancellationRequested) return false;
-            var devices = list.RootElement.EnumerateArray().Select(x => new UsbEntry(
-                x.GetProperty("id").GetString() ?? throw new JsonException(UiText.T("USB の識別情報がありません。")),
-                x.GetProperty("label").GetString() ?? UiText.T("USB デバイス"), x.GetProperty("present").GetBoolean(), x.GetProperty("selected").GetBoolean(),
-                x.TryGetProperty("active", out var active) && active.GetBoolean(), x.TryGetProperty("attached", out var attached) && attached.GetBoolean(),
-                x.TryGetProperty("error", out var error) ? error.GetString() ?? "" : "")).ToArray();
-            if (devices.Any(x => x.ErrorText.Length > 2048)) throw new JsonException(UiText.T("USB エラー情報が長すぎます。"));
+            var devices = list.RootElement.EnumerateArray().Select(ParseUsbJsonEntry).ToArray();
             UsbDevices.ItemsSource = devices;
             UsbDevices.SelectedItem = devices.FirstOrDefault(x => x.Id == selectedId);
             usbInventoryContext = version;
@@ -278,11 +363,17 @@ public partial class MainWindow
         } catch (Exception error) {
             if (version == contextVersion && request == usbRequestVersion && !closing) {
                 UsbDevices.ItemsSource = null;
-                UsbHint.Text = error is OperationCanceledException ? UiText.T("USB の確認を中断しました。一覧を更新して再試行してください。") : UiText.T("USB の一覧を取得できません。「デバイス一覧を更新」で再試行してください。\n") + error.Message;
+                UsbHint.Text = error is OperationCanceledException
+                    ? UiText.T("USB の確認を中断しました。一覧を更新して再試行してください。")
+                    : UiText.T("USB の一覧を取得できません。「デバイス一覧を更新」で再試行してください。\n") + Services.BackendErrorFormatter.CleanMessage(error.Message);
             }
             return false;
         } finally {
-            if (request == usbRequestVersion) { refreshingUsb = false; UpdatePowerControls(); }
+            if (request == usbRequestVersion) {
+                refreshingUsb = false;
+                UpdatePowerControls();
+                EnsureUsbLivePoll();
+            }
         }
     }
 
@@ -297,6 +388,19 @@ public partial class MainWindow
         bool success = await Operate(connect ? "AttachUsb" : "DetachUsb", ["-UsbId", selected.Id]);
         // A failed transaction may still have changed a live watcher. Read back
         // its actual state without clearing Operate's error message.
+        if (selectedEntry == entry && !closing && CanOperate("ListUsb")) await RefreshUsbCore();
+        return success;
+    }
+
+    private async void ResetIphoneUsb(object sender, RoutedEventArgs e) => await ResetIphoneUsbCore();
+    internal async Task<bool> ResetIphoneUsbCore()
+    {
+        if (IsUiBusy || refreshingUsb || !RequireAction("ResetIphoneUsb")) return false;
+        if (usbInventoryContext != contextVersion || UsbDevices.SelectedItem is not UsbEntry { CanResetIphone: true } selected) return false;
+        if (!selfTest && !Confirm(UiText.T("この iPhone / iPad の保留中の復元エラー状態をリセットしますか？\n（現在も一時ドライバーが適用されている場合は拒否されます）")))
+            return false;
+        var entry = selectedEntry;
+        bool success = await Operate("ResetIphoneUsb", ["-UsbId", selected.Id]);
         if (selectedEntry == entry && !closing && CanOperate("ListUsb")) await RefreshUsbCore();
         return success;
     }
