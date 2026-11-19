@@ -52,7 +52,6 @@ public partial class MainWindow
 
     private void AppendLog(string text)
     {
-        // Diagnostics stay useful even after a long session; clipboard/identity payloads never enter here.
         const int limit = 65536;
         if (text.Length > limit) text = text[^limit..];
         if (Log.Text.Length + text.Length > limit) Log.Text = Log.Text[^(Math.Max(0, limit - text.Length))..];
@@ -141,6 +140,7 @@ public partial class MainWindow
         committedHardware = null; committedIdentity = null;
         networkDraftRefreshPending = false;
         Tabs.SelectedIndex = 0;
+        if (SettingsSectionNav is not null) SettingsSectionNav.SelectedIndex = 0;
         if (AppSettingsOverlay is not null) AppSettingsOverlay.Visibility = Visibility.Collapsed;
         ConsoleView.Detach(); ConsoleView.Visibility = Visibility.Hidden; ConsolePlaceholder.Visibility = Visibility.Visible;
         consoleDetached = false;
@@ -159,6 +159,8 @@ public partial class MainWindow
         RememberHardwareDraft(); RememberIdentityDraft();
         State.Text = UiText.T("確認中"); StatusDetail.Text = UiText.T("選択した VM の状態を取得しています。");
         VmSummary.Text = UiText.T("構成を読み込んでいます。");
+        if (OverviewCpuValue is not null) OverviewCpuValue.Text = OverviewMemoryValue.Text = OverviewDiskValue.Text = OverviewNetworkValue.Text = "—";
+        if (OverviewMediaSummary is not null) OverviewMediaSummary.Text = "";
         UpdatePowerControls();
     }
 
@@ -176,7 +178,9 @@ public partial class MainWindow
         restoringSelection = true;
         try { Library.ItemsSource = visible; Library.SelectedItem = visible.FirstOrDefault(x => x == selectedEntry); }
         finally { restoringSelection = false; }
-        LibraryEmpty.Text = query.Length == 0 ? UiText.T("「新規」または「開く」から追加") : UiText.T("一致する VM はありません");
+        if (LibrarySearchBox is not null)
+            LibrarySearchBox.Visibility = machines.Count > 2 || query.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        LibraryEmpty.Text = query.Length == 0 ? UiText.T("「+」から VM を作成または開く") : UiText.T("一致する VM はありません");
         LibraryEmpty.Visibility = visible.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -185,6 +189,29 @@ public partial class MainWindow
         if (syncingNavigation || Tabs is null || IsUiBusy || e.Source != WorkspaceNavigation) return;
         if (WorkspaceNavigation.SelectedItem is ListBoxItem item && int.TryParse(item.Tag?.ToString(), out int page) && page >= 0 && page < Tabs.Items.Count)
             Tabs.SelectedIndex = page;
+    }
+
+    private void SettingsSectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SettingsSectionTabs is null || SettingsSectionNav is null || e.Source != SettingsSectionNav) return;
+        if (SettingsSectionNav.SelectedItem is ListBoxItem item && int.TryParse(item.Tag?.ToString(), out int sec) && sec >= 0 && sec < SettingsSectionTabs.Items.Count)
+            SettingsSectionTabs.SelectedIndex = sec;
+    }
+
+    private void OpenHardwareSettingsClick(object sender, RoutedEventArgs e)
+    {
+        if (IsUiBusy || !HasVm) return;
+        Tabs.SelectedIndex = 3;
+        SettingsSectionNav.SelectedIndex = 0;
+        SyncNavigation(); UpdatePowerControls();
+    }
+
+    private void OpenStorageSettingsClick(object sender, RoutedEventArgs e)
+    {
+        if (IsUiBusy || !HasVm) return;
+        Tabs.SelectedIndex = 3;
+        SettingsSectionNav.SelectedIndex = 1;
+        SyncNavigation(); UpdatePowerControls();
     }
 
     private void NavigatePage(object sender, RoutedEventArgs e)
@@ -229,7 +256,6 @@ public partial class MainWindow
         if (!IsUiBusy && e.Key == Key.F11 && Keyboard.Modifiers == ModifierKeys.None) {
             e.Handled = true; ToggleFullScreen(sender, e); return;
         }
-        // Do not consume guest Ctrl+N/O/S or F5 while the focused console is active.
         if (IsUiBusy || ConsoleFocused) return;
         if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None) { e.Handled = true; await RefreshDisplayedState(); }
         else if (Keyboard.Modifiers == ModifierKeys.Control) {
@@ -285,6 +311,18 @@ public partial class MainWindow
                 Tabs.SelectedIndex = i;
                 break;
             }
+        }
+        if (Tabs.SelectedIndex == 3 && SettingsSectionTabs is not null) {
+            for (int s = 0; s < SettingsSectionTabs.Items.Count; s++) {
+                if (SettingsSectionTabs.Items[s] is TabItem sec && (ReferenceEquals(sec.Content, field) || (sec.Content is DependencyObject sc && LogicalChildren<Control>(sc).Contains(field)))) {
+                    SettingsSectionNav.SelectedIndex = s;
+                    SettingsSectionTabs.SelectedIndex = s;
+                    break;
+                }
+            }
+        }
+        for (DependencyObject? cur = field; cur is not null; cur = LogicalTreeHelper.GetParent(cur)) {
+            if (cur is Expander exp) exp.IsExpanded = true;
         }
         ShowError(message);
         field.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() => {

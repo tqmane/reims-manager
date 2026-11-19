@@ -16,7 +16,7 @@ public partial class MainWindow
         AddVm(new("Synthetic network VM",Path.Combine(folder,"fixture.reimsvm"),Path.Combine(folder,"fixture.data")));
         State.Text="完全停止";StatusDetail.Text="";Feedback.Visibility=Visibility.Collapsed;
         await CheckNetworkChoices(folder);
-        Width=MinWidth;Height=MinHeight;Tabs.SelectedIndex=3;currentState="stopped";UpdatePowerControls();
+        Width=MinWidth;Height=MinHeight;Tabs.SelectedIndex=3;SettingsSectionNav.SelectedIndex=2;currentState="stopped";UpdatePowerControls();
         await ArrangeCheck();InstallTapButton.BringIntoView();await ArrangeCheck();
         RequireInside(InstallTapButton,BridgeScroll,"Dedicated TAP preparation");
         SaveImage(Path.Combine(folder,"network-auto-tap-compact.png"));
@@ -154,7 +154,7 @@ public partial class MainWindow
 
     private async Task CheckNetworkChoices(string folder)
     {
-        currentState = "stopped"; Tabs.SelectedIndex = 3;
+        currentState = "stopped"; Tabs.SelectedIndex = 3; SettingsSectionNav.SelectedIndex = 2;
         loadedHardware = true; hardwareDirty = identityDirty = false;
         ApplyNetworkChoices(NetworkInventory.Parse(OnboardingChecks.Network));
         string id = "aaaaaaaa-1111-4111-8111-111111111111";

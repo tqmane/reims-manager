@@ -74,8 +74,9 @@ public partial class MainWindow : Window
     {
         if (!RequireAction(action)) return false;
         if (action == "Start" && (hardwareDirty || identityDirty)) {
-            Tabs.SelectedIndex = identityDirty && !hardwareDirty ? 4 : 0;
-            ShowError(UiText.T("保存していない設定があります。「変更を保存」または「変更を破棄」で確定してから起動してください。"));
+            Tabs.SelectedIndex = 3;
+            SettingsSectionNav.SelectedIndex = identityDirty && !hardwareDirty ? 3 : 0;
+            ShowError(UiText.T("保存していない設定があります。「変更を保存」または「破棄」で確定してから起動してください。"));
             UpdatePowerControls();
             return false;
         }
@@ -228,6 +229,7 @@ public partial class MainWindow : Window
                         VmSummary.Text = latest.GetProperty("prepared").GetBoolean()
                             ? UiText.Format($"{latest.GetProperty("cpus")} vCPU  ·  {latest.GetProperty("memory_mib").GetDouble() / 1024:0.###} GiB メモリ  ·  {latest.GetProperty("disk_gib")} GiB ディスク  ·  {latest.GetProperty("resolution").GetString()}")
                             : UiText.T("仮想ディスクはまだ準備されていません");
+                        UpdateOverviewSummary();
                     }
                     UpdateConsole(); UpdatePowerControls();
                 } catch (Exception error) {
@@ -270,7 +272,33 @@ public partial class MainWindow : Window
             string resolution = latest.GetProperty("resolution").GetString() ?? "";
             SelectResolutionItems(resolution);
             hardwareDirty = false; RememberHardwareDraft();
+            UpdateOverviewSummary();
         } finally { loadingHardware = false; }
+    }
+
+    private void UpdateOverviewSummary()
+    {
+        if (OverviewCpuValue is null || latest.ValueKind != JsonValueKind.Object) return;
+        bool prepared = latest.TryGetProperty("prepared", out var p) && p.GetBoolean();
+        if (!prepared) {
+            OverviewCpuValue.Text = OverviewMemoryValue.Text = OverviewDiskValue.Text = OverviewNetworkValue.Text = "—";
+            OverviewMediaSummary.Text = UiText.T("未セットアップ");
+            return;
+        }
+        OverviewCpuValue.Text = $"{latest.GetProperty("cpus")} vCPU";
+        OverviewMemoryValue.Text = $"{latest.GetProperty("memory_mib").GetDouble() / 1024.0:0.#} GiB";
+        OverviewDiskValue.Text = $"{latest.GetProperty("disk_gib")} GiB";
+        string netMode = latest.TryGetProperty("network", out var nm) ? nm.GetString() ?? "nat" : "nat";
+        OverviewNetworkValue.Text = netMode == "bridge"
+            ? (WifiForwarderState.IsMacNat(wifiForwarder?.Kind) ? "Wi-Fi" : UiText.T("ブリッジ"))
+            : "NAT";
+        string res = latest.TryGetProperty("resolution", out var rv) ? rv.GetString() ?? "1920x1080" : "1920x1080";
+        bool audioOn = latest.TryGetProperty("audio", out var av) && av.GetString() == "dsound";
+        bool micOn = latest.TryGetProperty("microphone", out var mv) && mv.GetBoolean();
+        string audioLabel = audioOn ? (micOn ? UiText.T("スピーカー・マイク有効") : UiText.T("スピーカー有効")) : UiText.T("オーディオ無効");
+        string isoPath = latest.TryGetProperty("iso", out var iv) ? iv.GetString() ?? "" : "";
+        string isoPart = !string.IsNullOrWhiteSpace(isoPath) ? $"  ·  {Path.GetFileName(isoPath)}" : "";
+        OverviewMediaSummary.Text = $"{res}  ·  {audioLabel}{isoPart}";
     }
 
     private void MemoryChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -354,17 +382,25 @@ public partial class MainWindow : Window
         PowerOffButton.IsEnabled = CanOperate("PowerOff");
         RestartButton.IsEnabled = CanOperate("Restart");
         ResumeButton.IsEnabled = CanOperate("Resume");
+        ConsoleQuickButton.IsEnabled = !IsUiBusy && CanOperate("Console");
+
         bool resumable = currentState is "paused" or "prelaunch" or "suspended";
+        bool running = currentState == "running";
+        StartButton.Visibility = !resumable && !running ? Visibility.Visible : Visibility.Collapsed;
         ResumeButton.Visibility = resumable ? Visibility.Visible : Visibility.Collapsed;
-        StartButton.Visibility = resumable ? Visibility.Collapsed : Visibility.Visible;
-        PowerMoreButton.IsEnabled = new[] { "Exit", "Pause", "Resume", "ForceExit" }.Any(CanOperate);
+        ConsoleQuickButton.Visibility = running || resumable ? Visibility.Visible : Visibility.Collapsed;
+        PowerOffButton.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        RestartButton.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+
+        PowerMoreButton.IsEnabled = !IsUiBusy && selectedEntry is not null;
         foreach (var item in PowerMoreButton.ContextMenu.Items.OfType<MenuItem>())
             if (item.Tag is string tag) item.IsEnabled = CanOperate(tag);
-        ConsoleQuickButton.IsEnabled = !IsUiBusy && CanOperate("Console");
+        if (MenuRevealVm is not null) MenuRevealVm.IsEnabled = selectedEntry is not null;
+        if (MenuRefreshVm is not null) MenuRefreshVm.IsEnabled = HasVm && HasEngine && !IsUiBusy && !refreshing;
+
         EngineNotice.Visibility = HasEngine ? Visibility.Collapsed : Visibility.Visible;
-        EngineSummary.Text = HasEngine ? UiText.T("エンジン設定済み") : UiText.T("エンジン未設定");
+        EngineSummary.Text = HasEngine ? UiText.T("設定済み") : UiText.T("エンジン未設定");
         NewVmWelcomeDescription.Text = HasEngine ? UiText.T("Windows の準備を確認して ISO を選ぶ") : UiText.T("エンジンの準備から始める");
-        RefreshButton.IsEnabled = HasVm && HasEngine && !IsUiBusy && !refreshing;
         RevealButton.IsEnabled = selectedEntry is not null;
 
         foreach (var button in LogicalChildren<Button>(Tabs)) {
@@ -512,6 +548,8 @@ public partial class MainWindow : Window
         if (SelectedUplink.Length > 0) Physical.SelectedValue = SelectedUplink;
         BridgeTap.SelectedItem = Tap.SelectedItem;
         Tabs.SelectedIndex = 3;
+        SettingsSectionNav.SelectedIndex = 2;
+        SettingsSectionTabs.SelectedIndex = 2;
         NetworkCard?.BringIntoView();
     }
 

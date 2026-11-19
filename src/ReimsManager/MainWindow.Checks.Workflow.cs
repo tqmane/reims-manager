@@ -5,7 +5,6 @@ namespace ReimsManager;
 
 public partial class MainWindow
 {
-    // Exercise the actual controls and navigation without guest or host mutations.
     private async Task CheckSettingsWorkflow(string folder)
     {
         if (!selfTest) throw new InvalidOperationException("Workflow fixture access only.");
@@ -20,7 +19,7 @@ public partial class MainWindow
             Width = MinWidth; Height = MinHeight;
             currentState = "stopped"; State.Text = VmActionPolicy.StateLabel(currentState);
             loadedHardware = true; hardwareDirty = identityDirty = false;
-            Tabs.SelectedIndex = 0;
+            Tabs.SelectedIndex = 3; SettingsSectionNav.SelectedIndex = 0;
             RememberHardwareDraft();
             ShowSettingsSaved("設定を保存しました。次回起動から使用します。");
             UpdatePowerControls();
@@ -58,8 +57,8 @@ public partial class MainWindow
 
             InvalidField(GuestHost, "テスト用: macOS の接続先を確認してください。");
             await ArrangeCheck();
-            if (Tabs.SelectedIndex != 3)
-                throw new Exception("Validation did not navigate to the failing network pivot.");
+            if (Tabs.SelectedIndex != 3 || SettingsSectionTabs.SelectedIndex != 2)
+                throw new Exception("Validation did not navigate to the failing network section.");
             RequireInside(GuestHost, BridgeScroll, "Visible validation target");
             Feedback.Visibility = Visibility.Collapsed;
 
@@ -72,7 +71,7 @@ public partial class MainWindow
             if (!CanOperate("Exit") || !CanOperate("Start"))
                 throw new Exception("Shutdown VM should permit Exit and cold Start.");
 
-            completingOperation = true; Tabs.SelectedIndex = 0; UpdatePowerControls();
+            completingOperation = true; Tabs.SelectedIndex = 3; UpdatePowerControls();
             if (SaveHardwareButton.IsEnabled || WorkspaceNavigation.IsEnabled || Library.IsEnabled || CanOperate("Start"))
                 throw new Exception("Post-operation refresh permits navigation or another mutation before completion.");
         } finally {

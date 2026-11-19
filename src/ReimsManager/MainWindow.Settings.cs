@@ -29,7 +29,8 @@ public partial class MainWindow
     private void OpenSettings(object sender, RoutedEventArgs e)
     {
         if (IsUiBusy || !HasVm) return;
-        Tabs.SelectedIndex = 0;
+        Tabs.SelectedIndex = 3;
+        SettingsSectionNav.SelectedIndex = 0;
         SyncNavigation(); UpdatePowerControls();
     }
 

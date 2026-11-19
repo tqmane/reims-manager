@@ -9,7 +9,7 @@ public partial class MainWindow
 {
     private readonly WorkspacePresentation presentation = new();
     private bool wasConsoleFocused;
-    private GridLength libraryWidth = new(232);
+    private GridLength libraryWidth = new(228);
     private string settingsFeedback = "";
     private bool SettingsOpen => Tabs.SelectedIndex != 1;
     private bool OverlayOpen => AppSettingsOverlay?.Visibility == Visibility.Visible;
@@ -19,7 +19,7 @@ public partial class MainWindow
     private static Brush StatusDotBrush(string state) => state switch {
         "running" => new SolidColorBrush(Color.FromRgb(0x16, 0xC6, 0x0C)),
         "paused" or "prelaunch" or "suspended" => new SolidColorBrush(Color.FromRgb(0xF7, 0x63, 0x0C)),
-        "shutdown" or "unknown" or "guest-panicked" => new SolidColorBrush(Color.FromRgb(0xD1, 0x34, 0x38)),
+        "shutdown" or "unknown" or "guest-panicked" => new SolidColorBrush(Color.FromRgb(0xC4, 0x2B, 0x1C)),
         _ => new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A))
     };
 
@@ -40,9 +40,9 @@ public partial class MainWindow
         bool manager = !focus;
         if (focus != wasConsoleFocused) {
             if (focus) libraryWidth = LibraryColumn.Width;
-            LibraryColumn.MinWidth = focus ? 0 : 200;
+            LibraryColumn.MinWidth = focus ? 0 : 196;
             LibraryColumn.Width = focus ? new GridLength(0) : libraryWidth;
-            WorkstationLayout.ColumnDefinitions[1].Width = new GridLength(focus ? 0 : 4);
+            WorkstationLayout.ColumnDefinitions[1].Width = new GridLength(focus ? 0 : 1);
             wasConsoleFocused = focus;
         }
 
@@ -50,12 +50,12 @@ public partial class MainWindow
         ManagementCommands.Visibility = manager ? Visibility.Visible : Visibility.Collapsed;
         LibraryPane.Visibility = LibrarySplitter.Visibility = manager ? Visibility.Visible : Visibility.Collapsed;
         VmHeader.Visibility = manager && selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
-        WorkspaceNavigation.Visibility = manager && selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
+        PivotBarContainer.Visibility = manager && selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
         Welcome.Visibility = selectedEntry is not null ? Visibility.Collapsed : Visibility.Visible;
         WorkspaceContent.Visibility = selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
         ConsoleToolbar.Visibility = focus ? Visibility.Collapsed : Visibility.Visible;
 
-        MainWorkspace.Margin = focus ? new Thickness(0) : new Thickness(12, 10, 14, 12);
+        MainWorkspace.Margin = focus ? new Thickness(0) : new Thickness(24, 10, 24, 16);
         ConsoleFrame.BorderThickness = new Thickness(focus ? 0 : 1);
         ConsoleFrame.CornerRadius = new CornerRadius(focus ? 0 : 8);
         SessionCommands.Visibility = focus ? Visibility.Visible : Visibility.Collapsed;
@@ -69,13 +69,17 @@ public partial class MainWindow
                 ? new SolidColorBrush(Color.FromRgb(0x16, 0xC6, 0x0C))
                 : new SolidColorBrush(Color.FromRgb(0xD8, 0x7E, 0x00));
         }
+        if (EngineSummary is not null) {
+            EngineSummary.Visibility = HasEngine ? Visibility.Collapsed : Visibility.Visible;
+        }
 
         StatusDetail.Visibility = !string.IsNullOrWhiteSpace(StatusDetail.Text) &&
             (!focus || currentState == "unknown" || currentState.Contains("error", StringComparison.Ordinal) || currentState == "guest-panicked")
             ? Visibility.Visible : Visibility.Collapsed;
 
-        if (SetupCard is not null)
-            SetupCard.Visibility = HasVm && currentState == "unprepared" ? Visibility.Visible : Visibility.Collapsed;
+        bool unprepared = HasVm && currentState == "unprepared";
+        if (SetupCard is not null) SetupCard.Visibility = unprepared ? Visibility.Visible : Visibility.Collapsed;
+        if (OverviewReadyPanel is not null) OverviewReadyPanel.Visibility = HasVm && !unprepared ? Visibility.Visible : Visibility.Collapsed;
 
         ConsoleConnectButton.Visibility = CanOperate("Console") ? Visibility.Visible : Visibility.Collapsed;
         ConsoleConnectButton.IsEnabled = CanOperate("Console") && !applyingSettings;
@@ -100,7 +104,7 @@ public partial class MainWindow
         foreach (var item in SessionCursorMenuButton.ContextMenu.Items.OfType<MenuItem>())
             if (item.Tag is string action) item.IsEnabled = CanOperate(action) && !applyingSettings;
         SessionCursorMenuButton.IsEnabled = !IsUiBusy && HasVm;
-        SessionSettingsButton.IsEnabled = SessionUsbButton.IsEnabled = SessionSharingButton.IsEnabled = SessionSnapshotButton.IsEnabled = HasVm && !IsUiBusy;
+        SessionSettingsButton.IsEnabled = SessionUsbButton.IsEnabled = SessionSharingButton.IsEnabled = HasVm && !IsUiBusy;
 
         bool editHardware = !IsUiBusy && loadedHardware && CanOperate("SetHardware");
         foreach (UIElement field in new UIElement[] { Memory, MemorySlider, Cpus, HardwareIsoPath, GuestHost, Tap, UsbBackend,
@@ -116,12 +120,16 @@ public partial class MainWindow
         Resolution.IsEnabled = canRes;
         if (ConsoleResolution is not null) ConsoleResolution.IsEnabled = !IsUiBusy && loadedHardware && CanOperate("ApplyResolution");
         if (ConnectIso is not null) ConnectIso.IsEnabled = !IsUiBusy && HasVm;
+        if (CopyToGuestButton is not null && CopyFromGuestButton is not null) {
+            var clipVis = CanOperate("Clipboard") ? Visibility.Visible : Visibility.Collapsed;
+            CopyToGuestButton.Visibility = CopyFromGuestButton.Visibility = clipVis;
+        }
         foreach (UIElement field in new UIElement[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityUuid, IdentityRom })
             field.IsEnabled = !IsUiBusy && CanOperate("SetIdentity");
 
         Tabs.IsEnabled = !IsUiBusy;
-        Library.IsEnabled = LibrarySearch.IsEnabled = WorkspaceNavigation.IsEnabled = !IsUiBusy;
-        NewVmButton.IsEnabled = OpenVmButton.IsEnabled = ImportVmButton.IsEnabled = OpenAppSettingsButton.IsEnabled = ReloadLibraryButton.IsEnabled = !IsUiBusy;
+        Library.IsEnabled = LibrarySearch.IsEnabled = WorkspaceNavigation.IsEnabled = SettingsSectionNav.IsEnabled = !IsUiBusy;
+        AddVmMenuButton.IsEnabled = OpenAppSettingsButton.IsEnabled = !IsUiBusy;
 
         UpdateSettingsWorkflow();
         if (SettingsOpen || OverlayOpen) ConsoleView.Visibility = Visibility.Hidden;
@@ -136,6 +144,12 @@ public partial class MainWindow
 
     private void ClearSettingsFeedback() => settingsFeedback = "";
 
+    private void DismissSavedFeedback(object sender, RoutedEventArgs e)
+    {
+        ClearSettingsFeedback();
+        UpdateSettingsWorkflow();
+    }
+
     private void UpdateSettingsWorkflow()
     {
         if (PendingSaveBar is null || SettingsStateNotice is null) return;
@@ -145,6 +159,7 @@ public partial class MainWindow
         PendingSaveBar.Visibility = !ConsoleFocused && HasVm && (pending || settingsFeedback.Length > 0)
             ? Visibility.Visible : Visibility.Collapsed;
         ReloadHardwareButton.Visibility = SaveHardwareButton.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
+        DismissSaveFeedbackButton.Visibility = !pending && settingsFeedback.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ReloadHardwareButton.IsEnabled = !IsUiBusy && pending;
         SaveHardwareButton.IsEnabled = !IsUiBusy && pending && canSave;
         SaveBarDot.Fill = new SolidColorBrush(pending ? Color.FromRgb(0xD8, 0x7E, 0x00) : Color.FromRgb(0x16, 0xC6, 0x0C));
@@ -157,7 +172,7 @@ public partial class MainWindow
         bool requiresOfflineNotice = HasVm && !ConsoleFocused &&
             (!HasEngine || currentState is "running" or "shutdown" or "paused" or "prelaunch" or "suspended" or "unknown" ||
              (currentState == "stopped" && !loadedHardware));
-        SettingsStateNotice.Visibility = Tabs.SelectedIndex == 0 && requiresOfflineNotice ? Visibility.Visible : Visibility.Collapsed;
+        SettingsStateNotice.Visibility = Tabs.SelectedIndex == 3 && requiresOfflineNotice ? Visibility.Visible : Visibility.Collapsed;
         SettingsRefreshButton.IsEnabled = HasVm && HasEngine && !IsUiBusy && !refreshing;
 
         string? action = null, label = null;
