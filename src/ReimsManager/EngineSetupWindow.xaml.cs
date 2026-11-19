@@ -73,26 +73,33 @@ public partial class EngineSetupWindow : Window
                 if (engine?.Ready != true) throw new IOException(engine?.Message ?? UiText.T("対応エンジンの検証結果を確認できません。"));
                 InstalledDirectory=destination; installing=false; DialogResult=true; return;
             }
-            string script=Path.Combine(AppContext.BaseDirectory,"scripts/install-engine.ps1");
-            string pwsh=ReimsManager.Services.NativeUsbService.FindPwshExecutable();
-            if (!File.Exists(pwsh)) pwsh=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"PowerShell/7/pwsh.exe");
-            var info=new ProcessStartInfo(pwsh) { UseShellExecute=false, CreateNoWindow=true,
-                RedirectStandardOutput=true, RedirectStandardError=true, StandardOutputEncoding=Encoding.UTF8, StandardErrorEncoding=Encoding.UTF8 };
-            foreach (string arg in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",script,"-Destination",destination}) info.ArgumentList.Add(arg);
-            if (Local.IsChecked==true) {
+            string? archivePath = null;
+            if (Local.IsChecked == true) {
                 if (!File.Exists(Archive.Text)) throw new FileNotFoundException(UiText.T("エンジン ZIP を選択してください。"));
-                if (!File.Exists(Archive.Text+".sha256")) throw new FileNotFoundException(UiText.T("配布元の ZIP と同じ場所に「")+Path.GetFileName(Archive.Text)+UiText.T(".sha256」を保存してください。"));
-                info.ArgumentList.Add("-Archive"); info.ArgumentList.Add(Archive.Text);
+                if (!File.Exists(Archive.Text + ".sha256")) throw new FileNotFoundException(UiText.T("配布元の ZIP と同じ場所に「") + Path.GetFileName(Archive.Text) + UiText.T(".sha256」を保存してください。"));
+                archivePath = Archive.Text;
             }
-            Status.Text=UiText.T("準備しています…");
-            using var process=Process.Start(info) ?? throw new IOException(UiText.T("セットアップを起動できませんでした。"));
-            var errors=process.StandardError.ReadToEndAsync();
-            while (await process.StandardOutput.ReadLineAsync() is { } line) {
-                Status.Text=line; Details.AppendText(line+"\n"); Details.ScrollToEnd();
-            }
-            await process.WaitForExitAsync();
-            if (process.ExitCode!=0) throw new IOException((await errors).Trim());
-            InstalledDirectory=destination; installing=false; DialogResult=true;
+            Status.Text = UiText.T("準備しています…");
+            string lastMsg = "";
+            await ReimsManager.Services.NativeEngineService.InstallEngineAsync(
+                destination,
+                archivePath,
+                null,
+                (msg, pct) => Dispatcher.Invoke(() => {
+                    if (pct is double p) {
+                        Progress.IsIndeterminate = false;
+                        Progress.Value = p;
+                    } else {
+                        Progress.IsIndeterminate = true;
+                    }
+                    Status.Text = msg;
+                    if (!string.Equals(msg, lastMsg, StringComparison.Ordinal) && !msg.StartsWith(UiText.T("ダウンロード中") + ":", StringComparison.Ordinal)) {
+                        lastMsg = msg;
+                        Details.AppendText(msg + "\n");
+                        Details.ScrollToEnd();
+                    }
+                }));
+            InstalledDirectory = destination; installing = false; DialogResult = true;
         } catch (Exception error) {
             Status.Text=UiText.T("セットアップできませんでした。内容を確認して再試行できます。");
             Details.AppendText(error.Message+"\n"); Details.ScrollToEnd();

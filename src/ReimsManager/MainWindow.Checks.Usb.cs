@@ -21,7 +21,7 @@ public partial class MainWindow
         var previousStatus = latest;
         string previousState = currentState, previousStateText = State.Text;
         string? previousSelectedVm = settings.SelectedVm;
-        int page = Tabs.SelectedIndex, category = Devices.SelectedIndex;
+        int page = Tabs.SelectedIndex;
         double width = Width, height = Height;
         bool wasLoaded = loadedHardware, wasHardwareDirty = hardwareDirty, wasIdentityDirty = identityDirty;
         var previousHardware = CaptureHardwareDraft(); var previousIdentity = CaptureIdentityDraft();
@@ -97,7 +97,7 @@ public partial class MainWindow
             usbDriverInstallResult = null; usbDriverRestartPending = false;
             hardwareDirty = identityDirty = false;
             latest = JsonSerializer.Deserialize<JsonElement>(Status()); LoadHardware(); loadedHardware = true;
-            currentState = fixtureState; Tabs.SelectedIndex = 1; Devices.SelectedIndex = 5; ResetUsbInventory(); UpdatePowerControls();
+            currentState = fixtureState; Tabs.SelectedIndex = 2; ResetUsbInventory(); UpdatePowerControls();
             if (!await RefreshUsbCore() || UsbDevices.Items.Count != 5 || UsbAttachButton.IsEnabled || UsbDetachButton.IsEnabled)
                 throw new Exception("USB inventory requires a deliberate selection before a mutation.");
 
@@ -130,7 +130,7 @@ public partial class MainWindow
                 throw new Exception("A saved USB with a failed watcher has no reconnect action.");
             Width = 1160; Height = 880; UpdatePowerControls(); await ArrangeCheck();
             UsbAttachButton.BringIntoView(); await ArrangeCheck();
-            RequireInside(UsbAttachButton, HardwareScroll, "USB reconnect action");
+            RequireInside(UsbAttachButton, UsbPage, "USB reconnect action");
             SaveImage(Path.Combine(folder, "usb-reconnect-running.png"));
             if (!await ChangeUsbConnection(true) || attachCalls != 1 || UsbDevices.SelectedItem is not UsbEntry { Id: "hostusb-1-5-1234abcd", Attached: true } || UsbAttachButton.IsEnabled)
                 throw new Exception("USB reconnect lost its selection or failed to publish the current attachment state.");
@@ -162,7 +162,7 @@ public partial class MainWindow
                 !UsbHint.Text.Contains("Windows の再起動が必要", StringComparison.Ordinal))
                 throw new Exception("MSI 3010 was reported without an explicit Windows restart requirement.");
             await ArrangeCheck(); UsbHint.BringIntoView(); await ArrangeCheck();
-            RequireInside(UsbHint, HardwareScroll, "USB Windows restart requirement");
+            RequireInside(UsbHint, UsbPage, "USB Windows restart requirement");
             SaveImage(Path.Combine(folder, "usb-driver-restart-required.png"));
             if (!await RefreshUsbCore() || !UsbBackendHint.Text.Contains("Windows の再起動が必要", StringComparison.Ordinal))
                 throw new Exception("Refreshing USB inventory erased a pending Windows restart.");
@@ -182,7 +182,7 @@ public partial class MainWindow
             if (!hardwareDirty || !UsbBackendHint.Text.Contains("未保存の変更: WinUSB", StringComparison.Ordinal))
                 throw new Exception("A staged USB backend is presented as already saved.");
             Width = MinWidth; Height = MinHeight; await ArrangeCheck(); UsbBackend.BringIntoView(); await ArrangeCheck();
-            RequireInside(UsbBackend, HardwareScroll, "USB transfer mode at minimum window size");
+            RequireInside(UsbBackend, UsbPage, "USB transfer mode at minimum window size");
             SaveImage(Path.Combine(folder, "usb-driver-mode-compact.png"));
             RestoreSettingsDrafts();
 
@@ -218,7 +218,7 @@ public partial class MainWindow
                 throw new Exception("Unexpected iPhone reset fixture action: " + action);
             };
             Library.SelectedItem = entry; currentState = fixtureState = "running";
-            Tabs.SelectedIndex = 1; Devices.SelectedIndex = 5;
+            Tabs.SelectedIndex = 2;
             if (!await RefreshUsbCore()) throw new Exception("Failed to refresh iPhone reset fixture.");
             Select("hostusb-1-5-1234abcd");
             if (UsbResetButton.Visibility != Visibility.Collapsed) throw new Exception("Generic USB device showed iPhone reset button.");
@@ -254,7 +254,7 @@ public partial class MainWindow
             usbInventoryContext = previousInventoryCurrent ? contextVersion : -1; UsbHint.Text = previousHint;
             usbDriverInstallResult = previousInstallResult; usbDriverRestartPending = previousDriverRestart;
             currentState = previousState; State.Text = previousStateText; Width = width; Height = height;
-            Devices.SelectedIndex = category; Tabs.SelectedIndex = page;
+            Tabs.SelectedIndex = page;
             Feedback.Visibility = Visibility.Collapsed; ClearSettingsFeedback(); UpdatePowerControls();
         }
     }
@@ -291,7 +291,7 @@ public partial class MainWindow
         void OpenWhileUnknown()
         {
             currentState = "unknown"; ResetUsbInventory();
-            Tabs.SelectedIndex = 1; Devices.SelectedIndex = 5; UpdatePowerControls();
+            Tabs.SelectedIndex = 2; UpdatePowerControls();
         }
         checkingUsbAutoRefresh = true;
         try {
@@ -331,7 +331,7 @@ public partial class MainWindow
             int beforeSwitch = reads;
             if (!refreshingUsb) throw new Exception("The authored old-VM USB request never started.");
             Library.SelectedItem = second;
-            Tabs.SelectedIndex = 1; Devices.SelectedIndex = 5; UpdatePowerControls(); await ArrangeCheck();
+            Tabs.SelectedIndex = 2; UpdatePowerControls(); await ArrangeCheck();
             if (!UsbPage.IsVisible || currentState != "unknown" || reads != beforeSwitch || UsbDevices.Items.Count != 0)
                 throw new Exception("VM switching did not defer discovery until the new state was ready.");
             await RefreshState(); await FinishAutomaticRead();

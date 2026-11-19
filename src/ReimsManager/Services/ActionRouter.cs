@@ -22,8 +22,8 @@ internal static class ActionRouter
     {
         string toolsRoot = Path.Combine(AppContext.BaseDirectory, "runtimes");
 
-        if (!elevate) {
-            Task<string>? nativeTask = TryRunNativeAsync(action, arguments, engineRoot, vmDirectory, toolsRoot, cancellation);
+        if (!elevate || action is "EnableWhpx" or "InstallUsbDk") {
+            Task<string>? nativeTask = TryRunNativeAsync(action, arguments, engineRoot, vmDirectory, toolsRoot, hasVm, qemuExecutable, input, cancellation);
             if (nativeTask is not null)
                 return await nativeTask.ConfigureAwait(false);
         }
@@ -102,6 +102,9 @@ internal static class ActionRouter
         string engineRoot,
         string vmDirectory,
         string toolsRoot,
+        bool hasVm,
+        string qemuExecutable,
+        string? input,
         CancellationToken cancellation)
     {
         switch (action) {
@@ -149,25 +152,100 @@ internal static class ActionRouter
                 return NativeVmControlService.SetResolutionAsync(vmDirectory, GetArg(arguments, "-Resolution", "1920x1080"), cancellation);
             case "ApplyResolution":
                 return NativeVmControlService.ApplyResolutionAsync(vmDirectory, GetArg(arguments, "-Resolution", "1920x1080"), cancellation);
+            case "EnableWhpx":
+                return NativeEngineService.EnableWhpxElevatedAsync(cancellation);
+            case "InstallUsbDk":
+                return NativeEngineService.InstallUsbDkAsync(vmDirectory, hasVm, cancellation);
+            case "SnapshotCreate":
+                return NativeStorageService.CreateOrRestoreSnapshotAsync(engineRoot, vmDirectory, GetArg(arguments, "-Name"), restore: false, cancellation);
+            case "SnapshotRestore":
+                return NativeStorageService.CreateOrRestoreSnapshotAsync(engineRoot, vmDirectory, GetArg(arguments, "-Name"), restore: true, cancellation);
+            case "ExpandDisk":
+                return NativeStorageService.ExpandDiskAsync(engineRoot, vmDirectory, GetIntArg(arguments, "-DiskGiB", 300), cancellation);
+            case "OptimizeDisk":
+                return NativeStorageService.OptimizeDiskAsync(engineRoot, vmDirectory, cancellation);
+            case "CollectLogs":
+                return NativeStorageService.CollectLogsAsync(engineRoot, hasVm ? vmDirectory : "", !HasSwitch(arguments, "-NoScreenshot"), HasSwitch(arguments, "-Zip"), cancellation);
+            case "Setup":
+                return NativeOpenCoreService.SetupVmAsync(
+                    engineRoot,
+                    toolsRoot,
+                    vmDirectory,
+                    GetArg(arguments, "-Iso"),
+                    GetIntArg(arguments, "-DiskGiB", 160),
+                    GetIntArg(arguments, "-Cpus", 8),
+                    GetIntArg(arguments, "-MemoryMiB", 8192),
+                    cancellation);
+            case "ImportDisk":
+                return NativeOpenCoreService.ImportDiskAsync(
+                    engineRoot,
+                    toolsRoot,
+                    vmDirectory,
+                    GetArg(arguments, "-DiskPath"),
+                    cancellation);
+            case "SetIdentity":
+                return NativeOpenCoreService.SetIdentityAsync(engineRoot, toolsRoot, vmDirectory, input ?? "", cancellation);
+            case "GenerateIdentity":
+                return NativeOpenCoreService.GenerateIdentityAsync(engineRoot, toolsRoot, vmDirectory, cancellation);
+            case "ApplyBootProfile":
+                return NativeOpenCoreService.ApplyBootProfileAsync(engineRoot, toolsRoot, vmDirectory, cancellation);
+            case "EnableGuestBridge":
+                return NativeOpenCoreService.ApplyGuestBridgeAsync(
+                    engineRoot, toolsRoot, vmDirectory, enable: true, null, null, cancellation);
+            case "DisableGuestBridge":
+                return NativeOpenCoreService.ApplyGuestBridgeAsync(
+                    engineRoot, toolsRoot, vmDirectory, enable: false, null, null, cancellation);
+            case "PrepareUpdates":
+                return NativeOpenCoreService.PrepareUpdatesAsync(engineRoot, toolsRoot, vmDirectory, cancellation);
+            case "Pair":
+                return NativeGuestAndLaunchService.PairAsync(
+                    vmDirectory, GetArg(arguments, "-User", "macos"), GetArg(arguments, "-Fingerprint"), cancellation);
+            case "EnableCursorAid":
+                return NativeGuestAndLaunchService.InvokeCursorAidAsync(toolsRoot, vmDirectory, "enable", cancellation);
+            case "DisableCursorAid":
+                return NativeGuestAndLaunchService.InvokeCursorAidAsync(toolsRoot, vmDirectory, "disable", cancellation);
+            case "MoveCursorToMainDisplay":
+                return NativeGuestAndLaunchService.InvokeCursorAidAsync(toolsRoot, vmDirectory, "move-main", cancellation);
+            case "MoveCursorToExtendedDisplay":
+                return NativeGuestAndLaunchService.InvokeCursorAidAsync(toolsRoot, vmDirectory, "move-extended", cancellation);
+            case "LightenExtendedDisplay":
+                return NativeGuestAndLaunchService.InvokeDisplayOptimizationAsync(vmDirectory, "lighten", cancellation);
+            case "RestoreExtendedDisplay":
+                return NativeGuestAndLaunchService.InvokeDisplayOptimizationAsync(vmDirectory, "restore", cancellation);
+            case "Start":
+                return NativeGuestAndLaunchService.StartVmAsync(
+                    engineRoot,
+                    toolsRoot,
+                    vmDirectory,
+                    !string.IsNullOrWhiteSpace(qemuExecutable) ? qemuExecutable : GetArg(arguments, "-Qemu"),
+                    HasSwitch(arguments, "-WithInstaller"),
+                    HasSwitch(arguments, "-Paused"),
+                    HasSwitch(arguments, "-Headless"),
+                    cancellation);
             case "SetHardware": {
                 string iso = GetArg(arguments, "-Iso");
                 bool preserveNet = HasSwitch(arguments, "-PreserveNetwork");
                 string network = GetArg(arguments, "-Network", "nat");
                 string physicalAdapter = GetArg(arguments, "-PhysicalAdapter");
-                if (!NativeVmControlService.CanHandleSetHardwareNatively(vmDirectory, iso, preserveNet, network, physicalAdapter))
-                    return null;
-                return NativeVmControlService.SetHardwareSimpleAsync(
-                    vmDirectory,
-                    GetIntArg(arguments, "-Cpus", 8),
-                    GetIntArg(arguments, "-MemoryMiB", 8192),
-                    GetArg(arguments, "-Resolution", "1920x1080"),
-                    GetArg(arguments, "-Audio", "none"),
-                    HasSwitch(arguments, "-Microphone"),
-                    GetArg(arguments, "-UsbBackend", "winusb"),
-                    HasSwitch(arguments, "-WithInstaller"),
-                    preserveNet,
-                    GetArg(arguments, "-GuestHost"),
-                    cancellation);
+                int cpus = GetIntArg(arguments, "-Cpus", 8);
+                int memoryMiB = GetIntArg(arguments, "-MemoryMiB", 8192);
+                string resolution = GetArg(arguments, "-Resolution", "1920x1080");
+                string audio = GetArg(arguments, "-Audio", "none");
+                bool microphone = HasSwitch(arguments, "-Microphone");
+                string usbBackend = GetArg(arguments, "-UsbBackend", "winusb");
+                bool withInstaller = HasSwitch(arguments, "-WithInstaller");
+                string guestHost = GetArg(arguments, "-GuestHost");
+                string adapter = GetArg(arguments, "-Adapter");
+
+                if (NativeVmControlService.CanHandleSetHardwareNatively(vmDirectory, iso, preserveNet, network, physicalAdapter)) {
+                    return NativeVmControlService.SetHardwareSimpleAsync(
+                        vmDirectory, cpus, memoryMiB, resolution, audio, microphone, usbBackend, withInstaller, preserveNet, guestHost, cancellation);
+                }
+                if (preserveNet || NativeOpenCoreService.CanHandleNetworkSwitchNatively(vmDirectory, network, physicalAdapter)) {
+                    return NativeOpenCoreService.SetHardwareWithIsoOrBridgeAsync(
+                        engineRoot, toolsRoot, vmDirectory, cpus, memoryMiB, resolution, iso, audio, microphone, usbBackend, withInstaller, preserveNet, network, adapter, guestHost, physicalAdapter, cancellation);
+                }
+                return null;
             }
             default:
                 return null;

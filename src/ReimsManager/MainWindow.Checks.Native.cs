@@ -46,7 +46,7 @@ public partial class MainWindow
             latest = JsonSerializer.SerializeToElement(new {
                 state = "running", runtime = new { pid = child.Id, start_ticks = child.StartTime.ToUniversalTime().Ticks, executable = Environment.ProcessPath! }
             });
-            currentState = "running"; State.Text = "実行中"; Tabs.SelectedIndex = 0;
+            currentState = "running"; State.Text = "実行中"; Tabs.SelectedIndex = 1;
             presentation.ShowConsole(); UpdatePowerControls(); await ArrangeCheck(); UpdateConsole(); await ArrangeCheck();
             nint host = ConsoleView.Handle, manager = new WindowInteropHelper(this).Handle;
             if (host == 0 || !ConsoleView.Attached) throw new Exception("Fixture console did not attach");

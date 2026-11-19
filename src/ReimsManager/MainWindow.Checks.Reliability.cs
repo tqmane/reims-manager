@@ -16,7 +16,7 @@ public partial class MainWindow
         var previousBackend = controlFixtureBackend;
         var previousStatus = latest;
         string previousState = currentState;
-        int page = Tabs.SelectedIndex, category = Devices.SelectedIndex;
+        int page = Tabs.SelectedIndex;
         var preferences = new Dictionary<string, bool>(settings.ClipboardByVm, StringComparer.OrdinalIgnoreCase);
         var second = new VmEntry("Sharing isolation fixture", Path.Combine(folder, "sharing-second.reimsvm"), Path.Combine(folder, "sharing-second.data"));
         string savedResolution = "1920x1080";
@@ -37,7 +37,7 @@ public partial class MainWindow
             if (action == "Status") {
                 if (checkCompletion) {
                     completionChecks++;
-                    if (!completingOperation || !IsUiBusy || Library.IsEnabled || SettingsOkButton.IsEnabled)
+                    if (!completingOperation || !IsUiBusy || Library.IsEnabled || WorkspaceNavigation.IsEnabled)
                         throw new Exception("A settings operation unlocked its VM before the final status read.");
                     Library.SelectedItem = second;
                     if (selectedEntry != entry || Library.SelectedItem as VmEntry != entry)
@@ -104,7 +104,7 @@ public partial class MainWindow
 
             currentState = "stopped"; UpdatePowerControls();
             Memory.Text = "12288";
-            if (await Operate("Start") || Tabs.SelectedIndex != 1 || !hardwareDirty || Memory.Text != "12288")
+            if (await Operate("Start") || Tabs.SelectedIndex != 0 || !hardwareDirty || Memory.Text != "12288")
                 throw new Exception("Start hid pending settings and launched with different saved values.");
             Resolution.SelectedItem = Resolution.Items.Cast<ComboBoxItem>().Single(x => x.Content?.ToString() == "2560x1440");
             currentState = "running"; UpdatePowerControls(); checkCompletion = true;
@@ -145,7 +145,7 @@ public partial class MainWindow
             machines.Remove(second); UpdateLibraryView();
             settings.ClipboardByVm = preferences; RestoreClipboardPreference();
             latest = previousStatus; LoadHardware(); loadedHardware = true;
-            currentState = previousState; Devices.SelectedIndex = category; Tabs.SelectedIndex = page;
+            currentState = previousState; Tabs.SelectedIndex = page;
             Feedback.Visibility = Visibility.Collapsed; ClearSettingsFeedback(); UpdatePowerControls();
         }
     }

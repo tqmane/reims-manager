@@ -4,13 +4,12 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 
 namespace ReimsManager;
 
 public partial class MainWindow
 {
-    private bool loadingHardware, loadingIdentity, hardwareDirty, identityDirty, syncingMemory;
+    private bool loadingHardware, loadingIdentity, hardwareDirty, identityDirty, syncingMemory, syncingResolution;
     private bool restoringSelection, syncingNavigation, closing;
     private VmEntry? selectedEntry;
     private long contextVersion;
@@ -142,6 +141,7 @@ public partial class MainWindow
         committedHardware = null; committedIdentity = null;
         networkDraftRefreshPending = false;
         Tabs.SelectedIndex = 0;
+        if (AppSettingsOverlay is not null) AppSettingsOverlay.Visibility = Visibility.Collapsed;
         ConsoleView.Detach(); ConsoleView.Visibility = Visibility.Hidden; ConsolePlaceholder.Visibility = Visibility.Visible;
         consoleDetached = false;
         RestoreClipboardPreference();
@@ -150,10 +150,10 @@ public partial class MainWindow
             foreach (TextBox field in new[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityRom, IdentityUuid, Iso, HardwareIsoPath, GuestHost, GuestUser, Fingerprint }) field.Clear();
             Memory.Text = "4096"; Cpus.Text = Math.Min(4, Environment.ProcessorCount).ToString(); DiskSize.Text = "300"; DiskInfo.Text = UiText.T("構成を読み込んでいます。");
             Sound.IsChecked = Microphone.IsChecked = HardwareIso.IsChecked = ConnectIso.IsChecked = false;
-            Nat.IsChecked = true; UsbBackend.SelectedIndex = 0; Resolution.SelectedIndex = 1;
+            Nat.IsChecked = true; UsbBackend.SelectedIndex = 0; SelectResolutionItems("1920x1080");
             Tap.ItemsSource = BridgeTap.ItemsSource = Physical.ItemsSource = Uplink.ItemsSource = Snapshots.ItemsSource = null;
             NetworkNotice.Text = "";
-            wifiForwarder=null;wifiStatusError=null;hardwareForwarder="";PacketFilterTerms.IsChecked=false;
+            wifiForwarder = null; wifiStatusError = null; hardwareForwarder = ""; PacketFilterTerms.IsChecked = false;
             ResetUsbInventory();
         } finally { loadingIdentity = loadingHardware = false; }
         RememberHardwareDraft(); RememberIdentityDraft();
@@ -166,13 +166,6 @@ public partial class MainWindow
     {
         if (Library is null || LibraryEmpty is null) return;
         UpdateLibraryView();
-    }
-
-    private void SidebarSectionsSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        // Expanded recovery controls must increase the scroll extent, not overflow a fixed-height grid.
-        if (SidebarLayout is not null)
-            SidebarLayout.MinHeight = Math.Max(460, SidebarLayout.RowDefinitions.Where(x => x.Height.IsAuto).Sum(x => x.ActualHeight) + 80);
     }
 
     private void UpdateLibraryView()
@@ -190,7 +183,8 @@ public partial class MainWindow
     private void NavigationChanged(object sender, SelectionChangedEventArgs e)
     {
         if (syncingNavigation || Tabs is null || IsUiBusy || e.Source != WorkspaceNavigation) return;
-        if (WorkspaceNavigation.SelectedItem is ListBoxItem item && int.TryParse(item.Tag?.ToString(), out int page)) Tabs.SelectedIndex = page;
+        if (WorkspaceNavigation.SelectedItem is ListBoxItem item && int.TryParse(item.Tag?.ToString(), out int page) && page >= 0 && page < Tabs.Items.Count)
+            Tabs.SelectedIndex = page;
     }
 
     private void NavigatePage(object sender, RoutedEventArgs e)
@@ -198,15 +192,6 @@ public partial class MainWindow
         if (IsUiBusy || !HasVm) return;
         if (sender is FrameworkElement element && int.TryParse(element.Tag?.ToString(), out int page) && page >= 0 && page < Tabs.Items.Count)
             Tabs.SelectedIndex = page;
-    }
-
-    private void ResetSettingsScroll()
-    {
-        // Hardware categories share one ScrollViewer. Its old offset must not hide
-        // the title and first fields when moving from a long editor to another one.
-        if (Devices.SelectedIndex >= 0 && Devices.SelectedIndex < Editors.Children.Count)
-            HardwareScroll.ScrollToTop();
-        UpdateSettingsWorkflow();
     }
 
     private void DiscardSettingsEdits(object sender, RoutedEventArgs e)
@@ -220,7 +205,7 @@ public partial class MainWindow
     {
         if (IsUiBusy || sender is not Button { Tag: string action }) return;
         if (action == "SetupEngine") { SetupEngine(sender, e); return; }
-        if (action == "SetupPage") { if (HasVm) Tabs.SelectedIndex = 5; return; }
+        if (action == "SetupPage") { if (HasVm) Tabs.SelectedIndex = 0; return; }
         await Operate(action);
     }
 
@@ -229,18 +214,18 @@ public partial class MainWindow
         if (WorkspaceNavigation is null || Tabs is null || Tabs.SelectedIndex < 0) return;
         syncingNavigation = true;
         try {
-            WorkspaceNavigation.SelectedItem = WorkspaceNavigation.Items.Cast<ListBoxItem>().FirstOrDefault(x => x.Tag?.ToString() == Tabs.SelectedIndex.ToString(CultureInfo.InvariantCulture));
-            WorkspaceTitle.Text = ((TabItem)Tabs.SelectedItem).Header?.ToString() ?? "";
-            if (SettingsOpen) {
-                Devices.SelectedIndex = Tabs.SelectedIndex == 1 ? hardwareCategory :
-                    Devices.Items.Cast<ListBoxItem>().ToList().FindIndex(x => x.Tag?.ToString() == Tabs.SelectedIndex.ToString(CultureInfo.InvariantCulture));
-                if (Devices.SelectedItem is { } item) Devices.ScrollIntoView(item);
-            }
+            WorkspaceNavigation.SelectedItem = WorkspaceNavigation.Items.Cast<ListBoxItem>()
+                .FirstOrDefault(x => x.Tag?.ToString() == Tabs.SelectedIndex.ToString(CultureInfo.InvariantCulture));
         } finally { syncingNavigation = false; }
     }
 
     private async void WindowKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && OverlayOpen && !IsUiBusy) {
+            e.Handled = true;
+            CloseAppSettings(sender, e);
+            return;
+        }
         if (!IsUiBusy && e.Key == Key.F11 && Keyboard.Modifiers == ModifierKeys.None) {
             e.Handled = true; ToggleFullScreen(sender, e); return;
         }
@@ -250,7 +235,7 @@ public partial class MainWindow
         else if (Keyboard.Modifiers == ModifierKeys.Control) {
             if (e.Key == Key.N) { e.Handled = true; NewVm(sender, e); }
             else if (e.Key == Key.O) { e.Handled = true; OpenVm(sender, e); }
-            else if (e.Key == Key.S && SettingsOpen) { e.Handled = true; ApplySettings(sender, e); }
+            else if (e.Key == Key.S && HasVm && (hardwareDirty || identityDirty)) { e.Handled = true; ApplySettings(sender, e); }
         }
     }
 
@@ -278,15 +263,15 @@ public partial class MainWindow
             if (Bridge.IsChecked == true) {
                 bool legacy = latest.ValueKind == System.Text.Json.JsonValueKind.Object && latest.TryGetProperty("network", out var mode) && mode.GetString() == "bridge" &&
                     (!latest.TryGetProperty("network_uplink_id", out var saved) || string.IsNullOrEmpty(saved.GetString()));
-                if (SelectedUplink.Length == 0 && !legacy) return NetworkPreparationRequired(UiText.T("ホストの Wi-Fi・有線 LAN を選び、「LAN 接続の準備」から接続を準備してください。"));
-                bool wifi=Uplink.SelectedItem is NetworkUplink { Kind:"wifi" } || WifiForwarderState.IsMacNat(hardwareForwarder);
+                if (SelectedUplink.Length == 0 && !legacy) return NetworkPreparationRequired(UiText.T("ホストの Wi-Fi・有線 LAN を選び、ブリッジ・Wi-Fi 接続を準備してください。"));
+                bool wifi = Uplink.SelectedItem is NetworkUplink { Kind: "wifi" } || WifiForwarderState.IsMacNat(hardwareForwarder);
                 if (wifi) {
-                    string savedId=latest.TryGetProperty("network_uplink_id",out var id) ? id.GetString() ?? "" : "";
-                    if (wifiForwarder is not { Kind:WifiForwarderState.MacNat,Configured:true,Ipv6Enabled:true } || SelectedUplink!=savedId)
-                        return NetworkPreparationRequired(UiText.T("先に「LAN 接続の準備」で、この Wi-Fi の互換接続を準備してください。ほかの未保存の変更は保持しています。"));
+                    string savedId = latest.TryGetProperty("network_uplink_id", out var id) ? id.GetString() ?? "" : "";
+                    if (wifiForwarder is not { Kind: WifiForwarderState.MacNat, Configured: true, Ipv6Enabled: true } || SelectedUplink != savedId)
+                        return NetworkPreparationRequired(UiText.T("先にこの Wi-Fi の互換接続を準備してください。ほかの未保存の変更は保持しています。"));
                 } else if (string.IsNullOrWhiteSpace(Selected(Tap))) { NetworkTapDetails.IsExpanded = true; return InvalidField(Tap, UiText.T("ブリッジの準備で選択した Reims 専用 TAP を指定してください。")); }
             }
-            if (WifiForwarderState.IsMacNat(hardwareForwarder) && Nat.IsChecked==true) return NetworkPreparationRequired(UiText.T("Wi-Fi 互換接続の解除ボタンで、専用 TAP の設定を復元してから NAT に戻してください。ほかの未保存の変更は保持しています。"));
+            if (WifiForwarderState.IsMacNat(hardwareForwarder) && Nat.IsChecked == true) return NetworkPreparationRequired(UiText.T("Wi-Fi 互換接続の解除ボタンで、専用 TAP の設定を復元してから NAT に戻してください。ほかの未保存の変更は保持しています。"));
             if (!ManagerValidation.Host(GuestHost.Text.Trim())) return InvalidField(GuestHost, UiText.T("macOS の IP アドレスまたはホスト名を確認してください。"));
         }
         if (Microphone.IsChecked == true && Sound.IsChecked != true) return InvalidField(Microphone, UiText.T("マイクを使用するには、スピーカー共有も有効にしてください。"));
@@ -295,12 +280,13 @@ public partial class MainWindow
 
     private bool InvalidField(Control field, string message)
     {
-        // Reveal the failing editor instead of focusing an invisible field on another page.
-        for (int i = 0; i < Editors.Children.Count; i++)
-            if (ReferenceEquals(Editors.Children[i], field) || LogicalChildren<Control>(Editors.Children[i]).Contains(field)) { Tabs.SelectedIndex = 1; Devices.SelectedIndex = i; break; }
+        for (int i = 0; i < Tabs.Items.Count; i++) {
+            if (Tabs.Items[i] is TabItem tab && (ReferenceEquals(tab.Content, field) || (tab.Content is DependencyObject content && LogicalChildren<Control>(content).Contains(field)))) {
+                Tabs.SelectedIndex = i;
+                break;
+            }
+        }
         ShowError(message);
-        // The selected tab may not have been arranged yet. Reveal the actual
-        // failing field after layout so a validation error never focuses off-screen.
         field.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() => {
             if (!closing && field.IsVisible) { field.BringIntoView(); field.Focus(); }
         }));

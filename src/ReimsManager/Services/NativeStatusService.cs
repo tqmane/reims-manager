@@ -579,7 +579,22 @@ internal static partial class NativeStatusService
         }
     }
 
-    private static async Task<string> CheckGuestBridgeReleaseAsync(CancellationToken cancellation)
+    internal static (string Url, string Id, string Asset, long Bytes) ResolveReleaseAssetInfo(JsonObject pin)
+    {
+        string repo = pin["release_repository"]?.GetValue<string>() ?? "";
+        string id = pin["id"]?.GetValue<string>() ?? "";
+        string asset = pin["asset"]?.GetValue<string>() ?? "";
+        if (!GitHubRepoRegex().IsMatch(repo) || !PinIdOrAssetRegex().IsMatch(id) || !PinIdOrAssetRegex().IsMatch(asset))
+            throw new InvalidDataException("Invalid immutable release pin.");
+        long bytes = 0;
+        if (pin.TryGetPropertyValue("bytes", out var bytesNode) && bytesNode is not null) {
+            bytes = bytesNode.GetValue<long>();
+            if (bytes <= 0) throw new InvalidDataException("Invalid pinned release size.");
+        }
+        return ($"https://github.com/{repo}/releases/download/{id}/{asset}", id, asset, bytes);
+    }
+
+    internal static async Task<JsonObject> GetQualifiedGuestBridgePinAsync(bool checkAvailability, CancellationToken cancellation)
     {
         var pin = AtomicFileStore.ReadJsonNode(ResolveScriptAssetPath("guest-bridge-lock.json"), 65536).AsObject();
         bool releaseReady = pin["release_ready"]?.GetValue<bool>() ?? false;
@@ -589,23 +604,23 @@ internal static partial class NativeStatusService
         if (!releaseReady || scope != "generic-metal" || runtimeValidation != "abi-checked" || kernelCount == 0)
             throw new InvalidOperationException("Guest bridge is still a candidate; setup cannot be completed with an unqualified addon.");
 
-        string repo = pin["release_repository"]?.GetValue<string>() ?? "";
-        string id = pin["id"]?.GetValue<string>() ?? "";
-        string asset = pin["asset"]?.GetValue<string>() ?? "";
-        if (!GitHubRepoRegex().IsMatch(repo) || !PinIdOrAssetRegex().IsMatch(id) || !PinIdOrAssetRegex().IsMatch(asset))
-            throw new InvalidDataException("Invalid immutable release pin.");
-        if (pin.TryGetPropertyValue("bytes", out var bytesNode) && (bytesNode?.GetValue<long>() ?? 0) <= 0)
-            throw new InvalidDataException("Invalid pinned release size.");
-
-        string url = $"https://github.com/{repo}/releases/download/{id}/{asset}";
-        try {
-            using var req = new HttpRequestMessage(HttpMethod.Head, url);
-            using var res = await SharedHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false);
-            if (!res.IsSuccessStatusCode)
-                throw new HttpRequestException($"HTTP {(int)res.StatusCode}");
-        } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellation.IsCancellationRequested) {
-            throw new InvalidOperationException($"Pinned asset {id}/{asset} is not available. Check the network or wait for publication; setup is not ready.");
+        if (checkAvailability) {
+            var (url, id, asset, _) = ResolveReleaseAssetInfo(pin);
+            try {
+                using var req = new HttpRequestMessage(HttpMethod.Head, url);
+                using var res = await SharedHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false);
+                if (!res.IsSuccessStatusCode)
+                    throw new HttpRequestException($"HTTP {(int)res.StatusCode}");
+            } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellation.IsCancellationRequested) {
+                throw new InvalidOperationException($"Pinned asset {id}/{asset} is not available. Check the network or wait for publication; setup is not ready.");
+            }
         }
-        return id;
+        return pin;
+    }
+
+    private static async Task<string> CheckGuestBridgeReleaseAsync(CancellationToken cancellation)
+    {
+        var pin = await GetQualifiedGuestBridgePinAsync(checkAvailability: true, cancellation).ConfigureAwait(false);
+        return pin["id"]?.GetValue<string>() ?? "";
     }
 }

@@ -2159,4 +2159,449 @@ Windows の LAN が一時的に切断され、IP アドレスが変わる場合�
   <data name="現在のドライバーが保存済みレシートと一致しないため自動上書きを中止しました。「登録を解除して Windows に戻す」または「復元エラーをリセット」で復旧できます。" xml:space="preserve">
     <value>現在のドライバーが保存済みレシートと一致しないため自動上書きを中止しました。「登録を解除して Windows に戻す」または「復元エラーをリセット」で復旧できます。</value>
   </data>
+  <data name="+ 新しい macOS VM を作成" xml:space="preserve">
+    <value>+ 新しい macOS VM を作成</value>
+  </data>
+  <data name="GPU ブリッジを解除" xml:space="preserve">
+    <value>GPU ブリッジを解除</value>
+  </data>
+  <data name="Mac → Win" xml:space="preserve">
+    <value>Mac → Win</value>
+  </data>
+  <data name="Mac の識別情報 (SMBIOS)" xml:space="preserve">
+    <value>Mac の識別情報 (SMBIOS)</value>
+  </data>
+  <data name="NAT（設定不要ですぐ使えます）" xml:space="preserve">
+    <value>NAT（設定不要ですぐ使えます）</value>
+  </data>
+  <data name="OFF" xml:space="preserve">
+    <value>OFF</value>
+  </data>
+  <data name="OpenCore・互換性メンテナンス" xml:space="preserve">
+    <value>OpenCore・互換性メンテナンス</value>
+  </data>
+  <data name="QCOW2 / VMDK / IMG から新しい VM を安全に作成します（元データは保持）" xml:space="preserve">
+    <value>QCOW2 / VMDK / IMG から新しい VM を安全に作成します（元データは保持）</value>
+  </data>
+  <data name="QEMU・OpenCore・GPU ROM を自動導入して準備します。" xml:space="preserve">
+    <value>QEMU・OpenCore・GPU ROM を自動導入して準備します。</value>
+  </data>
+  <data name="QEMU・WHPX・Reims・ディスクツールの起動を確認しています…" xml:space="preserve">
+    <value>QEMU・WHPX・Reims・ディスクツールの起動を確認しています…</value>
+  </data>
+  <data name="Reims Workstation" xml:space="preserve">
+    <value>Reims Workstation</value>
+  </data>
+  <data name="Reims エンジン フォルダー" xml:space="preserve">
+    <value>Reims エンジン フォルダー</value>
+  </data>
+  <data name="Reims エンジンがまだ設定されていません" xml:space="preserve">
+    <value>Reims エンジンがまだ設定されていません</value>
+  </data>
+  <data name="SSH 指紋" xml:space="preserve">
+    <value>SSH 指紋</value>
+  </data>
+  <data name="SSH 鍵の指紋 (SHA256:...)" xml:space="preserve">
+    <value>SSH 鍵の指紋 (SHA256:...)</value>
+  </data>
+  <data name="USB パススルー &amp; iPhone 接続" xml:space="preserve">
+    <value>USB パススルー &amp; iPhone 接続</value>
+  </data>
+  <data name="USB 転送方式:" xml:space="preserve">
+    <value>USB 転送方式:</value>
+  </data>
+  <data name="USB・デバイス" xml:space="preserve">
+    <value>USB・デバイス</value>
+  </data>
+  <data name="VM を作成または選択すると、構成・画面・USB・ネットワークを 1 か所で管理できます。" xml:space="preserve">
+    <value>VM を作成または選択すると、構成・画面・USB・ネットワークを 1 か所で管理できます。</value>
+  </data>
+  <data name="VM を検索…" xml:space="preserve">
+    <value>VM を検索…</value>
+  </data>
+  <data name="VM 画面に接続" xml:space="preserve">
+    <value>VM 画面に接続</value>
+  </data>
+  <data name="VM 画面を表示" xml:space="preserve">
+    <value>VM 画面を表示</value>
+  </data>
+  <data name="Wi-Fi 互換を解除（管理者）" xml:space="preserve">
+    <value>Wi-Fi 互換を解除（管理者）</value>
+  </data>
+  <data name="Wi-Fi 互換接続を準備（管理者）" xml:space="preserve">
+    <value>Wi-Fi 互換接続を準備（管理者）</value>
+  </data>
+  <data name="Win → Mac" xml:space="preserve">
+    <value>Win → Mac</value>
+  </data>
+  <data name="WinUSB（標準・iPhone 推奨）" xml:space="preserve">
+    <value>WinUSB（標準・iPhone 推奨）</value>
+  </data>
+  <data name="Windows のカーソルを表示" xml:space="preserve">
+    <value>Windows のカーソルを表示</value>
+  </data>
+  <data name="Windows のカーソルを隠す" xml:space="preserve">
+    <value>Windows のカーソルを隠す</value>
+  </data>
+  <data name="Windows パケットフィルタードライバー（WinpkFilter）の導入条件に同意する — " xml:space="preserve">
+    <value>Windows パケットフィルタードライバー（WinpkFilter）の導入条件に同意する — </value>
+  </data>
+  <data name="Windows ブリッジを作成（管理者）" xml:space="preserve">
+    <value>Windows ブリッジを作成（管理者）</value>
+  </data>
+  <data name="macOS IP / ホスト名" xml:space="preserve">
+    <value>macOS IP / ホスト名</value>
+  </data>
+  <data name="macOS ペアリング（REIMSTOOLS の setup.command 表示値）" xml:space="preserve">
+    <value>macOS ペアリング（REIMSTOOLS の setup.command 表示値）</value>
+  </data>
+  <data name="macOS ホスト名" xml:space="preserve">
+    <value>macOS ホスト名</value>
+  </data>
+  <data name="macOS 仮想マシンを始めましょう" xml:space="preserve">
+    <value>macOS 仮想マシンを始めましょう</value>
+  </data>
+  <data name="macOS 更新互換を設定" xml:space="preserve">
+    <value>macOS 更新互換を設定</value>
+  </data>
+  <data name="qemu-system-x86_64 を直接選択…" xml:space="preserve">
+    <value>qemu-system-x86_64 を直接選択…</value>
+  </data>
+  <data name="▶ 再開" xml:space="preserve">
+    <value>▶ 再開</value>
+  </data>
+  <data name="▶ 起動" xml:space="preserve">
+    <value>▶ 起動</value>
+  </data>
+  <data name="⟳ デバイス一覧を更新" xml:space="preserve">
+    <value>⟳ デバイス一覧を更新</value>
+  </data>
+  <data name="「更新」で再確認できます。入力中の変更は保持します。" xml:space="preserve">
+    <value>「更新」で再確認できます。入力中の変更は保持します。</value>
+  </data>
+  <data name="「概要・構成」タブの初期セットアップからインストーラーを選んでください。" xml:space="preserve">
+    <value>「概要・構成」タブの初期セットアップからインストーラーを選んでください。</value>
+  </data>
+  <data name="この iPhone / iPad の保留中の復元エラー状態をリセットしますか？&#10;（現在も一時ドライバーが適用されている場合は拒否されます）" xml:space="preserve">
+    <value>この iPhone / iPad の保留中の復元エラー状態をリセットしますか？
+（現在も一時ドライバーが適用されている場合は拒否されます）</value>
+  </data>
+  <data name="アプリ設定ファイルの保存場所" xml:space="preserve">
+    <value>アプリ設定ファイルの保存場所</value>
+  </data>
+  <data name="インストーラー ISO を構成に保持する" xml:space="preserve">
+    <value>インストーラー ISO を構成に保持する</value>
+  </data>
+  <data name="エンジンとネイティブ DLL をダウンロードしています…" xml:space="preserve">
+    <value>エンジンとネイティブ DLL をダウンロードしています…</value>
+  </data>
+  <data name="エンジンを導入・検証…" xml:space="preserve">
+    <value>エンジンを導入・検証…</value>
+  </data>
+  <data name="エンジンを準備…" xml:space="preserve">
+    <value>エンジンを準備…</value>
+  </data>
+  <data name="エンジン保存先" xml:space="preserve">
+    <value>エンジン保存先</value>
+  </data>
+  <data name="オーディオ設定 (Win)" xml:space="preserve">
+    <value>オーディオ設定 (Win)</value>
+  </data>
+  <data name="カーソル補助" xml:space="preserve">
+    <value>カーソル補助</value>
+  </data>
+  <data name="カーソル補助 ON" xml:space="preserve">
+    <value>カーソル補助 ON</value>
+  </data>
+  <data name="カーソル補助を有効にする" xml:space="preserve">
+    <value>カーソル補助を有効にする</value>
+  </data>
+  <data name="カーソル補助を無効にする" xml:space="preserve">
+    <value>カーソル補助を無効にする</value>
+  </data>
+  <data name="カーソル隠す" xml:space="preserve">
+    <value>カーソル隠す</value>
+  </data>
+  <data name="クリップボード共有 &amp; SSH ペアリング" xml:space="preserve">
+    <value>クリップボード共有 &amp; SSH ペアリング</value>
+  </data>
+  <data name="コンソール・画面" xml:space="preserve">
+    <value>コンソール・画面</value>
+  </data>
+  <data name="コンピューティング・メディア" xml:space="preserve">
+    <value>コンピューティング・メディア</value>
+  </data>
+  <data name="システム設定に合わせる (Auto)" xml:space="preserve">
+    <value>システム設定に合わせる (Auto)</value>
+  </data>
+  <data name="シャットダウン（推奨）" xml:space="preserve">
+    <value>シャットダウン（推奨）</value>
+  </data>
+  <data name="スナップショット一覧" xml:space="preserve">
+    <value>スナップショット一覧</value>
+  </data>
+  <data name="スナップショット名" xml:space="preserve">
+    <value>スナップショット名</value>
+  </data>
+  <data name="スピーカー共有（音声出力）" xml:space="preserve">
+    <value>スピーカー共有（音声出力）</value>
+  </data>
+  <data name="セットアップ ISO" xml:space="preserve">
+    <value>セットアップ ISO</value>
+  </data>
+  <data name="セットアップ完了後すぐに起動する" xml:space="preserve">
+    <value>セットアップ完了後すぐに起動する</value>
+  </data>
+  <data name="ダウンロード中" xml:space="preserve">
+    <value>ダウンロード中</value>
+  </data>
+  <data name="テキストを自動共有する" xml:space="preserve">
+    <value>テキストを自動共有する</value>
+  </data>
+  <data name="ディスクを取り込み…" xml:space="preserve">
+    <value>ディスクを取り込み…</value>
+  </data>
+  <data name="ディスク容量 (GiB)" xml:space="preserve">
+    <value>ディスク容量 (GiB)</value>
+  </data>
+  <data name="ネットワーク・SSH" xml:space="preserve">
+    <value>ネットワーク・SSH</value>
+  </data>
+  <data name="ネットワーク構成" xml:space="preserve">
+    <value>ネットワーク構成</value>
+  </data>
+  <data name="ハードウェア ISO パス" xml:space="preserve">
+    <value>ハードウェア ISO パス</value>
+  </data>
+  <data name="ファイルとソースの固定版を検証しています…" xml:space="preserve">
+    <value>ファイルとソースの固定版を検証しています…</value>
+  </data>
+  <data name="フォルダーを開く" xml:space="preserve">
+    <value>フォルダーを開く</value>
+  </data>
+  <data name="ブリッジ / LAN 共有（macOS を LAN へ参加）" xml:space="preserve">
+    <value>ブリッジ / LAN 共有（macOS を LAN へ参加）</value>
+  </data>
+  <data name="ブリッジ作成用の TAP 名:" xml:space="preserve">
+    <value>ブリッジ作成用の TAP 名:</value>
+  </data>
+  <data name="ホストの Wi-Fi・有線 LAN を選び、ブリッジ・Wi-Fi 接続を準備してください。" xml:space="preserve">
+    <value>ホストの Wi-Fi・有線 LAN を選び、ブリッジ・Wi-Fi 接続を準備してください。</value>
+  </data>
+  <data name="ホストマイクを入力として共有" xml:space="preserve">
+    <value>ホストマイクを入力として共有</value>
+  </data>
+  <data name="ホスト側 LAN / Wi-Fi 互換準備（管理者権限）" xml:space="preserve">
+    <value>ホスト側 LAN / Wi-Fi 互換準備（管理者権限）</value>
+  </data>
+  <data name="ボードシリアル (MLB)" xml:space="preserve">
+    <value>ボードシリアル (MLB)</value>
+  </data>
+  <data name="メインへ" xml:space="preserve">
+    <value>メインへ</value>
+  </data>
+  <data name="メイン画面へカーソルを移動" xml:space="preserve">
+    <value>メイン画面へカーソルを移動</value>
+  </data>
+  <data name="モデル名" xml:space="preserve">
+    <value>モデル名</value>
+  </data>
+  <data name="ライブラリと状態を再読込" xml:space="preserve">
+    <value>ライブラリと状態を再読込</value>
+  </data>
+  <data name="ライブラリ・管理画面を表示" xml:space="preserve">
+    <value>ライブラリ・管理画面を表示</value>
+  </data>
+  <data name="ライブラリ一覧を更新" xml:space="preserve">
+    <value>ライブラリ一覧を更新</value>
+  </data>
+  <data name="ランダム生成…" xml:space="preserve">
+    <value>ランダム生成…</value>
+  </data>
+  <data name="一覧から登録解除…" xml:space="preserve">
+    <value>一覧から登録解除…</value>
+  </data>
+  <data name="上の「▶ 起動」から macOS を開始できます。" xml:space="preserve">
+    <value>上の「▶ 起動」から macOS を開始できます。</value>
+  </data>
+  <data name="下の初期セットアップから macOS インストーラーと仮想ディスクを準備してください。" xml:space="preserve">
+    <value>下の初期セットアップから macOS インストーラーと仮想ディスクを準備してください。</value>
+  </data>
+  <data name="仮想ディスクと OpenCore を準備" xml:space="preserve">
+    <value>仮想ディスクと OpenCore を準備</value>
+  </data>
+  <data name="仮想ディスク・スナップショット" xml:space="preserve">
+    <value>仮想ディスク・スナップショット</value>
+  </data>
+  <data name="保存先フォルダーを開く" xml:space="preserve">
+    <value>保存先フォルダーを開く</value>
+  </data>
+  <data name="保存済みの VM (.reimsvm) を開く" xml:space="preserve">
+    <value>保存済みの VM (.reimsvm) を開く</value>
+  </data>
+  <data name="保存済みスナップショットへ復元" xml:space="preserve">
+    <value>保存済みスナップショットへ復元</value>
+  </data>
+  <data name="先にこの Wi-Fi の互換接続を準備してください。ほかの未保存の変更は保持しています。" xml:space="preserve">
+    <value>先にこの Wi-Fi の互換接続を準備してください。ほかの未保存の変更は保持しています。</value>
+  </data>
+  <data name="再読み込み" xml:space="preserve">
+    <value>再読み込み</value>
+  </data>
+  <data name="初期セットアップ — macOS インストーラーを準備" xml:space="preserve">
+    <value>初期セットアップ — macOS インストーラーを準備</value>
+  </data>
+  <data name="別ウィンドウ" xml:space="preserve">
+    <value>別ウィンドウ</value>
+  </data>
+  <data name="別フォルダーや外付けドライブにある VM をライブラリへ追加します" xml:space="preserve">
+    <value>別フォルダーや外付けドライブにある VM をライブラリへ追加します</value>
+  </data>
+  <data name="割り当てメモリ" xml:space="preserve">
+    <value>割り当てメモリ</value>
+  </data>
+  <data name="変更を破棄" xml:space="preserve">
+    <value>変更を破棄</value>
+  </data>
+  <data name="専用 TAP を導入（管理者）" xml:space="preserve">
+    <value>専用 TAP を導入（管理者）</value>
+  </data>
+  <data name="差分ディスクを最適化…" xml:space="preserve">
+    <value>差分ディスクを最適化…</value>
+  </data>
+  <data name="戻す" xml:space="preserve">
+    <value>戻す</value>
+  </data>
+  <data name="拡張へ" xml:space="preserve">
+    <value>拡張へ</value>
+  </data>
+  <data name="拡張サイズ GiB" xml:space="preserve">
+    <value>拡張サイズ GiB</value>
+  </data>
+  <data name="拡張後の容量 (GiB):" xml:space="preserve">
+    <value>拡張後の容量 (GiB):</value>
+  </data>
+  <data name="拡張画面へカーソルを移動" xml:space="preserve">
+    <value>拡張画面へカーソルを移動</value>
+  </data>
+  <data name="拡張画面を元に戻す" xml:space="preserve">
+    <value>拡張画面を元に戻す</value>
+  </data>
+  <data name="拡張軽量化" xml:space="preserve">
+    <value>拡張軽量化</value>
+  </data>
+  <data name="接続・登録を解除" xml:space="preserve">
+    <value>接続・登録を解除</value>
+  </data>
+  <data name="操作・診断ログ" xml:space="preserve">
+    <value>操作・診断ログ</value>
+  </data>
+  <data name="新しい macOS VM を作成 (Ctrl+N)" xml:space="preserve">
+    <value>新しい macOS VM を作成 (Ctrl+N)</value>
+  </data>
+  <data name="新しいスナップショット名" xml:space="preserve">
+    <value>新しいスナップショット名</value>
+  </data>
+  <data name="既存の .reimsvm を開く (Ctrl+O)" xml:space="preserve">
+    <value>既存の .reimsvm を開く (Ctrl+O)</value>
+  </data>
+  <data name="既存の仮想ディスクを取り込む" xml:space="preserve">
+    <value>既存の仮想ディスクを取り込む</value>
+  </data>
+  <data name="最大化" xml:space="preserve">
+    <value>最大化</value>
+  </data>
+  <data name="最新の状態を更新 (F5)" xml:space="preserve">
+    <value>最新の状態を更新 (F5)</value>
+  </data>
+  <data name="有線 TAP・Windows ブリッジ詳細設定" xml:space="preserve">
+    <value>有線 TAP・Windows ブリッジ詳細設定</value>
+  </data>
+  <data name="概要・構成" xml:space="preserve">
+    <value>概要・構成</value>
+  </data>
+  <data name="構成" xml:space="preserve">
+    <value>構成</value>
+  </data>
+  <data name="構成に保存する TAP 名:" xml:space="preserve">
+    <value>構成に保存する TAP 名:</value>
+  </data>
+  <data name="構成・ディスク変更には完全停止が必要です。USB 接続や解像度適用は各タブから行えます。" xml:space="preserve">
+    <value>構成・ディスク変更には完全停止が必要です。USB 接続や解像度適用は各タブから行えます。</value>
+  </data>
+  <data name="次回起動時にインストーラーを起動する" xml:space="preserve">
+    <value>次回起動時にインストーラーを起動する</value>
+  </data>
+  <data name="消去" xml:space="preserve">
+    <value>消去</value>
+  </data>
+  <data name="準備対象の物理アダプター:" xml:space="preserve">
+    <value>準備対象の物理アダプター:</value>
+  </data>
+  <data name="物理アダプター (Uplink)" xml:space="preserve">
+    <value>物理アダプター (Uplink)</value>
+  </data>
+  <data name="環境・Reims エンジン設定" xml:space="preserve">
+    <value>環境・Reims エンジン設定</value>
+  </data>
+  <data name="環境・エンジン設定" xml:space="preserve">
+    <value>環境・エンジン設定</value>
+  </data>
+  <data name="画面" xml:space="preserve">
+    <value>画面</value>
+  </data>
+  <data name="画面・カーソル操作" xml:space="preserve">
+    <value>画面・カーソル操作</value>
+  </data>
+  <data name="管理画面" xml:space="preserve">
+    <value>管理画面</value>
+  </data>
+  <data name="解像度を今すぐ適用" xml:space="preserve">
+    <value>解像度を今すぐ適用</value>
+  </data>
+  <data name="記録済みブリッジを解除（管理者）" xml:space="preserve">
+    <value>記録済みブリッジを解除（管理者）</value>
+  </data>
+  <data name="設定 JSON を取り込む…" xml:space="preserve">
+    <value>設定 JSON を取り込む…</value>
+  </data>
+  <data name="設定ファイルの場所" xml:space="preserve">
+    <value>設定ファイルの場所</value>
+  </data>
+  <data name="設定フォルダーを開く" xml:space="preserve">
+    <value>設定フォルダーを開く</value>
+  </data>
+  <data name="診断ログ一式を収集" xml:space="preserve">
+    <value>診断ログ一式を収集</value>
+  </data>
+  <data name="詳細" xml:space="preserve">
+    <value>詳細</value>
+  </data>
+  <data name="詳細・ログ" xml:space="preserve">
+    <value>詳細・ログ</value>
+  </data>
+  <data name="起動時解像度" xml:space="preserve">
+    <value>起動時解像度</value>
+  </data>
+  <data name="起動設定を再適用" xml:space="preserve">
+    <value>起動設定を再適用</value>
+  </data>
+  <data name="通信" xml:space="preserve">
+    <value>通信</value>
+  </data>
+  <data name="配布済みエンジンを確認しています…" xml:space="preserve">
+    <value>配布済みエンジンを確認しています…</value>
+  </data>
+  <data name="電源" xml:space="preserve">
+    <value>電源</value>
+  </data>
+  <data name="電源メニュー" xml:space="preserve">
+    <value>電源メニュー</value>
+  </data>
+  <data name="＋ 保存" xml:space="preserve">
+    <value>＋ 保存</value>
+  </data>
+  <data name="上の「⟳ デバイス一覧を更新」を押すと、接続可能な USB デバイス・iPhone が表示されます" xml:space="preserve">
+    <value>上の「⟳ デバイス一覧を更新」を押すと、接続可能な USB デバイス・iPhone が表示されます</value>
+  </data>
 </root>

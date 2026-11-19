@@ -232,7 +232,7 @@ public partial class MainWindow
     }
     private void PrepareStartConsole()
     {
-        consoleDetached = false; presentation.ShowConsole(); Tabs.SelectedIndex = 0;
+        consoleDetached = false; presentation.ShowConsole(); Tabs.SelectedIndex = 1;
     }
     private async void MenuAction(object sender, RoutedEventArgs e) => await Operate(((MenuItem)sender).Tag.ToString()!);
     private void OpenSoundSettings(object sender, RoutedEventArgs e) => Process.Start(new ProcessStartInfo("ms-settings:sound") { UseShellExecute = true });
@@ -245,14 +245,14 @@ public partial class MainWindow
     private void DockConsole(object sender, RoutedEventArgs e)
     {
         if (IsUiBusy || !RequireAction("Console") || !TryCloseSettings()) return;
-        consoleDetached = false; presentation.ShowConsole(); Tabs.SelectedIndex = 0;
+        consoleDetached = false; presentation.ShowConsole(); Tabs.SelectedIndex = 1;
         UpdatePowerControls(); UpdateLayout(); UpdateConsole();
     }
     private void TabChanged(object sender, SelectionChangedEventArgs e) { if (e.Source == Tabs && ConsoleView is not null) { SyncNavigation(); UpdateConsole(); UpdatePowerControls(); } }
 
     private void UpdateConsole()
     {
-        if (SettingsOpen || consoleDetached) { ConsoleView.Visibility = Visibility.Hidden; return; }
+        if (SettingsOpen || OverlayOpen || consoleDetached) { ConsoleView.Visibility = Visibility.Hidden; return; }
         if (selfTest && !useFixtureConsole || latest.ValueKind != JsonValueKind.Object) return;
         if (currentState is "shutdown" or "stopped" or "unprepared") {
             ConsoleView.Visibility = Visibility.Hidden; ConsolePlaceholder.Visibility = Visibility.Visible; return;

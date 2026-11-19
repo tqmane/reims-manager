@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Shell;
+using System.Windows.Media;
 
 namespace ReimsManager;
 
@@ -9,71 +9,84 @@ public partial class MainWindow
 {
     private readonly WorkspacePresentation presentation = new();
     private bool wasConsoleFocused;
-    private GridLength libraryWidth = new(236);
+    private GridLength libraryWidth = new(232);
     private string settingsFeedback = "";
-    private bool SettingsOpen => Tabs.SelectedIndex > 0;
+    private bool SettingsOpen => Tabs.SelectedIndex != 1;
+    private bool OverlayOpen => AppSettingsOverlay?.Visibility == Visibility.Visible;
     private bool IsUiBusy => busy || applyingSettings || completingOperation;
-    private bool ConsoleFocused => presentation.Focused(SettingsOpen, consoleDetached);
+    private bool ConsoleFocused => presentation.Focused(SettingsOpen || OverlayOpen, consoleDetached);
+
+    private static Brush StatusDotBrush(string state) => state switch {
+        "running" => new SolidColorBrush(Color.FromRgb(0x16, 0xC6, 0x0C)),
+        "paused" or "prelaunch" or "suspended" => new SolidColorBrush(Color.FromRgb(0xF7, 0x63, 0x0C)),
+        "shutdown" or "unknown" or "guest-panicked" => new SolidColorBrush(Color.FromRgb(0xD1, 0x34, 0x38)),
+        _ => new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A))
+    };
 
     private void UpdateWorkspacePresentation()
     {
-        if (TitleBar is null || SettingsPage is null) return;
+        if (TitleBar is null || Tabs is null || PendingSaveBar is null) return;
         presentation.Observe(selectedEntry?.File, currentState);
         bool focus = ConsoleFocused;
         if (fullScreen && (!focus || !ConsoleView.Attached)) ExitFullScreen(refresh: false);
+
         TitleBar.Visibility = GlobalNotices.Visibility = fullScreen ? Visibility.Collapsed : Visibility.Visible;
         ChromeRoot.BorderThickness = new Thickness(fullScreen ? 0 : 1);
-        SessionFullScreenButton.IsEnabled = FullScreenMenuItem.IsEnabled = !IsUiBusy && (fullScreen || CanOperate("Console"));
+        SessionFullScreenButton.IsEnabled = !IsUiBusy && (fullScreen || CanOperate("Console"));
         SessionFullScreenButton.Content = fullScreen ? "\uE73F" : "\uE740";
         SessionFullScreenButton.ToolTip = fullScreen ? UiText.T("全画面を終了") : UiText.T("全画面表示 (F11)");
-        FullScreenMenuItem.Header = fullScreen ? UiText.T("全画面を終了") : UiText.T("全画面表示");
         System.Windows.Automation.AutomationProperties.SetName(SessionFullScreenButton, fullScreen ? UiText.T("全画面を終了") : UiText.T("全画面表示"));
-        bool settingsVisible = HasVm && SettingsOpen;
-        bool manager = !focus && !settingsVisible;
 
+        bool manager = !focus;
         if (focus != wasConsoleFocused) {
             if (focus) libraryWidth = LibraryColumn.Width;
             LibraryColumn.MinWidth = focus ? 0 : 200;
             LibraryColumn.Width = focus ? new GridLength(0) : libraryWidth;
-            WorkstationLayout.ColumnDefinitions[1].Width = new GridLength(focus ? 0 : 5);
+            WorkstationLayout.ColumnDefinitions[1].Width = new GridLength(focus ? 0 : 4);
             wasConsoleFocused = focus;
         }
-        WorkstationLayout.Visibility = settingsVisible ? Visibility.Collapsed : Visibility.Visible;
-        SettingsPage.Visibility = settingsVisible ? Visibility.Visible : Visibility.Collapsed;
+
+        WorkstationLayout.Visibility = Visibility.Visible;
         ManagementCommands.Visibility = manager ? Visibility.Visible : Visibility.Collapsed;
         LibraryPane.Visibility = LibrarySplitter.Visibility = manager ? Visibility.Visible : Visibility.Collapsed;
         VmHeader.Visibility = manager && selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
-        WorkspaceNavSection.Visibility = manager && HasVm ? Visibility.Visible : Visibility.Collapsed;
-        OperationLog.Visibility = WorkspaceStatusBar.Visibility = manager ? Visibility.Visible : Visibility.Collapsed;
+        WorkspaceNavigation.Visibility = manager && selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
         Welcome.Visibility = selectedEntry is not null ? Visibility.Collapsed : Visibility.Visible;
         WorkspaceContent.Visibility = selectedEntry is not null ? Visibility.Visible : Visibility.Collapsed;
-        MainWorkspace.Margin = focus ? new Thickness(0) : new Thickness(8, 14, 14, 10);
-        ConsolePage.Margin = focus ? new Thickness(0) : new Thickness(8);
-        ConsoleFooter.Visibility = focus ? Visibility.Collapsed : Visibility.Visible;
-        WorkspaceSurface.BorderThickness = ConsoleFrame.BorderThickness = new Thickness(focus ? 0 : 1);
-        WorkspaceSurface.CornerRadius = new CornerRadius(focus ? 0 : 8);
-        ConsoleFrame.CornerRadius = new CornerRadius(focus ? 0 : 5);
+        ConsoleToolbar.Visibility = focus ? Visibility.Collapsed : Visibility.Visible;
+
+        MainWorkspace.Margin = focus ? new Thickness(0) : new Thickness(12, 10, 14, 12);
+        ConsoleFrame.BorderThickness = new Thickness(focus ? 0 : 1);
+        ConsoleFrame.CornerRadius = new CornerRadius(focus ? 0 : 8);
         SessionCommands.Visibility = focus ? Visibility.Visible : Visibility.Collapsed;
         ApplicationBrand.Visibility = focus ? Visibility.Collapsed : Visibility.Visible;
-        SessionTitle.Visibility = HasVm ? Visibility.Visible : Visibility.Collapsed;
+        SessionTitle.Visibility = focus && HasVm ? Visibility.Visible : Visibility.Collapsed;
         Title = selectedEntry is not null ? $"{selectedEntry.Name} — Reims Manager" : "Reims Manager";
 
-        // Progress and errors have a separate layout row, never an overlay on HwndHost.
+        if (StateDot is not null) StateDot.Fill = StatusDotBrush(currentState);
+        if (EngineStatusDot is not null) {
+            EngineStatusDot.Fill = HasEngine
+                ? new SolidColorBrush(Color.FromRgb(0x16, 0xC6, 0x0C))
+                : new SolidColorBrush(Color.FromRgb(0xD8, 0x7E, 0x00));
+        }
+
         StatusDetail.Visibility = !string.IsNullOrWhiteSpace(StatusDetail.Text) &&
             (!focus || currentState == "unknown" || currentState.Contains("error", StringComparison.Ordinal) || currentState == "guest-panicked")
             ? Visibility.Visible : Visibility.Collapsed;
-        OverviewActions.Visibility = currentState is "stopped" or "shutdown" or "unprepared" ? Visibility.Visible : Visibility.Collapsed;
-        OverviewActions.IsEnabled = HasVm && !IsUiBusy;
-        OverviewStartButton.Visibility = currentState is "stopped" or "shutdown" ? Visibility.Visible : Visibility.Collapsed;
-        OverviewSetupButton.Visibility = currentState == "unprepared" ? Visibility.Visible : Visibility.Collapsed;
-        OverviewExitButton.Visibility = currentState == "shutdown" ? Visibility.Visible : Visibility.Collapsed;
-        OverviewStartButton.IsEnabled = CanOperate("Start") && !applyingSettings;
+
+        if (SetupCard is not null)
+            SetupCard.Visibility = HasVm && currentState == "unprepared" ? Visibility.Visible : Visibility.Collapsed;
+
         ConsoleConnectButton.Visibility = CanOperate("Console") ? Visibility.Visible : Visibility.Collapsed;
         ConsoleConnectButton.IsEnabled = CanOperate("Console") && !applyingSettings;
+        if (ConsolePopOutButton is not null) ConsolePopOutButton.IsEnabled = CanOperate("Console") && !applyingSettings;
+
         foreach (var button in LogicalChildren<Button>(ConsolePage))
-            if (button.Tag is string action && !int.TryParse(action, out _)) button.IsEnabled = CanOperate(action) && !applyingSettings;
-        OverviewSetupButton.IsEnabled = HasVm && HasEngine && !IsUiBusy;
-        foreach (var item in SessionPowerButton.ContextMenu.Items.OfType<MenuItem>()) item.IsEnabled = CanOperate(item.Tag?.ToString() ?? "") && !applyingSettings;
+            if (button.Tag is string action && !int.TryParse(action, out _))
+                button.IsEnabled = CanOperate(action) && !applyingSettings;
+
+        foreach (var item in SessionPowerButton.ContextMenu.Items.OfType<MenuItem>())
+            item.IsEnabled = CanOperate(item.Tag?.ToString() ?? "") && !applyingSettings;
         SessionPowerButton.IsEnabled = new[] { "PowerOff", "Exit", "ForceExit" }.Any(CanOperate) && !applyingSettings;
         bool resume = currentState is "paused" or "prelaunch" or "suspended";
         SessionPauseButton.Tag = resume ? "Resume" : "Pause";
@@ -87,24 +100,31 @@ public partial class MainWindow
         foreach (var item in SessionCursorMenuButton.ContextMenu.Items.OfType<MenuItem>())
             if (item.Tag is string action) item.IsEnabled = CanOperate(action) && !applyingSettings;
         SessionCursorMenuButton.IsEnabled = !IsUiBusy && HasVm;
-        LibraryCommand.IsEnabled = !IsUiBusy;
         SessionSettingsButton.IsEnabled = SessionUsbButton.IsEnabled = SessionSharingButton.IsEnabled = SessionSnapshotButton.IsEnabled = HasVm && !IsUiBusy;
+
         bool editHardware = !IsUiBusy && loadedHardware && CanOperate("SetHardware");
         foreach (UIElement field in new UIElement[] { Memory, MemorySlider, Cpus, HardwareIsoPath, GuestHost, Tap, UsbBackend,
-            HardwareIso, HardwareIsoBrowseButton, Nat, Bridge, Sound, Microphone, DiskSize }) field.IsEnabled = editHardware;
+            HardwareIso, HardwareIsoBrowseButton, Nat, Bridge, Sound, Microphone })
+            field.IsEnabled = editHardware;
+        if (DiskSize is not null) DiskSize.IsEnabled = !IsUiBusy && CanOperate("ExpandDisk");
+        if (Iso is not null) Iso.IsEnabled = NewDiskSize.IsEnabled = StartAfterSetup.IsEnabled = !IsUiBusy && CanOperate("Setup");
         Uplink.IsEnabled = editHardware && Bridge.IsChecked == true;
-        NetworkTapDetails.Visibility=Bridge.IsChecked==true && Uplink.SelectedItem is not NetworkUplink { Kind:"wifi" } && !WifiForwarderState.IsMacNat(hardwareForwarder) ? Visibility.Visible : Visibility.Collapsed;
+        NetworkTapDetails.Visibility = Bridge.IsChecked == true && Uplink.SelectedItem is not NetworkUplink { Kind: "wifi" } && !WifiForwarderState.IsMacNat(hardwareForwarder)
+            ? Visibility.Visible : Visibility.Collapsed;
         Physical.IsEnabled = BridgeTap.IsEnabled = !IsUiBusy && CanOperate("CreateBridge");
-        Resolution.IsEnabled = !IsUiBusy && loadedHardware && (CanOperate("SetHardware") || CanOperate("ApplyResolution"));
+        bool canRes = !IsUiBusy && loadedHardware && (CanOperate("SetHardware") || CanOperate("ApplyResolution"));
+        Resolution.IsEnabled = canRes;
+        if (ConsoleResolution is not null) ConsoleResolution.IsEnabled = !IsUiBusy && loadedHardware && CanOperate("ApplyResolution");
+        if (ConnectIso is not null) ConnectIso.IsEnabled = !IsUiBusy && HasVm;
         foreach (UIElement field in new UIElement[] { IdentityModel, IdentitySerial, IdentityMlb, IdentityUuid, IdentityRom })
             field.IsEnabled = !IsUiBusy && CanOperate("SetIdentity");
-        Devices.IsEnabled = Tabs.IsEnabled = !IsUiBusy;
-        AdvancedButton.IsEnabled = HasVm && !IsUiBusy;
+
+        Tabs.IsEnabled = !IsUiBusy;
         Library.IsEnabled = LibrarySearch.IsEnabled = WorkspaceNavigation.IsEnabled = !IsUiBusy;
+        NewVmButton.IsEnabled = OpenVmButton.IsEnabled = ImportVmButton.IsEnabled = OpenAppSettingsButton.IsEnabled = ReloadLibraryButton.IsEnabled = !IsUiBusy;
+
         UpdateSettingsWorkflow();
-        // Explicitly hide the native child when the settings page owns the workspace.
-        // Its HwndHost stays at the same place in the tree: no detach/reparent on navigation.
-        if (settingsVisible) ConsoleView.Visibility = Visibility.Hidden;
+        if (SettingsOpen || OverlayOpen) ConsoleView.Visibility = Visibility.Hidden;
         UpdateWifiControls();
     }
 
@@ -118,44 +138,28 @@ public partial class MainWindow
 
     private void UpdateSettingsWorkflow()
     {
-        if (SettingsScopeHint is null || SettingsStateNotice is null) return;
+        if (PendingSaveBar is null || SettingsStateNotice is null) return;
         bool pending = hardwareDirty || identityDirty;
         bool canSave = (!hardwareDirty || CanOperate("SetHardware")) && (!identityDirty || CanOperate("SetIdentity"));
-        SettingsBackButton.IsEnabled = !IsUiBusy;
+
+        PendingSaveBar.Visibility = !ConsoleFocused && HasVm && (pending || settingsFeedback.Length > 0)
+            ? Visibility.Visible : Visibility.Collapsed;
+        ReloadHardwareButton.Visibility = SaveHardwareButton.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
         ReloadHardwareButton.IsEnabled = !IsUiBusy && pending;
         SaveHardwareButton.IsEnabled = !IsUiBusy && pending && canSave;
-        SettingsOkButton.IsEnabled = !IsUiBusy && (!pending || canSave);
-        SettingsOkButton.Content = pending ? UiText.T("保存して閉じる") : UiText.T("閉じる");
+        SaveBarDot.Fill = new SolidColorBrush(pending ? Color.FromRgb(0xD8, 0x7E, 0x00) : Color.FromRgb(0x16, 0xC6, 0x0C));
 
         string changed = hardwareDirty && identityDirty ? UiText.T("ハードウェア・識別情報") : hardwareDirty ? UiText.T("ハードウェア") : UiText.T("識別情報");
         SettingsHint.Text = IsUiBusy ? UiText.T("処理が完了するまでお待ちください…") : pending
             ? canSave ? UiText.Format($"未保存の変更: {changed} (Ctrl+S)") : UiText.Format($"未保存の変更: {changed}。保存には VM の完全停止が必要です。")
-            : settingsFeedback.Length > 0 ? settingsFeedback : loadedHardware
-                ? UiText.T("未保存の変更はありません。") : UiText.T("保存済みの構成を確認しています。");
-        SettingsHeading.Text = Tabs.SelectedIndex switch {
-            4 => UiText.T("スナップショット"), 5 => UiText.T("macOS のインストール"), 6 => UiText.T("macOS と接続"), 7 => UiText.T("LAN 接続の準備"),
-            _ => UiText.T("仮想マシンの設定")
-        };
-        SettingsScopeHint.Text = Tabs.SelectedIndex switch {
-            1 when hardwareCategory == 2 => UiText.T("ディスクの拡張・整理は、それぞれの操作ボタンで実行します。"),
-            1 when hardwareCategory == 5 => UiText.T("USB の登録・解除は即時反映。転送方式は「変更を保存」で確定します。"),
-            1 when hardwareCategory == 7 => UiText.T("解像度を macOS に適用すると、次回起動の設定も保存します。カーソル操作はすぐに反映します。"),
-            1 => UiText.T("「変更を保存」で確定した設定は、次回の VM 起動から使用します。"),
-            2 => UiText.T("自動共有のオン・オフは、この VM の設定としてすぐに保存します。"),
-            3 => UiText.T("識別情報は保存時に確認します。起動・GPU の操作は、その場で実行します。"),
-            4 => UiText.T("スナップショットの保存・復元は、このページの操作ボタンで実行します。"),
-            5 => UiText.T("インストーラーを選択し、「仮想マシンを作成」でディスクを準備します。"),
-            6 => UiText.T("接続は「指紋を照合して接続」で実行します。"),
-            7 => UiText.T("接続の準備・解除は、それぞれの操作ボタンで実行します。"),
-            _ => ""
-        };
+            : settingsFeedback;
 
-        bool liveSettingsSubpage = loadedHardware && currentState == "running" && Tabs.SelectedIndex == 1 && hardwareCategory is 5 or 7;
-        bool requiresStopped = Tabs.SelectedIndex is 1 or 3 or 4 or 7 && !liveSettingsSubpage;
-        bool showState = SettingsOpen && (!HasEngine || currentState == "unknown" ||
-            requiresStopped && (currentState != "stopped" || Tabs.SelectedIndex == 1 && !loadedHardware));
-        SettingsStateNotice.Visibility = showState ? Visibility.Visible : Visibility.Collapsed;
+        bool requiresOfflineNotice = HasVm && !ConsoleFocused &&
+            (!HasEngine || currentState is "running" or "shutdown" or "paused" or "prelaunch" or "suspended" or "unknown" ||
+             (currentState == "stopped" && !loadedHardware));
+        SettingsStateNotice.Visibility = Tabs.SelectedIndex == 0 && requiresOfflineNotice ? Visibility.Visible : Visibility.Collapsed;
         SettingsRefreshButton.IsEnabled = HasVm && HasEngine && !IsUiBusy && !refreshing;
+
         string? action = null, label = null;
         if (!HasEngine) {
             SettingsStateHeading.Text = UiText.T("エンジンを準備してください");
@@ -163,11 +167,7 @@ public partial class MainWindow
             action = "SetupEngine"; label = UiText.T("エンジンを設定…");
         } else if (currentState == "running") {
             SettingsStateHeading.Text = UiText.T("VM は実行中です");
-            SettingsStateDescription.Text = Tabs.SelectedIndex == 1 && hardwareCategory == 7
-                ? UiText.T("解像度・カーソルの操作は実行できます。その他の起動時設定は、VM の完全終了後に保存できます。")
-                : Tabs.SelectedIndex == 1 && hardwareCategory == 5
-                    ? UiText.T("USB の接続操作は実行できます。転送方式の変更は、VM の完全終了後に保存できます。")
-                    : UiText.T("設定変更・ディスク操作には完全停止が必要です。macOS をシャットダウンしてから、VM を完全終了してください。");
+            SettingsStateDescription.Text = UiText.T("構成・ディスク変更には完全停止が必要です。USB 接続や解像度適用は各タブから行えます。");
             action = "PowerOff"; label = UiText.T("シャットダウン");
         } else if (currentState == "shutdown") {
             SettingsStateHeading.Text = UiText.T("macOS は電源オフです。VM はまだ完全停止していません");
@@ -177,30 +177,26 @@ public partial class MainWindow
             SettingsStateHeading.Text = UiText.T("一時停止中は構成を変更できません");
             SettingsStateDescription.Text = UiText.T("再開して macOS をシャットダウンし、VM を完全終了してから変更できます。");
             action = "Resume"; label = UiText.T("VM を再開");
-        } else if (currentState == "unprepared") {
-            SettingsStateHeading.Text = UiText.T("セットアップがまだ完了していません");
-            SettingsStateDescription.Text = UiText.T("インストーラーと仮想ディスクを準備してから、構成を変更できます。");
-            action = "SetupPage"; label = UiText.T("セットアップを開く");
         } else {
             SettingsStateHeading.Text = currentState == "stopped" ? UiText.T("構成を読み込んでいます") : UiText.T("VM の状態を確認してください");
-            SettingsStateDescription.Text = UiText.T("「状態を更新」で再確認できます。入力中の変更は保持します。");
+            SettingsStateDescription.Text = UiText.T("「更新」で再確認できます。入力中の変更は保持します。");
         }
         SettingsStateActionButton.Tag = action;
         SettingsStateActionButton.Content = label;
         SettingsStateActionButton.Visibility = action is null ? Visibility.Collapsed : Visibility.Visible;
-        SettingsStateActionButton.IsEnabled = !IsUiBusy && (action is "SetupEngine" or "SetupPage" || action is not null && CanOperate(action));
+        SettingsStateActionButton.IsEnabled = !IsUiBusy && (action is "SetupEngine" or "SetupPage" || (action is not null && CanOperate(action)));
     }
 
     private void ShowLibrary(object sender, RoutedEventArgs e)
     {
         if (IsUiBusy || !TryCloseSettings()) return;
         presentation.ShowManagement();
+        Tabs.SelectedIndex = 0;
         UpdatePowerControls();
     }
 
     private void OpenLibraryConsole(object sender, MouseButtonEventArgs e)
     {
-        // Only a real selected row, not a double click on empty library space.
         if (e.OriginalSource is DependencyObject origin &&
             ItemsControl.ContainerFromElement(Library, origin) is ListBoxItem && CanOperate("Console")) DockConsole(sender, e);
     }
@@ -216,7 +212,6 @@ public partial class MainWindow
     {
         if (MaximizeCommand is null || ChromeRoot is null) return;
         MaximizeCommand.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
-        // WindowChrome preserves native resizing; keep content inside its maximized frame.
         ChromeRoot.Margin = !fullScreen && WindowState == WindowState.Maximized ? SystemParameters.WindowResizeBorderThickness : new Thickness(0);
     }
 }
