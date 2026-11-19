@@ -511,6 +511,16 @@ internal static partial class NativeVmControlService
         return (guestHost, 22);
     }
 
+    internal static Task<(string Host, int Port)> ResolveGuestEndpointForActionAsync(JsonObject config, CancellationToken cancellation) =>
+        ResolveGuestEndpointAsync(config, cancellation);
+
+    internal static bool CheckHostHardwareCapacity(int cpus, int memoryMiB)
+    {
+        var mem = new MemoryStatusEx { Length = (uint)Marshal.SizeOf<MemoryStatusEx>() };
+        if (!GlobalMemoryStatusEx(ref mem)) throw new InvalidOperationException("Cannot query host memory.");
+        return cpus <= Environment.ProcessorCount && (ulong)memoryMiB * 1024UL * 1024UL < mem.TotalPhys;
+    }
+
     private static void AssertVmStopped(string vmDirectory)
     {
         var (_, alive, _) = ReadLiveRuntime(vmDirectory);

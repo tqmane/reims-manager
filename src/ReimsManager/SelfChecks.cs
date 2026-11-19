@@ -139,6 +139,42 @@ internal static class SelfChecks
         ]);
         if (!names.TryGetValue("0781:55a9", out string? prodName) || prodName != "SanDisk 3.2Gen1")
             throw new Exception("NativePnpUsb product name normalization failed.");
+
+        // Test FAT16 label patcher on synthetic MBR + FAT16 sector image
+        string fatImg = Path.Combine(folder, "tools-fat.img");
+        byte[] rawImg = new byte[4096];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(rawImg.AsSpan(454, 4), 1); // LBA 1
+        Encoding.ASCII.GetBytes("FAT16   ").CopyTo(rawImg, 512 + 54);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(rawImg.AsSpan(512 + 14, 2), 1); // reserved = 1
+        rawImg[512 + 16] = 1; // 1 FAT
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(rawImg.AsSpan(512 + 17, 2), 16); // root entries
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(rawImg.AsSpan(512 + 22, 2), 1); // fat sectors = 1 -> root at LBA 3 = 1536
+        Encoding.ASCII.GetBytes("QEMU VVFAT ").CopyTo(rawImg, 512 + 43);
+        Encoding.ASCII.GetBytes("QEMU VVFAT ").CopyTo(rawImg, 1536);
+        rawImg[1536 + 11] = 0x08; // volume label attribute
+        File.WriteAllBytes(fatImg, rawImg);
+        Services.NativeOpenCoreService.PatchFat16VolumeLabel(fatImg, "REIMSTOOLS "u8);
+        byte[] patched = File.ReadAllBytes(fatImg);
+        if (Encoding.ASCII.GetString(patched, 512 + 43, 11) != "REIMSTOOLS " ||
+            Encoding.ASCII.GetString(patched, 1536, 11) != "REIMSTOOLS ")
+            throw new Exception("PatchFat16VolumeLabel did not update both VBR and root label.");
+
+        // Test safe zip extraction against zip-slip and symlinks
+        string slipZip = Path.Combine(folder, "slip.zip");
+        using (var zs = System.IO.Compression.ZipFile.Open(slipZip, System.IO.Compression.ZipArchiveMode.Create)) {
+            var e = zs.CreateEntry("../escape.txt");
+            using var w = new StreamWriter(e.Open()); w.Write("bad");
+        }
+        try { Services.NativeToolRunner.ExpandZipSafely(slipZip, Path.Combine(folder, "slip-out")); throw new Exception("Zip-slip entry accepted."); }
+        catch (InvalidDataException) { }
+
+        if (!Services.NativeVmControlService.CheckHostHardwareCapacity(1, 4096) ||
+            Services.NativeVmControlService.CheckHostHardwareCapacity(1, 999_999_999))
+            throw new Exception("CheckHostHardwareCapacity failed hardware bounds check.");
+
+        string diagResult = await Services.NativeStorageService.CollectLogsAsync(folder, "", screenshot: true);
+        if (!diagResult.Contains("Local diagnostics:", StringComparison.Ordinal))
+            throw new Exception("Native CollectLogsAsync failed without VM.");
     }
 
     private static void CheckUsbDriverResult(string folder)

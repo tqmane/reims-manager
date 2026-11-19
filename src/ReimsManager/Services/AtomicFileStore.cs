@@ -99,4 +99,43 @@ internal static class AtomicFileStore
     {
         WithNamedMutex(mutexName, timeoutMs, busyMessage, () => { action(); return true; });
     }
+
+    internal static JsonObject ReadVmConfig(string vmDirectory)
+    {
+        string path = Path.Combine(vmDirectory, "state", "config.json");
+        if (!File.Exists(path)) throw new InvalidOperationException("先に VM のセットアップを完了してください。");
+        var doc = ReadJsonNode(path).AsObject();
+        if (doc["schema"]?.GetValue<int>() != 1)
+            throw new InvalidDataException("Unknown VM configuration schema.");
+        return doc;
+    }
+
+    internal static (JsonObject? Runtime, bool Alive, int QmpPort) ReadLiveRuntime(string vmDirectory)
+    {
+        string path = Path.Combine(vmDirectory, "state", "runtime.json");
+        if (!File.Exists(path)) return (null, false, 0);
+        var rt = ReadJsonNode(path).AsObject();
+        int pid = rt["pid"]?.GetValue<int>() ?? 0;
+        long ticks = rt["start_ticks"]?.GetValue<long>() ?? 0;
+        string exe = rt["executable"]?.GetValue<string>() ?? "";
+        bool alive = ProcessIdentity.IsAlive(pid, ticks, exe);
+        return (rt, alive, rt["qmp_port"]?.GetValue<int>() ?? 0);
+    }
+
+    internal static void AssertVmStopped(string vmDirectory)
+    {
+        var (_, alive, _) = ReadLiveRuntime(vmDirectory);
+        if (alive) throw new InvalidOperationException("Stop this VM with Exit before changing its disks or firmware.");
+    }
+
+    internal static void AssertNoReparsePointsInTree(string rootPath)
+    {
+        if ((File.GetAttributes(rootPath) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException($"Reparse points are not permitted: {rootPath}");
+        if (!Directory.Exists(rootPath)) return;
+        foreach (string entry in Directory.EnumerateFileSystemEntries(rootPath, "*", SearchOption.AllDirectories)) {
+            if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException($"Reparse points are not permitted: {entry}");
+        }
+    }
 }

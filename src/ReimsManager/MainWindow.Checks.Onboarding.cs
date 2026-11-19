@@ -16,7 +16,7 @@ public partial class MainWindow
         AddVm(new("Synthetic network VM",Path.Combine(folder,"fixture.reimsvm"),Path.Combine(folder,"fixture.data")));
         State.Text="完全停止";StatusDetail.Text="";Feedback.Visibility=Visibility.Collapsed;
         await CheckNetworkChoices(folder);
-        Width=MinWidth;Height=MinHeight;Tabs.SelectedIndex=7;currentState="stopped";UpdatePowerControls();
+        Width=MinWidth;Height=MinHeight;Tabs.SelectedIndex=3;currentState="stopped";UpdatePowerControls();
         await ArrangeCheck();InstallTapButton.BringIntoView();await ArrangeCheck();
         RequireInside(InstallTapButton,BridgeScroll,"Dedicated TAP preparation");
         SaveImage(Path.Combine(folder,"network-auto-tap-compact.png"));
@@ -154,7 +154,7 @@ public partial class MainWindow
 
     private async Task CheckNetworkChoices(string folder)
     {
-        currentState = "stopped"; Tabs.SelectedIndex = 1; Devices.SelectedIndex = 4;
+        currentState = "stopped"; Tabs.SelectedIndex = 3;
         loadedHardware = true; hardwareDirty = identityDirty = false;
         ApplyNetworkChoices(NetworkInventory.Parse(OnboardingChecks.Network));
         string id = "aaaaaaaa-1111-4111-8111-111111111111";
@@ -168,7 +168,7 @@ public partial class MainWindow
         ApplyNetworkChoices(NetworkInventory.Parse(OnboardingChecks.Network));
         await ArrangeCheck(); SaveImage(Path.Combine(folder, "network-friendly-uplinks.png"));
         if (!RestoreSettingsDrafts() || SelectedUplink.Length != 0 || Nat.IsChecked != true) throw new Exception("Cancel lost the saved network selection.");
-        Physical.SelectedValue = "bbbbbbbb-2222-4222-8222-222222222222"; Tabs.SelectedIndex = 7; await ArrangeCheck();
+        Physical.SelectedValue = "bbbbbbbb-2222-4222-8222-222222222222"; Tabs.SelectedIndex = 3; await ArrangeCheck();
         RemoveBridgeButton.BringIntoView();await ArrangeCheck();
         RequireInside(RemoveBridgeButton,BridgeScroll,"Owned bridge removal");
         SaveImage(Path.Combine(folder, "network-bridge-preparation.png"));

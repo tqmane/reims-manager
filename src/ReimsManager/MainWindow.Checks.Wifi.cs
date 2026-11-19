@@ -18,7 +18,7 @@ public partial class MainWindow
             Uplink.SelectedValue="";Physical.SelectedValue="";
             ApplyNetworkChoices(NetworkInventory.Parse(OnboardingChecks.Network));OpenBridgeTab(this,new RoutedEventArgs());
             if(Physical.SelectedValue as string!=id) throw new Exception("Opening LAN preparation discarded the only connected Wi-Fi suggestion.");
-            Physical.SelectedValue=id;Tabs.SelectedIndex=7;PacketFilterTerms.IsChecked=false;
+            Physical.SelectedValue=id;Tabs.SelectedIndex=3;PacketFilterTerms.IsChecked=false;
             latest=WifiUiChecks.Snapshot(kind:"none",installed:false,configured:false);ReadWifiStatus();UpdatePowerControls();
             if(WifiCompatCard.Visibility!=Visibility.Visible || WiredBridgeControls.Visibility!=Visibility.Collapsed || PrepareWifiButton.IsEnabled)
                 throw new Exception("Wi-Fi requires manual plumbing or installs without terms consent.");
@@ -127,7 +127,7 @@ public partial class MainWindow
         }
         try {
             LoadBaseline();var originalIdentity=CaptureIdentityDraft();Stage();var draft=CaptureHardwareDraft();var identity=CaptureIdentityDraft();
-            if(await ApplySettingsDrafts() || Tabs.SelectedIndex!=7 || writes!=0) throw new Exception("Save did not reveal Wi-Fi preparation without writing hardware/identity.");
+            if(await ApplySettingsDrafts() || Tabs.SelectedIndex!=3 || writes!=0) throw new Exception("Save did not reveal Wi-Fi preparation without writing hardware/identity.");
             RequirePending(draft,identity);
             if(!await PrepareWifiCore() || Memory.Text!=draft.Memory || Cpus.Text!=draft.Cpus || CaptureIdentityDraft()!=identity || !hardwareDirty || !identityDirty ||
                 committedHardware?.Memory!="8192" || committedHardware?.Nat!=false || committedHardware?.Uplink!=id || !ValidateHardware())
@@ -189,7 +189,7 @@ public partial class MainWindow
                     throw new Exception("CPU/memory-only save sent network configuration or lost hardware arguments.");
                 GuestHost.Text="changed-guest.local";
                 string[] changedArguments=HardwareArguments();
-                if(!NetworkDraftChanged || ValidateHardware() || Tabs.SelectedIndex!=7 || changedArguments.Contains("-PreserveNetwork") ||
+                if(!NetworkDraftChanged || ValidateHardware() || Tabs.SelectedIndex!=3 || changedArguments.Contains("-PreserveNetwork") ||
                     !new[]{"-Network","-Adapter","-PhysicalAdapter","-GuestHost"}.All(changedArguments.Contains))
                     throw new Exception("Changed unprepared Wi-Fi bypassed its preparation guard.");
                 GuestHost.Text=host;
