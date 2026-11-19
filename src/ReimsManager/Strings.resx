@@ -2604,4 +2604,211 @@ Windows の LAN が一時的に切断され、IP アドレスが変わる場合�
   <data name="上の「⟳ デバイス一覧を更新」を押すと、接続可能な USB デバイス・iPhone が表示されます" xml:space="preserve">
     <value>上の「⟳ デバイス一覧を更新」を押すと、接続可能な USB デバイス・iPhone が表示されます</value>
   </data>
+  <data name="4〜128 GiB の範囲で 4 MiB 単位で指定します" xml:space="preserve">
+    <value>4〜128 GiB の範囲で 4 MiB 単位で指定します</value>
+  </data>
+  <data name="LAN / Wi-Fi 互換準備（管理者権限）" xml:space="preserve">
+    <value>LAN / Wi-Fi 互換準備（管理者権限）</value>
+  </data>
+  <data name="QEMU を直接選択…" xml:space="preserve">
+    <value>QEMU を直接選択…</value>
+  </data>
+  <data name="Reims エンジン" xml:space="preserve">
+    <value>Reims エンジン</value>
+  </data>
+  <data name="USB 転送方式の詳細設定 (WinUSB / UsbDk)" xml:space="preserve">
+    <value>USB 転送方式の詳細設定 (WinUSB / UsbDk)</value>
+  </data>
+  <data name="VM 起動時に macOS へ通知する画面サイズ" xml:space="preserve">
+    <value>VM 起動時に macOS へ通知する画面サイズ</value>
+  </data>
+  <data name="Windows の音声入出力を macOS と共有します" xml:space="preserve">
+    <value>Windows の音声入出力を macOS と共有します</value>
+  </data>
+  <data name="Windows カーソルを隠す" xml:space="preserve">
+    <value>Windows カーソルを隠す</value>
+  </data>
+  <data name="macOS に割り当てる仮想 CPU コア数" xml:space="preserve">
+    <value>macOS に割り当てる仮想 CPU コア数</value>
+  </data>
+  <data name="macOS の IP / ホスト名" xml:space="preserve">
+    <value>macOS の IP / ホスト名</value>
+  </data>
+  <data name="macOS インストーラーを選択して、仮想ディスクと OpenCore を自動準備します。" xml:space="preserve">
+    <value>macOS インストーラーを選択して、仮想ディスクと OpenCore を自動準備します。</value>
+  </data>
+  <data name="その他の操作" xml:space="preserve">
+    <value>その他の操作</value>
+  </data>
+  <data name="アプリの表示言語を切り替えます" xml:space="preserve">
+    <value>アプリの表示言語を切り替えます</value>
+  </data>
+  <data name="アプリ設定" xml:space="preserve">
+    <value>アプリ設定</value>
+  </data>
+  <data name="インストーラー ISO メディア（詳細）" xml:space="preserve">
+    <value>インストーラー ISO メディア（詳細）</value>
+  </data>
+  <data name="オーディオ" xml:space="preserve">
+    <value>オーディオ</value>
+  </data>
+  <data name="カーソル移動・拡張ディスプレイの詳細操作" xml:space="preserve">
+    <value>カーソル移動・拡張ディスプレイの詳細操作</value>
+  </data>
+  <data name="クイック操作" xml:space="preserve">
+    <value>クイック操作</value>
+  </data>
+  <data name="システムに合わせる (Auto)" xml:space="preserve">
+    <value>システムに合わせる (Auto)</value>
+  </data>
+  <data name="ストレージ" xml:space="preserve">
+    <value>ストレージ</value>
+  </data>
+  <data name="スナップショットと保存先" xml:space="preserve">
+    <value>スナップショットと保存先</value>
+  </data>
+  <data name="スピーカー" xml:space="preserve">
+    <value>スピーカー</value>
+  </data>
+  <data name="ディスク" xml:space="preserve">
+    <value>ディスク</value>
+  </data>
+  <data name="ネットワーク方式" xml:space="preserve">
+    <value>ネットワーク方式</value>
+  </data>
+  <data name="ブリッジ / LAN 共有" xml:space="preserve">
+    <value>ブリッジ / LAN 共有</value>
+  </data>
+  <data name="ブリッジ接続時の SSH・共有の接続先" xml:space="preserve">
+    <value>ブリッジ接続時の SSH・共有の接続先</value>
+  </data>
+  <data name="ペアリング" xml:space="preserve">
+    <value>ペアリング</value>
+  </data>
+  <data name="マイク入力" xml:space="preserve">
+    <value>マイク入力</value>
+  </data>
+  <data name="メイン画面へ移動" xml:space="preserve">
+    <value>メイン画面へ移動</value>
+  </data>
+  <data name="ライブラリを再読込" xml:space="preserve">
+    <value>ライブラリを再読込</value>
+  </data>
+  <data name="一般" xml:space="preserve">
+    <value>一般</value>
+  </data>
+  <data name="一覧を更新" xml:space="preserve">
+    <value>一覧を更新</value>
+  </data>
+  <data name="上の「一覧を更新」を押すと、接続可能な USB デバイス・iPhone が表示されます" xml:space="preserve">
+    <value>上の「一覧を更新」を押すと、接続可能な USB デバイス・iPhone が表示されます</value>
+  </data>
+  <data name="仮想ディスク容量" xml:space="preserve">
+    <value>仮想ディスク容量</value>
+  </data>
+  <data name="仮想マシンを追加・開く" xml:space="preserve">
+    <value>仮想マシンを追加・開く</value>
+  </data>
+  <data name="保存済みの VM (.reimsvm) を開く… (Ctrl+O)" xml:space="preserve">
+    <value>保存済みの VM (.reimsvm) を開く… (Ctrl+O)</value>
+  </data>
+  <data name="元に戻す" xml:space="preserve">
+    <value>元に戻す</value>
+  </data>
+  <data name="初期セットアップ" xml:space="preserve">
+    <value>初期セットアップ</value>
+  </data>
+  <data name="対象アダプター:" xml:space="preserve">
+    <value>対象アダプター:</value>
+  </data>
+  <data name="差分ディスクの整理・最適化" xml:space="preserve">
+    <value>差分ディスクの整理・最適化</value>
+  </data>
+  <data name="新しい VM を作成するか、保存済みの仮想マシンを開いてください。" xml:space="preserve">
+    <value>新しい VM を作成するか、保存済みの仮想マシンを開いてください。</value>
+  </data>
+  <data name="新しい macOS VM を作成" xml:space="preserve">
+    <value>新しい macOS VM を作成</value>
+  </data>
+  <data name="新しい macOS VM を作成… (Ctrl+N)" xml:space="preserve">
+    <value>新しい macOS VM を作成… (Ctrl+N)</value>
+  </data>
+  <data name="既存の仮想ディスクを取り込む…" xml:space="preserve">
+    <value>既存の仮想ディスクを取り込む…</value>
+  </data>
+  <data name="最新の状態に更新 (F5)" xml:space="preserve">
+    <value>最新の状態に更新 (F5)</value>
+  </data>
+  <data name="最適化を実行…" xml:space="preserve">
+    <value>最適化を実行…</value>
+  </data>
+  <data name="有線 TAP・Windows ブリッジ詳細" xml:space="preserve">
+    <value>有線 TAP・Windows ブリッジ詳細</value>
+  </data>
+  <data name="検索" xml:space="preserve">
+    <value>検索</value>
+  </data>
+  <data name="構成を変更" xml:space="preserve">
+    <value>構成を変更</value>
+  </data>
+  <data name="次回起動時にインストーラーを接続" xml:space="preserve">
+    <value>次回起動時にインストーラーを接続</value>
+  </data>
+  <data name="準備完了後すぐに起動する" xml:space="preserve">
+    <value>準備完了後すぐに起動する</value>
+  </data>
+  <data name="現在の差分をまとめ、内容の一致を検証します（元データは保持）" xml:space="preserve">
+    <value>現在の差分をまとめ、内容の一致を検証します（元データは保持）</value>
+  </data>
+  <data name="現在の状態をスナップショット保存" xml:space="preserve">
+    <value>現在の状態をスナップショット保存</value>
+  </data>
+  <data name="画面を開く" xml:space="preserve">
+    <value>画面を開く</value>
+  </data>
+  <data name="画面・オーディオ・起動メディア" xml:space="preserve">
+    <value>画面・オーディオ・起動メディア</value>
+  </data>
+  <data name="破棄" xml:space="preserve">
+    <value>破棄</value>
+  </data>
+  <data name="管理" xml:space="preserve">
+    <value>管理</value>
+  </data>
+  <data name="自動共有" xml:space="preserve">
+    <value>自動共有</value>
+  </data>
+  <data name="英数字・_・-・. の名前を付けて復元ポイントを作成します" xml:space="preserve">
+    <value>英数字・_・-・. の名前を付けて復元ポイントを作成します</value>
+  </data>
+  <data name="解像度を適用" xml:space="preserve">
+    <value>解像度を適用</value>
+  </data>
+  <data name="設定ファイルと移行" xml:space="preserve">
+    <value>設定ファイルと移行</value>
+  </data>
+  <data name="通常は設定不要の NAT を使います" xml:space="preserve">
+    <value>通常は設定不要の NAT を使います</value>
+  </data>
+  <data name="選択した時点の状態へ切り替えます（現在のディスクも保持）" xml:space="preserve">
+    <value>選択した時点の状態へ切り替えます（現在のディスクも保持）</value>
+  </data>
+  <data name="「+」から VM を作成または開く" xml:space="preserve">
+    <value>「+」から VM を作成または開く</value>
+  </data>
+  <data name="スピーカー・マイク有効" xml:space="preserve">
+    <value>スピーカー・マイク有効</value>
+  </data>
+  <data name="スピーカー有効" xml:space="preserve">
+    <value>スピーカー有効</value>
+  </data>
+  <data name="オーディオ無効" xml:space="preserve">
+    <value>オーディオ無効</value>
+  </data>
+  <data name="設定済み" xml:space="preserve">
+    <value>設定済み</value>
+  </data>
+  <data name="保存していない設定があります。「変更を保存」または「破棄」で確定してから起動してください。" xml:space="preserve">
+    <value>保存していない設定があります。「変更を保存」または「破棄」で確定してから起動してください。</value>
+  </data>
 </root>

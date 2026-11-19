@@ -6,10 +6,11 @@
         <ResourceDictionary Source="pack://application:,,,/PresentationFramework.Fluent;component/Themes/Fluent.xaml"/>
       </ResourceDictionary.MergedDictionaries>
 
-      <SolidColorBrush x:Key="SelectionBackground" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" Opacity="0.14"/>
-      <SolidColorBrush x:Key="ItemHoverBackground" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" Opacity="0.10"/>
-      <SolidColorBrush x:Key="SubtleSurfaceBrush" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" Opacity="0.06"/>
+      <SolidColorBrush x:Key="SelectionBackground" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" Opacity="0.12"/>
+      <SolidColorBrush x:Key="ItemHoverBackground" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" Opacity="0.09"/>
+      <SolidColorBrush x:Key="SubtleSurfaceBrush" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" Opacity="0.05"/>
 
+      <!-- Fluent Typography Ramp -->
       <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
         <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
@@ -21,25 +22,90 @@
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
       </Style>
 
+      <Style x:Key="MutedText" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+      </Style>
+
+      <Style x:Key="PageHeading" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="24"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+      </Style>
+
+      <Style x:Key="SectionHeading" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Margin" Value="2,16,0,8"/>
+      </Style>
+
+      <Style x:Key="CardTitle" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="14.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Margin" Value="0,0,0,8"/>
+      </Style>
+
+      <Style x:Key="SettingTitle" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+      </Style>
+
+      <Style x:Key="SettingDesc" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+        <Setter Property="Margin" Value="0,2,0,0"/>
+      </Style>
+
+      <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+        <Setter Property="Margin" Value="0,10,0,5"/>
+      </Style>
+
+      <Style x:Key="MetricValue" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="20"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+      </Style>
+
+      <Style x:Key="MetricLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+        <Setter Property="Margin" Value="0,0,0,4"/>
+      </Style>
+
+      <!-- Fluent Surface Cards -->
       <Style x:Key="NoticeCard" TargetType="Border">
-        <Setter Property="Padding" Value="14"/>
+        <Setter Property="Padding" Value="14,11"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
+      </Style>
+
+      <Style x:Key="CompactCard" TargetType="Border" BasedOn="{StaticResource NoticeCard}">
+        <Setter Property="Padding" Value="14,12"/>
+        <Setter Property="CornerRadius" Value="6"/>
+      </Style>
+
+      <Style x:Key="WorkCard" TargetType="Border" BasedOn="{StaticResource NoticeCard}">
+        <Setter Property="Padding" Value="18,16"/>
+        <Setter Property="Margin" Value="0,0,0,10"/>
         <Setter Property="CornerRadius" Value="8"/>
+      </Style>
+
+      <!-- Windows 11 Settings-style 1-row Setting Card -->
+      <Style x:Key="SettingRowCard" TargetType="Border">
+        <Setter Property="Padding" Value="16,13"/>
+        <Setter Property="Margin" Value="0,0,0,4"/>
+        <Setter Property="CornerRadius" Value="6"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
         <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
       </Style>
 
-      <Style x:Key="WorkCard" TargetType="Border">
-        <Setter Property="Padding" Value="18"/>
-        <Setter Property="Margin" Value="0,0,0,14"/>
-        <Setter Property="CornerRadius" Value="10"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
-        <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
-      </Style>
-
-      <Style x:Key="CompactCard" TargetType="Border">
-        <Setter Property="Padding" Value="12"/>
+      <Style x:Key="MetricCard" TargetType="Border">
+        <Setter Property="Padding" Value="16,14"/>
         <Setter Property="CornerRadius" Value="8"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
@@ -47,49 +113,20 @@
       </Style>
 
       <Style x:Key="ErrorNoticeCard" TargetType="Border" BasedOn="{StaticResource NoticeCard}">
-        <Setter Property="BorderBrush" Value="#D13438"/>
+        <Setter Property="BorderBrush" Value="#C42B1C"/>
         <Setter Property="BorderThickness" Value="3,1,1,1"/>
-        <Setter Property="Background" Value="#14D13438"/>
+        <Setter Property="Background" Value="#14C42B1C"/>
       </Style>
 
       <Style x:Key="WarningNoticeCard" TargetType="Border" BasedOn="{StaticResource NoticeCard}">
         <Setter Property="BorderBrush" Value="#D87E00"/>
         <Setter Property="BorderThickness" Value="3,1,1,1"/>
-        <Setter Property="Background" Value="#14D87E00"/>
+        <Setter Property="Background" Value="#12D87E00"/>
       </Style>
 
-      <Style x:Key="MutedText" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-        <Setter Property="TextWrapping" Value="Wrap"/>
-        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
-      </Style>
-
-      <Style x:Key="PageHeading" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-        <Setter Property="FontSize" Value="21"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Margin" Value="0,0,0,4"/>
-      </Style>
-
-      <Style x:Key="CardTitle" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-        <Setter Property="FontSize" Value="15"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Margin" Value="0,0,0,10"/>
-      </Style>
-
-      <Style x:Key="SectionHeading" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-        <Setter Property="FontSize" Value="15.5"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Margin" Value="0,12,0,8"/>
-      </Style>
-
-      <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-        <Setter Property="FontSize" Value="12.5"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
-        <Setter Property="Margin" Value="0,12,0,5"/>
-      </Style>
-
+      <!-- Fluent Buttons -->
       <Style TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="Padding" Value="13,7"/>
+        <Setter Property="Padding" Value="14,7"/>
         <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
       </Style>
 
@@ -102,34 +139,43 @@
       </Style>
 
       <Style x:Key="CompactButton" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="Padding" Value="11,5"/>
         <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
       </Style>
 
+      <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+      </Style>
+
       <Style x:Key="DangerActionButton" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="Padding" Value="13,7"/>
-        <Setter Property="BorderBrush" Value="#D13438"/>
+        <Setter Property="Padding" Value="14,7"/>
+        <Setter Property="BorderBrush" Value="#C42B1C"/>
         <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
       </Style>
 
       <Style x:Key="WelcomeAction" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="Padding" Value="18,15"/>
-        <Setter Property="Margin" Value="0,0,0,10"/>
+        <Setter Property="Margin" Value="0,0,0,8"/>
         <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
       </Style>
 
+      <!-- Fluent NavigationView Item -->
       <Style x:Key="NavigationItem" TargetType="ListBoxItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="Padding" Value="10,9"/>
-        <Setter Property="Margin" Value="0,2"/>
+        <Setter Property="Margin" Value="0,1"/>
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="ListBoxItem">
               <Grid>
-                <Border x:Name="Surface" Background="Transparent" CornerRadius="7" BorderThickness="1" BorderBrush="Transparent"/>
-                <Border x:Name="Accent" Width="3" HorizontalAlignment="Left" Margin="2,9" CornerRadius="2"
+                <Border x:Name="Surface" Background="Transparent" CornerRadius="6" BorderThickness="1" BorderBrush="Transparent"/>
+                <Border x:Name="Accent" Width="3" HorizontalAlignment="Left" Margin="1,10" CornerRadius="1.5"
                         Background="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" Visibility="Collapsed"/>
                 <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
               </Grid>
@@ -153,28 +199,62 @@
         </Setter>
       </Style>
 
+      <!-- Quiet Fluent Pivot Item (Underline only, no heavy pill fill) -->
       <Style x:Key="PivotNavItem" TargetType="ListBoxItem">
-        <Setter Property="Padding" Value="14,9"/>
-        <Setter Property="Margin" Value="0,0,4,0"/>
+        <Setter Property="Padding" Value="4,8,4,10"/>
+        <Setter Property="Margin" Value="0,0,22,0"/>
         <Setter Property="Cursor" Value="Hand"/>
-        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="ListBoxItem">
-              <Grid>
-                <Border x:Name="PillBg" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                  <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Border>
-                <Border x:Name="Indicator" Height="2.5" VerticalAlignment="Bottom" Margin="8,0" CornerRadius="1.5"
+              <Grid Background="Transparent">
+                <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Border x:Name="Indicator" Height="2.5" VerticalAlignment="Bottom" CornerRadius="1.5"
                         Background="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" Visibility="Collapsed"/>
               </Grid>
               <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                  <Setter TargetName="PillBg" Property="Background" Value="{StaticResource ItemHoverBackground}"/>
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
-                  <Setter TargetName="PillBg" Property="Background" Value="{StaticResource SelectionBackground}"/>
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                  <Setter Property="FontWeight" Value="SemiBold"/>
                   <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Opacity" Value="0.45"/>
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Subtle Segmented Pill for Settings Sub-sections -->
+      <Style x:Key="SegmentNavItem" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="14,6"/>
+        <Setter Property="Margin" Value="0,0,4,0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ListBoxItem">
+              <Border x:Name="Pill" Background="Transparent" CornerRadius="5" Padding="{TemplateBinding Padding}" BorderThickness="1" BorderBrush="Transparent">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Pill" Property="Background" Value="{StaticResource ItemHoverBackground}"/>
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                  <Setter TargetName="Pill" Property="Background" Value="{DynamicResource CardBackground}"/>
+                  <Setter TargetName="Pill" Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
                   <Setter Property="FontWeight" Value="SemiBold"/>
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">

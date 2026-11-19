@@ -181,9 +181,10 @@ public partial class MainWindow
             fixtureState = currentState = "stopped"; UsbBackend.SelectedIndex = 0; UpdatePowerControls();
             if (!hardwareDirty || !UsbBackendHint.Text.Contains("未保存の変更: WinUSB", StringComparison.Ordinal))
                 throw new Exception("A staged USB backend is presented as already saved.");
-            Width = MinWidth; Height = MinHeight; await ArrangeCheck(); UsbBackend.BringIntoView(); await ArrangeCheck();
+            Width = MinWidth; Height = MinHeight; UsbAdvancedExpander.IsExpanded = true; await ArrangeCheck(); UsbBackend.BringIntoView(); await ArrangeCheck();
             RequireInside(UsbBackend, UsbPage, "USB transfer mode at minimum window size");
             SaveImage(Path.Combine(folder, "usb-driver-mode-compact.png"));
+            UsbAdvancedExpander.IsExpanded = false;
             RestoreSettingsDrafts();
 
             fixtureState = currentState = "running"; UpdatePowerControls();

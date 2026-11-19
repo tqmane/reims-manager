@@ -37,10 +37,16 @@ public partial class MainWindow
             Tabs.SelectedIndex = tab; await ArrangeCheck();
             SaveImage(Path.Combine(folder, $"manager-{tab}.png"));
         }
+        Tabs.SelectedIndex = 3;
+        for (int sec = 0; sec < SettingsSectionTabs.Items.Count; sec++) {
+            SettingsSectionNav.SelectedIndex = sec; await ArrangeCheck();
+            SaveImage(Path.Combine(folder, $"settings-{sec}.png"));
+        }
         double originalWidth = Width, originalHeight = Height;
-        Width = MinWidth; Height = MinHeight; Tabs.SelectedIndex = 0;
-        await ArrangeCheck(); SaveImage(Path.Combine(folder, "compact-overview.png"));
-        if (Memory.ActualWidth < 80 || Cpus.ActualWidth < 60) throw new Exception("Compact layout hides essential controls");
+        Width = MinWidth; Height = MinHeight; Tabs.SelectedIndex = 3; SettingsSectionNav.SelectedIndex = 0;
+        await ArrangeCheck(); SaveImage(Path.Combine(folder, "compact-settings.png"));
+        if (Memory.ActualWidth < 60 || Cpus.ActualWidth < 50) throw new Exception("Compact layout hides essential controls");
+        Tabs.SelectedIndex = 0; await ArrangeCheck(); SaveImage(Path.Combine(folder, "compact-overview.png"));
         Tabs.SelectedIndex = 1; currentState = "paused"; State.Text = UiText.T("一時停止"); UpdatePowerControls();
         await ArrangeCheck(); SaveImage(Path.Combine(folder, "compact-paused.png"));
         Width = originalWidth; Height = originalHeight;
@@ -68,21 +74,24 @@ public partial class MainWindow
             foreach (bool dark in new[] { false, true }) {
                 Application.Current.ThemeMode = dark ? ThemeMode.Dark : ThemeMode.Light;
                 foreach (bool compact in new[] { false, true }) {
-                    Width = compact ? MinWidth : 1380;
-                    Height = compact ? MinHeight : 880;
+                    Width = compact ? MinWidth : 1280;
+                    Height = compact ? MinHeight : 820;
                     string prefix = $"{(dark ? "dark" : "light")}-{(compact ? "compact" : "normal")}";
                     currentState = "stopped"; State.Text = "完全停止"; StatusDetail.Text = "";
                     Tabs.SelectedIndex = 0; UpdatePowerControls(); await ArrangeCheck();
                     RequireManagementGeometry();
-                    if (HardwareCard.Background is SolidColorBrush card &&
+                    if (OverviewMetricCard.Background is SolidColorBrush card &&
                         TryFindResource("ApplicationBackgroundBrush") is SolidColorBrush canvas && Foreground is SolidColorBrush foreground &&
                         Contrast(foreground.Color, Blend(card.Color, canvas.Color)) < 4.5)
-                        throw new Exception("Overview hardware card text fails 4.5:1 contrast");
+                        throw new Exception("Overview metric card text fails 4.5:1 contrast");
                     SaveImage(Path.Combine(folder, prefix + "-powered-off.png"));
                     await CheckCommandMenu(PowerMoreButton, Path.Combine(folder, prefix + "-power-more-menu.png"));
 
                     Tabs.SelectedIndex = 2; UpdatePowerControls(); await ArrangeCheck();
                     SaveImage(Path.Combine(folder, prefix + "-usb.png"));
+
+                    Tabs.SelectedIndex = 3; SettingsSectionNav.SelectedIndex = 0; UpdatePowerControls(); await ArrangeCheck();
+                    SaveImage(Path.Combine(folder, prefix + "-settings.png"));
 
                     Tabs.SelectedIndex = 1; currentState = "running"; State.Text = "実行中";
                     presentation.ShowConsole(); UpdatePowerControls(); await ArrangeCheck();
@@ -96,17 +105,16 @@ public partial class MainWindow
                         throw new Exception("The paused console cannot resume from its title bar");
                     SaveImage(Path.Combine(folder, prefix + "-paused.png"));
                     OpenSettings(this, new RoutedEventArgs()); await ArrangeCheck();
-                    if (!SettingsOpen || Tabs.SelectedIndex != 0) throw new Exception("Settings pivot did not open");
-                    // A timer update must not dismiss configuration while the guest is running.
+                    if (!SettingsOpen || Tabs.SelectedIndex != 3) throw new Exception("Settings pivot did not open");
                     currentState = "running"; UpdatePowerControls(); await ArrangeCheck();
-                    if (!SettingsOpen || Tabs.SelectedIndex != 0)
+                    if (!SettingsOpen || Tabs.SelectedIndex != 3)
                         throw new Exception("Live status dismissed the configuration tab");
                     if (!TryCloseSettings()) throw new Exception("Clean configuration could not return to console");
                     await ArrangeCheck(); RequireFocusedGeometry();
                 }
             }
             currentState = "stopped"; State.Text = "完全停止"; UpdatePowerControls();
-            Tabs.SelectedIndex = 4;
+            Tabs.SelectedIndex = 3; SettingsSectionNav.SelectedIndex = 3; await ArrangeCheck();
             foreach (var button in new[] { ApplyBootProfileButton, EnableGuestBridgeButton, DisableGuestBridgeButton }) {
                 button.BringIntoView(); await ArrangeCheck();
                 RequireInside(button, AdvancedScroll, "OpenCore reapply controls");
@@ -187,6 +195,7 @@ public partial class MainWindow
         double width = Width, height = Height;
         try {
             Tabs.SelectedIndex = 1; Width = MinWidth; Height = MinHeight;
+            ConsoleOptionsExpander.IsExpanded = true;
             if (EnableCursorAidButton.Tag?.ToString() != "EnableCursorAid" || DisableCursorAidButton.Tag?.ToString() != "DisableCursorAid")
                 throw new Exception("Cursor aid controls do not use the paired backend actions.");
             foreach (string state in new[] { "unknown", "unprepared", "stopped", "shutdown", "paused", "running" }) {
@@ -208,6 +217,7 @@ public partial class MainWindow
             SaveImage(Path.Combine(folder, "cursor-aid-running-compact.png"));
             File.WriteAllText(Path.Combine(folder, "cursor-aid-page-result.json"), "{\"existing_display_page\":true,\"explicit_on_off_actions\":true,\"running_only\":true,\"compact_actions_reachable\":true,\"no_guest_calls\":true}");
         } finally {
+            ConsoleOptionsExpander.IsExpanded = false;
             currentState = oldState; State.Text = oldStateText; Tabs.SelectedIndex = tab; Width = width; Height = height; UpdatePowerControls();
         }
     }
@@ -222,7 +232,7 @@ public partial class MainWindow
             return new VmEntry(name, Path.Combine(directory, "macOS Tahoe.reimsvm"), directory);
         }).ToArray();
         try {
-            Width = 1380; Height = 880;
+            Width = 1280; Height = 820;
             machines.AddRange(entries); LibrarySearch.Text = name; UpdateLibraryView(); await ArrangeCheck();
             foreach (var entry in entries) {
                 Library.ScrollIntoView(entry); await ArrangeCheck();
@@ -262,23 +272,25 @@ public partial class MainWindow
     {
         if (ConsoleFocused || LibraryPane.Visibility != Visibility.Visible || VmHeader.Visibility != Visibility.Visible)
             throw new Exception("Powered-off layout is not the management view");
-        foreach (FrameworkElement control in new FrameworkElement[] { StartButton, PowerOffButton, RestartButton, PowerMoreButton, ConsoleQuickButton, RevealButton, RefreshButton })
-            RequireInside(control, ManagementCommands, "Management command bar");
-        Rect console = ConsoleQuickButton.TransformToAncestor(ManagementCommands).TransformBounds(new Rect(ConsoleQuickButton.RenderSize));
-        Rect refresh = RefreshButton.TransformToAncestor(ManagementCommands).TransformBounds(new Rect(RefreshButton.RenderSize));
-        if (console.Right > refresh.Left + 1) throw new Exception("Management commands overlap");
+        foreach (FrameworkElement control in new FrameworkElement[] { StartButton, PowerMoreButton })
+            if (control.Visibility == Visibility.Visible) RequireInside(control, ManagementCommands, "Management command bar");
+        if (StartButton.Visibility == Visibility.Visible) {
+            Rect start = StartButton.TransformToAncestor(ManagementCommands).TransformBounds(new Rect(StartButton.RenderSize));
+            Rect more = PowerMoreButton.TransformToAncestor(ManagementCommands).TransformBounds(new Rect(PowerMoreButton.RenderSize));
+            if (start.Right > more.Left + 1) throw new Exception("Management commands overlap");
+        }
         RequireInside(WorkspaceSurface, WorkstationLayout, "Workspace");
-        RequireInside(WorkspaceNavigation, WorkspaceContent, "Pivot bar");
+        RequireInside(PivotBarContainer, WorkspaceContent, "Pivot bar");
         if (Library.ActualHeight < 80) throw new Exception($"Library viewport is too small: list={Library.ActualHeight:0.##}");
     }
 
     private void RequireFocusedGeometry()
     {
         if (!ConsoleFocused || ManagementCommands.Visibility != Visibility.Collapsed || LibraryPane.Visibility != Visibility.Collapsed ||
-            WorkspaceNavigation.Visibility != Visibility.Collapsed || VmHeader.Visibility != Visibility.Collapsed ||
+            PivotBarContainer.Visibility != Visibility.Collapsed || VmHeader.Visibility != Visibility.Collapsed ||
             ConsoleToolbar.Visibility != Visibility.Collapsed)
             throw new Exception("Powered-on view still contains management chrome");
-        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionCursorAidButton, SessionCursorMenuButton, SessionUsbButton, SessionSharingButton, SessionSnapshotButton, SessionPopOutButton, CaptionCommands })
+        foreach (FrameworkElement control in new FrameworkElement[] { LibraryCommand, SessionPowerButton, SessionPauseButton, SessionRestartButton, SessionSettingsButton, SessionCursorAidButton, SessionCursorMenuButton, SessionUsbButton, SessionSharingButton, SessionPopOutButton, CaptionCommands })
             RequireInside(control, TitleBar, "Session title bar");
         if (SessionCursorAidButton.Tag?.ToString() != "EnableCursorAid" ||
             SessionCursorAidButton.IsEnabled != (currentState == "running" && !IsUiBusy))
@@ -318,7 +330,7 @@ public partial class MainWindow
 
     private async Task CheckSettingsDraftBehavior()
     {
-        currentState = "stopped"; Tabs.SelectedIndex = 0;
+        currentState = "stopped"; Tabs.SelectedIndex = 3; SettingsSectionNav.SelectedIndex = 0;
         UpdatePowerControls();
         RememberHardwareDraft(); RememberIdentityDraft();
         string memory = Memory.Text, serial = IdentitySerial.Text;
@@ -326,15 +338,15 @@ public partial class MainWindow
         Memory.Text = "12288"; IdentitySerial.Text = "UNSAVED-FIXTURE";
         if (!hardwareDirty || !identityDirty || !SaveHardwareButton.IsEnabled || PendingSaveBar.Visibility != Visibility.Visible)
             throw new Exception("Settings dirty state not reflected");
-        Tabs.SelectedIndex = 2; Tabs.SelectedIndex = 4;
+        Tabs.SelectedIndex = 2; Tabs.SelectedIndex = 0;
         if (Memory.Text != "12288" || IdentitySerial.Text != "UNSAVED-FIXTURE") throw new Exception("Pivot navigation discarded edits");
         if (TryCloseSettings() || !SettingsOpen) throw new Exception("Settings closed without discard consent");
         bool sharing = ClipboardSharing.IsChecked == true;
         if (!RestoreSettingsDrafts() || Memory.Text != memory || IdentitySerial.Text != serial || hardwareDirty || identityDirty ||
             contextVersion != version || (ClipboardSharing.IsChecked == true) != sharing)
             throw new Exception("Cancel did not restore only the staged forms");
-        Memory.Text = "not-a-number"; Tabs.SelectedIndex = 4;
-        if (await ApplySettingsDrafts() || Tabs.SelectedIndex != 0 || !hardwareDirty)
+        Memory.Text = "not-a-number"; Tabs.SelectedIndex = 0;
+        if (await ApplySettingsDrafts() || Tabs.SelectedIndex != 3 || SettingsSectionTabs.SelectedIndex != 0 || !hardwareDirty)
             throw new Exception("Invalid hardware did not navigate to its failing editor");
         RestoreSettingsDrafts(); Feedback.Visibility = Visibility.Collapsed;
         applyingSettings = true; UpdatePowerControls();

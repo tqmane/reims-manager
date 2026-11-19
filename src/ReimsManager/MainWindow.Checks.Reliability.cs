@@ -104,7 +104,7 @@ public partial class MainWindow
 
             currentState = "stopped"; UpdatePowerControls();
             Memory.Text = "12288";
-            if (await Operate("Start") || Tabs.SelectedIndex != 0 || !hardwareDirty || Memory.Text != "12288")
+            if (await Operate("Start") || Tabs.SelectedIndex != 3 || !hardwareDirty || Memory.Text != "12288")
                 throw new Exception("Start hid pending settings and launched with different saved values.");
             Resolution.SelectedItem = Resolution.Items.Cast<ComboBoxItem>().Single(x => x.Content?.ToString() == "2560x1440");
             currentState = "running"; UpdatePowerControls(); checkCompletion = true;

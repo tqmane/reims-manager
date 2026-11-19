@@ -18,7 +18,7 @@ public partial class MainWindow
             Uplink.SelectedValue="";Physical.SelectedValue="";
             ApplyNetworkChoices(NetworkInventory.Parse(OnboardingChecks.Network));OpenBridgeTab(this,new RoutedEventArgs());
             if(Physical.SelectedValue as string!=id) throw new Exception("Opening LAN preparation discarded the only connected Wi-Fi suggestion.");
-            Physical.SelectedValue=id;Tabs.SelectedIndex=3;PacketFilterTerms.IsChecked=false;
+            Physical.SelectedValue=id;Tabs.SelectedIndex=3;SettingsSectionNav.SelectedIndex=2;PacketFilterTerms.IsChecked=false;
             latest=WifiUiChecks.Snapshot(kind:"none",installed:false,configured:false);ReadWifiStatus();UpdatePowerControls();
             if(WifiCompatCard.Visibility!=Visibility.Visible || WiredBridgeControls.Visibility!=Visibility.Collapsed || PrepareWifiButton.IsEnabled)
                 throw new Exception("Wi-Fi requires manual plumbing or installs without terms consent.");

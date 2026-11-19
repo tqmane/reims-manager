@@ -2604,4 +2604,211 @@ Windows LAN may briefly disconnect and its IP address may change. Create the bri
   <data name="上の「⟳ デバイス一覧を更新」を押すと、接続可能な USB デバイス・iPhone が表示されます" xml:space="preserve">
     <value>Click Refresh devices above to view attachable USB devices and iPhones.</value>
   </data>
+  <data name="4〜128 GiB の範囲で 4 MiB 単位で指定します" xml:space="preserve">
+    <value>Specify 4–128 GiB in 4 MiB increments</value>
+  </data>
+  <data name="LAN / Wi-Fi 互換準備（管理者権限）" xml:space="preserve">
+    <value>LAN / Wi-Fi compatibility setup (Admin)</value>
+  </data>
+  <data name="QEMU を直接選択…" xml:space="preserve">
+    <value>Browse QEMU directly…</value>
+  </data>
+  <data name="Reims エンジン" xml:space="preserve">
+    <value>Reims Engine</value>
+  </data>
+  <data name="USB 転送方式の詳細設定 (WinUSB / UsbDk)" xml:space="preserve">
+    <value>Advanced USB transfer backend (WinUSB / UsbDk)</value>
+  </data>
+  <data name="VM 起動時に macOS へ通知する画面サイズ" xml:space="preserve">
+    <value>Initial display resolution reported to macOS at boot</value>
+  </data>
+  <data name="Windows の音声入出力を macOS と共有します" xml:space="preserve">
+    <value>Share Windows audio output and microphone input with macOS</value>
+  </data>
+  <data name="Windows カーソルを隠す" xml:space="preserve">
+    <value>Hide Windows cursor</value>
+  </data>
+  <data name="macOS に割り当てる仮想 CPU コア数" xml:space="preserve">
+    <value>Virtual CPU cores assigned to macOS</value>
+  </data>
+  <data name="macOS の IP / ホスト名" xml:space="preserve">
+    <value>macOS IP / Hostname</value>
+  </data>
+  <data name="macOS インストーラーを選択して、仮想ディスクと OpenCore を自動準備します。" xml:space="preserve">
+    <value>Select a macOS installer to automatically prepare the virtual disk and OpenCore.</value>
+  </data>
+  <data name="その他の操作" xml:space="preserve">
+    <value>More actions</value>
+  </data>
+  <data name="アプリの表示言語を切り替えます" xml:space="preserve">
+    <value>Switch the application display language</value>
+  </data>
+  <data name="アプリ設定" xml:space="preserve">
+    <value>App settings</value>
+  </data>
+  <data name="インストーラー ISO メディア（詳細）" xml:space="preserve">
+    <value>Installer ISO media (Advanced)</value>
+  </data>
+  <data name="オーディオ" xml:space="preserve">
+    <value>Audio</value>
+  </data>
+  <data name="カーソル移動・拡張ディスプレイの詳細操作" xml:space="preserve">
+    <value>Cursor movement &amp; extended display options</value>
+  </data>
+  <data name="クイック操作" xml:space="preserve">
+    <value>Quick actions</value>
+  </data>
+  <data name="システムに合わせる (Auto)" xml:space="preserve">
+    <value>Match system (Auto)</value>
+  </data>
+  <data name="ストレージ" xml:space="preserve">
+    <value>Storage</value>
+  </data>
+  <data name="スナップショットと保存先" xml:space="preserve">
+    <value>Snapshots &amp; location</value>
+  </data>
+  <data name="スピーカー" xml:space="preserve">
+    <value>Speakers</value>
+  </data>
+  <data name="ディスク" xml:space="preserve">
+    <value>Disk</value>
+  </data>
+  <data name="ネットワーク方式" xml:space="preserve">
+    <value>Network mode</value>
+  </data>
+  <data name="ブリッジ / LAN 共有" xml:space="preserve">
+    <value>Bridge / LAN sharing</value>
+  </data>
+  <data name="ブリッジ接続時の SSH・共有の接続先" xml:space="preserve">
+    <value>Guest target for SSH and clipboard sharing in bridge mode</value>
+  </data>
+  <data name="ペアリング" xml:space="preserve">
+    <value>Pair</value>
+  </data>
+  <data name="マイク入力" xml:space="preserve">
+    <value>Microphone</value>
+  </data>
+  <data name="メイン画面へ移動" xml:space="preserve">
+    <value>Move to main display</value>
+  </data>
+  <data name="ライブラリを再読込" xml:space="preserve">
+    <value>Reload library</value>
+  </data>
+  <data name="一般" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="一覧を更新" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="上の「一覧を更新」を押すと、接続可能な USB デバイス・iPhone が表示されます" xml:space="preserve">
+    <value>Click Refresh above to list available USB devices and iPhones.</value>
+  </data>
+  <data name="仮想ディスク容量" xml:space="preserve">
+    <value>Virtual disk capacity</value>
+  </data>
+  <data name="仮想マシンを追加・開く" xml:space="preserve">
+    <value>Add or open virtual machine</value>
+  </data>
+  <data name="保存済みの VM (.reimsvm) を開く… (Ctrl+O)" xml:space="preserve">
+    <value>Open saved VM (.reimsvm)… (Ctrl+O)</value>
+  </data>
+  <data name="元に戻す" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="初期セットアップ" xml:space="preserve">
+    <value>Initial setup</value>
+  </data>
+  <data name="対象アダプター:" xml:space="preserve">
+    <value>Target adapter:</value>
+  </data>
+  <data name="差分ディスクの整理・最適化" xml:space="preserve">
+    <value>Compact &amp; optimize differential disk</value>
+  </data>
+  <data name="新しい VM を作成するか、保存済みの仮想マシンを開いてください。" xml:space="preserve">
+    <value>Create a new VM or open an existing virtual machine.</value>
+  </data>
+  <data name="新しい macOS VM を作成" xml:space="preserve">
+    <value>Create new macOS VM</value>
+  </data>
+  <data name="新しい macOS VM を作成… (Ctrl+N)" xml:space="preserve">
+    <value>Create new macOS VM… (Ctrl+N)</value>
+  </data>
+  <data name="既存の仮想ディスクを取り込む…" xml:space="preserve">
+    <value>Import existing virtual disk…</value>
+  </data>
+  <data name="最新の状態に更新 (F5)" xml:space="preserve">
+    <value>Refresh state (F5)</value>
+  </data>
+  <data name="最適化を実行…" xml:space="preserve">
+    <value>Optimize…</value>
+  </data>
+  <data name="有線 TAP・Windows ブリッジ詳細" xml:space="preserve">
+    <value>Wired TAP &amp; Windows bridge details</value>
+  </data>
+  <data name="検索" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="構成を変更" xml:space="preserve">
+    <value>Configure</value>
+  </data>
+  <data name="次回起動時にインストーラーを接続" xml:space="preserve">
+    <value>Attach installer on next boot</value>
+  </data>
+  <data name="準備完了後すぐに起動する" xml:space="preserve">
+    <value>Start immediately once prepared</value>
+  </data>
+  <data name="現在の差分をまとめ、内容の一致を検証します（元データは保持）" xml:space="preserve">
+    <value>Merge active deltas and verify byte equality (previous disks are retained)</value>
+  </data>
+  <data name="現在の状態をスナップショット保存" xml:space="preserve">
+    <value>Save current state as snapshot</value>
+  </data>
+  <data name="画面を開く" xml:space="preserve">
+    <value>Open display</value>
+  </data>
+  <data name="画面・オーディオ・起動メディア" xml:space="preserve">
+    <value>Display, audio &amp; boot media</value>
+  </data>
+  <data name="破棄" xml:space="preserve">
+    <value>Discard</value>
+  </data>
+  <data name="管理" xml:space="preserve">
+    <value>Manage</value>
+  </data>
+  <data name="自動共有" xml:space="preserve">
+    <value>Auto-share</value>
+  </data>
+  <data name="英数字・_・-・. の名前を付けて復元ポイントを作成します" xml:space="preserve">
+    <value>Create a restore point using letters, digits, _, -, or .</value>
+  </data>
+  <data name="解像度を適用" xml:space="preserve">
+    <value>Apply resolution</value>
+  </data>
+  <data name="設定ファイルと移行" xml:space="preserve">
+    <value>Settings file &amp; migration</value>
+  </data>
+  <data name="通常は設定不要の NAT を使います" xml:space="preserve">
+    <value>Use NAT for zero-configuration internet access</value>
+  </data>
+  <data name="選択した時点の状態へ切り替えます（現在のディスクも保持）" xml:space="preserve">
+    <value>Switch back to the selected snapshot (current disk is retained)</value>
+  </data>
+  <data name="「+」から VM を作成または開く" xml:space="preserve">
+    <value>Click + to create or open a VM</value>
+  </data>
+  <data name="スピーカー・マイク有効" xml:space="preserve">
+    <value>Speakers &amp; mic enabled</value>
+  </data>
+  <data name="スピーカー有効" xml:space="preserve">
+    <value>Speakers enabled</value>
+  </data>
+  <data name="オーディオ無効" xml:space="preserve">
+    <value>Audio off</value>
+  </data>
+  <data name="設定済み" xml:space="preserve">
+    <value>Configured</value>
+  </data>
+  <data name="保存していない設定があります。「変更を保存」または「破棄」で確定してから起動してください。" xml:space="preserve">
+    <value>You have unsaved changes. Save or discard them before starting.</value>
+  </data>
 </root>
