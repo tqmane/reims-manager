@@ -253,6 +253,7 @@ public partial class MainWindow
         try {
             closingWindow.selectedEntry = selectedEntry;
             closingWindow.useFixtureConsole = true; closingWindow.latest = latest;
+            closingWindow.Tabs.SelectedIndex = 1;
             closingWindow.currentState = "running"; closingWindow.presentation.ShowConsole();
             closingWindow.UpdatePowerControls(); closingWindow.Show(); await closingWindow.ArrangeCheck();
             closingWindow.UpdateConsole(); await closingWindow.ArrangeCheck();
