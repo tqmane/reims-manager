@@ -69,7 +69,10 @@ internal static class QmpClient
     private static async Task<JsonDocument> ExecuteCoreAsync(int port, string command, object? arguments, CancellationToken cancellation)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        deadline.CancelAfter(TimeSpan.FromSeconds(5));
+        TimeSpan timeout = command is "device_add" or "device_del"
+            ? TimeSpan.FromSeconds(15)
+            : TimeSpan.FromSeconds(10);
+        deadline.CancelAfter(timeout);
         var token = deadline.Token;
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port, token).ConfigureAwait(false);

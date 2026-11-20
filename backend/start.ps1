@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+﻿#Requires -Version 7.2
 [CmdletBinding()]
 param(
     [string]$Qemu,
@@ -230,7 +230,7 @@ function Invoke-ReimsQmp($Runtime, [string]$Command, [hashtable]$Arguments = @{}
             }
         } while($true)
         $stream = $client.GetStream()
-        $stream.ReadTimeout = 5000
+        $stream.ReadTimeout = if ($Command -in @('device_add', 'device_del')) { 15000 } else { 10000 }
         $stream.WriteTimeout = 5000
         $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8, $false, 1024, $true)
         $writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false), 1024, $true)

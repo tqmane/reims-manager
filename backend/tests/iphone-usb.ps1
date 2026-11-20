@@ -207,6 +207,7 @@ try {
     }
     function Invoke-ReimsQmp($Runtime,$Command,$Arguments) {
         $f=$script:fixture;$f.events.Add($Command)
+        if($f.transientQmpTimeouts -gt 0){$f.transientQmpTimeouts--;throw 'Exception calling "ReadLine" with "0" argument(s): "Unable to read data from the transport connection"'}
         if($f.qmpFail -and $f.objects.Count){throw 'Fixture QMP stalled'}
         switch($Command){
             'query-status' {[pscustomobject]@{status=$f.vmStatus}}
@@ -234,6 +235,8 @@ try {
         if($f.scenario -eq 'guard-once' -and $f.tick -eq 1){$f.blocked=$true}
         if($f.scenario -in @('replug','qmp') -and $f.tick -eq 1){$f.arrival=[DateTime]::UtcNow.AddSeconds(1).Ticks;$f.stacks[$normal]='libusb0'}
         if($f.scenario -eq 'qmp' -and $f.objects.Count){$f.qmpFail=$true}
+        if($f.scenario -eq 'transient-qmp-timeout' -and $f.tick -eq 1){$f.transientQmpTimeouts=1}
+        if($f.scenario -eq 'transient-qmp-timeout' -and $f.tick -eq 3){Write-ReimsIphoneUsbSessionJson (Join-Path $f.root 'stop') @{stop=$true};$f.transientQmpTimeouts=1}
         if($f.scenario -eq 'foreign-qmp' -and $f.tick -eq 1){$f.objects[$profile.id]['host-instance-id']='USB\VID_05AC&PID_12A8\FOREIGN';Write-ReimsIphoneUsbSessionJson (Join-Path $f.root 'stop') @{stop=$true}}
         if($f.scenario -eq 'mode' -and $f.tick -eq 4){$f.present[$normal]=$true}
         if($f.scenario -eq 'absent' -and $f.tick -eq 1){$f.present[$normal]=$true}
@@ -246,7 +249,7 @@ try {
             Section='AuthoredInstall';SectionExtension='.NT';Provider='Authored Driver';Version='1.2.3.4';ClassGuid='{36FC9E60-C465-11CF-8056-444553540000}';Service='usbccgp';MatchingId='USB\COMPOSITE'}}
         $script:fixture=@{root=$folder;tick=0;exitTick=2;models=$models;present=@{$normal=$true;$recovery=$true};stacks=@{$normal='usbccgp';$recovery='usbccgp'};
             events=[Collections.Generic.List[string]]::new();states=[Collections.Generic.List[string]]::new();objects=@{};added=[Collections.Generic.List[object]]::new();
-            arrivals=[Collections.Generic.List[long]]::new();candidates=@($normal);arrival=11L;reboot=$false;qmpFail=$false;blocked=$false;safeChecks=0;scenario=$Name;ecid=$profile.ecid;lastError='';restoreTick=-1;vmStatus='running';metadataMissing=$false;metadataDenied=$false}
+            arrivals=[Collections.Generic.List[long]]::new();candidates=@($normal);arrival=11L;reboot=$false;qmpFail=$false;transientQmpTimeouts=0;blocked=$false;safeChecks=0;scenario=$Name;ecid=$profile.ecid;lastError='';restoreTick=-1;vmStatus='running';metadataMissing=$false;metadataDenied=$false}
         $folder
     }
     $folder=New-Fixture 'metadata';$fixture.metadataMissing=$true
@@ -351,6 +354,9 @@ try {
     $folder=New-Fixture 'qmp';$fixture.exitTick=4
     Invoke-ReimsIphoneUsbSession $snapshot $folder
     Assert ($fixture.states.Contains('qmp-wait-exit') -and $fixture.restoreTick -ge 4) 'Ambiguous/stalled QMP waits for VM exit before restoration'
+    $folder=New-Fixture 'transient-qmp-timeout';$fixture.exitTick=8
+    Invoke-ReimsIphoneUsbSession $snapshot $folder
+    Assert (!$fixture.states.Contains('qmp-wait-exit') -and $fixture.events.Contains('remove') -and $fixture.states[-1] -ceq 'restored') 'Transient QMP ReadLine timeouts retry and recover without locking into qmp-wait-exit'
     $folder=New-Fixture 'foreign-qmp';$fixture.exitTick=4
     Invoke-ReimsIphoneUsbSession $snapshot $folder
     Assert (!$fixture.events.Contains('remove') -and $fixture.states.Contains('qmp-wait-exit') -and $fixture.restoreTick -ge 4) 'A foreign QMP object cannot be deleted or restore a potentially open driver early'

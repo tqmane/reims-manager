@@ -153,6 +153,10 @@ function Get-ReimsIphoneUsbOtherInstances($Snapshot) {
     }
 }
 
+function Test-ReimsTransientQmpError([string]$Message) {
+    $Message -match 'ReadLine|transport connection|timed out|タイムアウト|管理接続を使用中|接続できませんでした'
+}
+
 function Invoke-ReimsIphoneUsbSession($Snapshot,[string]$Root,[switch]$RestoreOnly) {
     $otherInstances=@(Get-ReimsIphoneUsbOtherInstances $Snapshot)
     $mutex=[Threading.Mutex]::new($false,"Global\ReimsManager.IphoneUsb.$($Snapshot.profile.ecid)");$held=$false
@@ -165,6 +169,7 @@ function Invoke-ReimsIphoneUsbSession($Snapshot,[string]$Root,[switch]$RestoreOn
         $stopping=[bool]$RestoreOnly -or (Test-ReimsIphoneUsbStopRequested $Snapshot $Root)
         # A dead client's add can still be queued even when qom-list is empty.
         $waitExit=[bool]$RestoreOnly -and [bool]$lease.qmp_instance -and [bool](Get-ReimsVmProcess $Snapshot.runtime);$errorText=''
+        $qmpTransientRetries=0
         $context=if(!$stopping -and (Get-ReimsVmProcess $Snapshot.runtime)){Get-ReimsIphoneUsbContext $Snapshot.runtime}
         while($true) {
             $alive=[bool](Get-ReimsVmProcess $Snapshot.runtime)
@@ -242,10 +247,17 @@ function Invoke-ReimsIphoneUsbSession($Snapshot,[string]$Root,[switch]$RestoreOn
                         Invoke-ReimsQmp $Snapshot.runtime 'device_add' (Get-ReimsIphoneUsbArgument $Snapshot.profile $id)|Out-Null
                     }
                     $attached=Wait-ReimsUsbAttachment $Snapshot.runtime $Snapshot.profile.id
+                    $qmpTransientRetries=0
                     Publish-ReimsIphoneUsbStatus $Snapshot $Root $(if($attached){'connected'}else{'waiting'}) $id
                 }
             } catch {
-                $errorText=$_.Exception.Message;$stopping=$true
+                $errorText=$_.Exception.Message
+                if($alive -and (Get-ReimsVmProcess $Snapshot.runtime) -and (Test-ReimsTransientQmpError $errorText) -and $qmpTransientRetries -lt 2) {
+                    $qmpTransientRetries++
+                    Start-Sleep -Seconds 2
+                    continue
+                }
+                $stopping=$true
                 if($lease.qmp_instance -and $alive){$waitExit=$true}
                 Publish-ReimsIphoneUsbStatus $Snapshot $Root $(if($waitExit){'qmp-wait-exit'}else{'error'}) '' $errorText
                 if(!$waitExit -and $errorText -match 'foreign|pinned signed driver model|never changed|No matching original'){return}
