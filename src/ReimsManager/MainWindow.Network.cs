@@ -26,9 +26,9 @@ public partial class MainWindow
         var draft = CaptureHardwareDraft();
         loadingHardware = true;
         try {
-            if (adapter.Length > 0 && !Tap.Items.Cast<string>().Contains(adapter))
+            if (adapter.Length > 0 && !Tap.Items.Cast<string>().Contains(adapter, StringComparer.OrdinalIgnoreCase))
                 Fill(Tap, Tap.Items.Cast<string>().Append(adapter), true);
-            object? tap = adapter.Length == 0 ? null : Tap.Items.Cast<string>().First(x => x == adapter);
+            object? tap = adapter.Length == 0 ? null : Tap.Items.Cast<string>().FirstOrDefault(x => string.Equals(x, adapter, StringComparison.OrdinalIgnoreCase));
             bool nat = mode == "nat";
             // Only changed backend fields replace network edits. Failed/restart-only
             // preparation must not erase a draft when the saved field stayed put.

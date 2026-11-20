@@ -36,7 +36,7 @@ public partial class MainWindow
         bool saved = SavePreferences();
         LibrarySearch.Clear();
         UpdateLibraryView();
-        Library.SelectedItem = machines.First(x => string.Equals(x.File, entry.File, StringComparison.OrdinalIgnoreCase));
+        Library.SelectedItem = machines.FirstOrDefault(x => string.Equals(x.File, entry.File, StringComparison.OrdinalIgnoreCase));
         return saved;
     }
 

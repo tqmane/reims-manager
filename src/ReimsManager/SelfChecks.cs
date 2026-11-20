@@ -125,6 +125,15 @@ internal static class SelfChecks
                 throw new Exception("NativeStatusService returned unexpected fixture status.");
         }
 
+        string prereqJson = await Services.NativeStatusService.GetPrerequisitesJsonAsync(folder, folder, 4, 8192, CancellationToken.None);
+        using (var prereqDoc = JsonDocument.Parse(prereqJson)) {
+            var checkIds = prereqDoc.RootElement.GetProperty("checks").EnumerateArray()
+                .Select(c => c.GetProperty("id").GetString())
+                .ToArray();
+            if (!checkIds.Contains("whpx") || !checkIds.Contains("vulkan"))
+                throw new Exception($"GetPrerequisitesJsonAsync omitted expected checks: {string.Join(", ", checkIds)}");
+        }
+
         var netInv = NetworkInventory.Parse(Services.NativeHostNetwork.GetNetworkInventoryJson());
         if (netInv is null) throw new Exception("NativeHostNetwork returned null inventory.");
 

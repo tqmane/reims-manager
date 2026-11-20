@@ -275,7 +275,14 @@ internal static partial class NativeGuestAndLaunchService
         AtomicFileStore.AssertVmStopped(vmDirectory);
         _ = NativePnpUsb.GetProtectedUsbIds(engineRoot, vmDirectory);
         string prereqJson = await NativeStatusService.GetPrerequisitesJsonAsync(engineRoot, toolsRoot, config["cpus"]!.GetValue<int>(), config["memory_mib"]!.GetValue<int>(), cancellation).ConfigureAwait(false);
-        bool whpxReady = JsonDocument.Parse(prereqJson).RootElement.GetProperty("checks").EnumerateArray().First(c => c.GetProperty("id").GetString() == "whpx").GetProperty("ready").GetBoolean();
+        using var prereqDoc = JsonDocument.Parse(prereqJson);
+        var checks = prereqDoc.RootElement.GetProperty("checks").EnumerateArray().ToArray();
+        var whpxCheck = checks.FirstOrDefault(c => c.TryGetProperty("id", out var id) && id.GetString() == "whpx");
+        if (whpxCheck.ValueKind != JsonValueKind.Object) {
+            string? hostError = checks.FirstOrDefault().TryGetProperty("message", out var msgProp) ? msgProp.GetString() : null;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(hostError) ? "Failed to read WHPX prerequisites." : hostError);
+        }
+        bool whpxReady = whpxCheck.GetProperty("ready").GetBoolean();
         if (!whpxReady)
             throw new InvalidOperationException("WHPX unavailable. Enable Windows Hypervisor Platform and reboot.");
 

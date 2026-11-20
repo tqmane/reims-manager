@@ -456,23 +456,32 @@ internal static partial class NativeStatusService
     private static bool HasVulkanIcd()
     {
         var icds = new List<string>();
-        using (var drivers = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Khronos\Vulkan\Drivers")) {
+        try {
+            using var drivers = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Khronos\Vulkan\Drivers", writable: false);
             if (drivers is not null) {
                 foreach (string name in drivers.GetValueNames()) {
                     if (drivers.GetValue(name) is int v && v == 0) icds.Add(name);
                 }
             }
-        }
-        using (var display = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}")) {
+        } catch (System.Security.SecurityException) { }
+        catch (UnauthorizedAccessException) { }
+
+        try {
+            using var display = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}", writable: false);
             if (display is not null) {
                 foreach (string sub in display.GetSubKeyNames()) {
-                    using var key = display.OpenSubKey(sub);
-                    object? val = key?.GetValue("VulkanDriverName");
-                    if (val is string s) icds.Add(s);
-                    else if (val is string[] arr) icds.AddRange(arr);
+                    try {
+                        using var key = display.OpenSubKey(sub, writable: false);
+                        object? val = key?.GetValue("VulkanDriverName");
+                        if (val is string s) icds.Add(s);
+                        else if (val is string[] arr) icds.AddRange(arr);
+                    } catch (System.Security.SecurityException) { }
+                    catch (UnauthorizedAccessException) { }
                 }
             }
-        }
+        } catch (System.Security.SecurityException) { }
+        catch (UnauthorizedAccessException) { }
+
         return icds.Any(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p));
     }
 
