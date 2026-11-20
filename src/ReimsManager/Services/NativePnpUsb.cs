@@ -17,7 +17,7 @@ internal static partial class NativePnpUsb
     [GeneratedRegex(@"^USB\\VID_([0-9A-F]{4})&PID_([0-9A-F]{4})(?:&|\\)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UsbIdPrefixRegex();
 
-    [GeneratedRegex(@"&MI_[0-9A-F]{2}(?:&|\\)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}(?:&REV_[0-9A-F]{4})?&(?!REV_[0-9A-F]{4}(?:\\|$))[^\\]+\\", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex InterfaceSegmentRegex();
 
     [GeneratedRegex(@"\s+_SN:\S+\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
