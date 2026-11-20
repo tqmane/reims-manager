@@ -144,10 +144,15 @@ internal static class SelfChecks
 
         var names = Services.NativePnpUsb.BuildProductNames([
             new(@"USB\VID_0781&PID_55A9\12345", "USB", "USB Composite Device", "SanDisk 3.2Gen1 _SN:ABC"),
-            new(@"USB\VID_0781&PID_55A9&MI_00\12345", "WPD", "MTP USB Device", "Ignored")
+            new(@"USB\VID_0781&PID_55A9&MI_00\12345", "WPD", "MTP USB Device", "Ignored"),
+            new(@"USB\VID_04E8&PID_6860\R5GL254V74T", "USB", "SAMSUNG Mobile USB Composite Device", "SAMSUNG Mobile USB Composite Device"),
+            new(@"USB\VID_04E8&PID_6860&ADB\7&1CCB6F3C&0&0003", "AndroidUsbDeviceClass", "SAMSUNG Android ADB Interface", ""),
+            new(@"USB\VID_04E8&PID_6860&MS_COMP_MTP&SAMSUNG_ANDROID\7&1CCB6F3C&0&0000", "WPD", "Galaxy S26 Ultra", "")
         ]);
         if (!names.TryGetValue("0781:55a9", out string? prodName) || prodName != "SanDisk 3.2Gen1")
             throw new Exception("NativePnpUsb product name normalization failed.");
+        if (!names.TryGetValue("04e8:6860", out string? galaxyName) || galaxyName != "Galaxy S26 Ultra")
+            throw new Exception("NativePnpUsb non-MI interface product name resolution failed.");
 
         // Test FAT16 label patcher on synthetic MBR + FAT16 sector image
         string fatImg = Path.Combine(folder, "tools-fat.img");
