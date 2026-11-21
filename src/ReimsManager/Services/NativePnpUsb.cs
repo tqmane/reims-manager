@@ -23,7 +23,7 @@ internal static partial class NativePnpUsb
     [GeneratedRegex(@"\s+_SN:\S+\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SerialSuffixRegex();
 
-    [GeneratedRegex(@"^(?:Android(?: Device| Phone)?|MTP(?: USB (?:Device|デバイス))?|USB (?:Composite Device|Device|複合デバイス|デバイス)|(?:.*\s)?ADB (?:Interface|インターフェ[イー]ス))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?:Android(?: Device| Phone)?|MTP(?: USB (?:Device|デバイス))?|(?:.*\s)?USB (?:Composite Device|複合デバイス)|USB (?:Device|デバイス)|(?:.*\s)?ADB (?:Interface|インターフェ[イー]ス))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex GenericNameRegex();
 
     [GeneratedRegex(@"^USB\\VID_05AC&PID_(12A8|12AB|128[0-3]|122[0-7])(?:&REV_[0-9A-F]{4})?\\[^\\/\x00-\x20*?]{1,200}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
